@@ -1,0 +1,8 @@
+{
+  "name": "Remix GBK Financial CRM",
+  "description": "Advanced mortgage broker CRM with AI document analysis, live GDS/TDS calculators, client pipeline, and marketing automation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
