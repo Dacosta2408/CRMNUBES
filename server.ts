@@ -6,6 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { spawn } from "child_process";
+import { crmRouter } from "./server/src/routes/crmRoutes.js";
 
 dotenv.config();
 
@@ -54,6 +55,9 @@ async function startServer() {
   );
 
   app.use(express.json({ limit: "10mb" }));
+
+  // PostgreSQL API foundation routes
+  app.use("/api", crmRouter);
 
   // Helper to get GoogleGenAI client or throw friendly error
   function getGeminiClient() {

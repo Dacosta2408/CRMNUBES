@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Task, User } from "../types";
 import { safeJsonParse } from "../lib/json";
+import { fetchTasksApi, createTaskApi, updateTaskApi } from "../lib/api";
 
 export interface UseTasksDeps {
   currentUser: User;
@@ -50,6 +51,32 @@ export function useTasks({ currentUser, showToast }: UseTasksDeps) {
   const [taskFilter, setTaskFilter] = useState<string>("all");
   const [taskModalOpen, setTaskModalOpen] = useState<boolean>(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+
+  // Sync tasks from API on mount
+  useEffect(() => {
+    async function loadTasksFromApi() {
+      const apiTasks = await fetchTasksApi();
+      if (apiTasks && apiTasks.length > 0) {
+        // Map backend task format to frontend Task interface
+        const formatted: Task[] = apiTasks.map((t: any) => ({
+          id: t.id,
+          title: t.title,
+          status: (t.status === "completed" || t.status === "done") ? "done" : "open",
+          priority: t.priority || "medium",
+          dueDate: t.due_at ? t.due_at.split("T")[0] : new Date().toISOString().split("T")[0],
+          clientId: t.related_client_id || "",
+          clientName: "",
+          assignedTo: t.assigned_to || "David Acosta",
+          notes: t.description || t.notes || "",
+          createdAt: t.created_at || new Date().toISOString(),
+          updatedAt: t.updated_at || new Date().toISOString(),
+          createdBy: "System"
+        }));
+        setTasks(formatted);
+      }
+    }
+    loadTasksFromApi();
+  }, []);
 
   // Persist tasks to localStorage via useEffect
   useEffect(() => {

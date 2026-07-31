@@ -1,11 +1,13 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { 
   Send, FileText, Bookmark, Users, HelpCircle, Search, 
   X, Pin, Plus, AlertCircle, CheckCircle, Check, ArrowRight, 
   Trash2, Bell, Tag, Link2, Paperclip, Phone, MoreHorizontal,
-  ChevronRight, Sparkles, Smile, ShieldAlert, BadgeInfo, Calendar, UserPlus, Eye
+  ChevronRight, Sparkles, Smile, ShieldAlert, BadgeInfo, Calendar, UserPlus, Eye, Upload
 } from "lucide-react";
 import { Client, Task } from "../types";
+import { DEFAULT_USERS } from "../data";
+import { getNotesForClient, saveNotesForClient, logActivityEvent, FileNote } from "../lib/activityEngine";
 
 interface Message {
   id: string;
@@ -30,12 +32,16 @@ interface MessagesProps {
   messages: Record<string, any[]>;
   setMessages: React.Dispatch<React.SetStateAction<Record<string, any[]>>>;
   clients: Client[];
+  setClients?: React.Dispatch<React.SetStateAction<Client[]>>;
   currentUser: {
+    id?: string;
     first: string;
     last: string;
     role?: string;
     avatar?: string;
     photo?: string;
+    displayName?: string;
+    jobTitle?: string;
     [key: string]: any;
   };
   activeChannel: string;
@@ -47,18 +53,19 @@ interface MessagesProps {
   setTasks?: React.Dispatch<React.SetStateAction<Task[]>>;
   showToast?: (msg: string, type?: "success" | "error" | "info" | "warning", icon?: string) => void;
   userRoster?: any[];
+  setUserRoster?: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
-// Seeded Teammates for Direct Messages with precise roles & live availability indicators
-export const TEAM_ROSTER = [
-  { id: "dm_david", name: "David Acosta", role: "Owner / Master Admin", status: "online", statusLabel: "Active 🟢", color: "bg-emerald-500", avatar: null },
-  { id: "dm_wayne", name: "Wayne MacLeod", role: "BDM / Senior Broker", status: "busy", statusLabel: "In Lender Call 📞", color: "bg-red-400", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&h=150&q=80" },
-  { id: "dm_jeff", name: "Jeff Brown", role: "Admin Assistant", status: "online", statusLabel: "Processing paystubs 🟢", color: "bg-emerald-500", avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&h=150&q=80" },
-  { id: "dm_tim", name: "Tim Brown", role: "Broker Principal", status: "offline", statusLabel: "Offline ⚪", color: "bg-slate-500", avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&h=150&q=80" },
-  { id: "dm_jamey", name: "Jamey Brown", role: "Mortgage Broker", status: "away", statusLabel: "Reviewing files 🟡", color: "bg-amber-500", avatar: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=150&h=150&q=80" },
-  { id: "dm_matt", name: "Matt Brown", role: "Mortgage Broker", status: "online", statusLabel: "Processing BFS file 🟢", color: "bg-emerald-500", avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&h=150&q=80" },
-  { id: "dm_jason", name: "Jason Myszkowski", role: "Mortgage Broker", status: "away", statusLabel: "On-site visit 🟡", color: "bg-amber-500", avatar: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=150&h=150&q=80" }
-];
+// Deprecated hard-coded TEAM_ROSTER fallback for backwards compatibility
+export const TEAM_ROSTER = DEFAULT_USERS.map(u => ({
+  id: u.id,
+  name: u.displayName || `${u.first} ${u.last}`.trim(),
+  role: u.jobTitle || u.role,
+  status: u.status === 'active' ? 'online' : 'offline',
+  statusLabel: u.status === 'active' ? 'Active 🟢' : 'Offline ⚪',
+  color: u.status === 'active' ? 'bg-emerald-500' : 'bg-slate-500',
+  avatar: u.photo || null
+}));
 
 // Escalation Flag UI Schemes
 export const ESCALATION_FLAGS = {
@@ -74,6 +81,7 @@ export const Messages: React.FC<MessagesProps> = ({
   messages,
   setMessages,
   clients,
+  setClients,
   currentUser,
   activeChannel,
   setActiveChannel,
@@ -83,7 +91,8 @@ export const Messages: React.FC<MessagesProps> = ({
   tasks,
   setTasks,
   showToast,
-  userRoster
+  userRoster,
+  setUserRoster
 }) => {
   const authorInitials = useMemo(() => {
     return ((currentUser?.first?.[0] || "") + (currentUser?.last?.[0] || "")).toUpperCase() || "ME";
@@ -98,7 +107,8 @@ export const Messages: React.FC<MessagesProps> = ({
   const [clientDropdownSearch, setClientDropdownSearch] = useState("");
   const [msgPriority, setMsgPriority] = useState<"urgent" | "blocked" | "lender_pending" | "client_pending" | "compliance" | "normal">("normal");
 
-  // Mock document drafts attached to composer
+  // Document drafts attached to composer from user's computer
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachedFiles, setAttachedFiles] = useState<{ name: string; size: string; type: string }[]>([]);
   const [showAttachPresets, setShowAttachPresets] = useState(false);
 
@@ -125,23 +135,98 @@ export const Messages: React.FC<MessagesProps> = ({
   const [showPinsPanel, setShowPinsPanel] = useState(false);
   const [typingUser, setTypingUser] = useState<string | null>(null);
 
-  // Chat Roster representing the 7 actual Admin Panel users + any custom ones
-  const [chatRoster, setChatRoster] = useState<any[]>(() => {
-    const saved = localStorage.getItem("gbk_chat_roster");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        // Fallback
+  // Derive Chat Roster directly from real user accounts (userRoster + currentUser)
+  const chatRoster = useMemo(() => {
+    const rosterList = (userRoster && userRoster.length > 0) ? userRoster : DEFAULT_USERS;
+    
+    // Combine and ensure currentUser is synchronized and included
+    let combined = [...rosterList];
+    if (currentUser) {
+      const curIdx = combined.findIndex(u => 
+        (currentUser.id && u.id === currentUser.id) || 
+        (currentUser.email && u.email && u.email.toLowerCase() === currentUser.email.toLowerCase())
+      );
+      if (curIdx >= 0) {
+        combined[curIdx] = { ...combined[curIdx], ...currentUser };
+      } else {
+        combined.unshift(currentUser);
       }
     }
-    return TEAM_ROSTER;
-  });
 
-  // Persist chat roster
-  useEffect(() => {
-    localStorage.setItem("gbk_chat_roster", JSON.stringify(chatRoster));
-  }, [chatRoster]);
+    return combined.map(u => {
+      const first = u.first || "";
+      const last = u.last || "";
+      const fullName = u.displayName || `${first} ${last}`.trim() || u.name || "User";
+      const photo = u.photo || u.avatar || null;
+      const userRole = u.jobTitle || u.role || "Mortgage Broker";
+      
+      // Determine status, statusLabel, and color indicator
+      let status = u.status || "online";
+      let statusLabel = u.statusLabel;
+      let color = u.color;
+
+      if (!statusLabel || !color) {
+        if (u.id === 'u_david' || u.id === 'dm_david' || fullName.includes("David Acosta")) {
+          status = "online";
+          statusLabel = "Active 🟢";
+          color = "bg-emerald-500";
+        } else if (u.id === 'u_waynem' || u.id === 'dm_wayne' || fullName.includes("Wayne MacLeod")) {
+          status = "busy";
+          statusLabel = "In Lender Call 📞";
+          color = "bg-red-400";
+        } else if (u.id === 'u_jeffb' || u.id === 'dm_jeff' || fullName.includes("Jeff Brown")) {
+          status = "online";
+          statusLabel = "Processing paystubs 🟢";
+          color = "bg-emerald-500";
+        } else if (u.id === 'u_timb' || u.id === 'dm_tim' || fullName.includes("Tim Brown")) {
+          status = "offline";
+          statusLabel = "Offline ⚪";
+          color = "bg-slate-500";
+        } else if (u.id === 'u_jameyb' || u.id === 'dm_jamey' || fullName.includes("Jamey Brown")) {
+          status = "away";
+          statusLabel = "Reviewing files 🟡";
+          color = "bg-amber-500";
+        } else if (u.id === 'u_matthewb' || u.id === 'dm_matt' || fullName.includes("Matt Brown")) {
+          status = "online";
+          statusLabel = "Processing BFS file 🟢";
+          color = "bg-emerald-500";
+        } else if (u.id === 'u_jasonm' || u.id === 'dm_jason' || fullName.includes("Jason Myszkowski")) {
+          status = "away";
+          statusLabel = "On-site visit 🟡";
+          color = "bg-amber-500";
+        } else {
+          if (status === 'inactive' || status === 'offline') {
+            status = "offline";
+            statusLabel = "Offline ⚪";
+            color = "bg-slate-500";
+          } else if (status === 'busy') {
+            statusLabel = "Busy 🔴";
+            color = "bg-red-400";
+          } else if (status === 'away') {
+            statusLabel = "Away 🟡";
+            color = "bg-amber-500";
+          } else {
+            status = "online";
+            statusLabel = "Active 🟢";
+            color = "bg-emerald-500";
+          }
+        }
+      }
+
+      return {
+        id: u.id,
+        name: fullName,
+        first: first,
+        last: last,
+        role: userRole,
+        status: status,
+        statusLabel: statusLabel,
+        color: color,
+        avatar: photo,
+        email: u.email
+      };
+    });
+  }, [userRoster, currentUser]);
 
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
@@ -152,30 +237,45 @@ export const Messages: React.FC<MessagesProps> = ({
     e.preventDefault();
     if (!newMemberName.trim()) return;
 
-    const newId = `dm_${Date.now()}`;
+    const nameParts = newMemberName.trim().split(" ");
+    const first = nameParts[0] || "";
+    const last = nameParts.slice(1).join(" ") || "";
+    const newId = `u_${Date.now()}`;
     const statusColor = 
       newMemberStatusLabel.includes("🟢") || newMemberStatusLabel.toLowerCase().includes("online") || newMemberStatusLabel.toLowerCase().includes("active") ? "bg-emerald-500" :
       newMemberStatusLabel.includes("🔴") || newMemberStatusLabel.toLowerCase().includes("busy") || newMemberStatusLabel.toLowerCase().includes("call") ? "bg-red-400" :
       newMemberStatusLabel.includes("🟡") || newMemberStatusLabel.toLowerCase().includes("away") || newMemberStatusLabel.toLowerCase().includes("site") ? "bg-amber-500" : "bg-slate-500";
 
-    const newMember = {
+    const newUserObj: any = {
       id: newId,
-      name: newMemberName.trim(),
-      role: newMemberRole.trim() || "Mortgage Broker",
-      status: "online",
+      first,
+      last,
+      displayName: newMemberName.trim(),
+      email: `${first.toLowerCase()}@gbkfinancial.ca`,
+      role: newMemberRole.trim() || "Broker",
+      jobTitle: newMemberRole.trim() || "Mortgage Broker",
+      status: "active",
       statusLabel: newMemberStatusLabel.trim() || "Active 🟢",
       color: statusColor,
-      avatar: null
+      photo: null,
+      created: new Date().toISOString()
     };
 
-    setChatRoster(prev => [...prev, newMember]);
+    if (setUserRoster) {
+      setUserRoster(prev => {
+        const updated = [...prev, newUserObj];
+        localStorage.setItem("gbk_roster", JSON.stringify(updated));
+        return updated;
+      });
+    }
+
     setNewMemberName("");
     setNewMemberRole("Mortgage Broker");
     setNewMemberStatusLabel("Active 🟢");
     setAddMemberOpen(false);
     setActiveChannel(newId);
     if (showToast) {
-      showToast(`${newMember.name} added to Team Hub discussion roster`, "success", "👤");
+      showToast(`${newUserObj.displayName} added to user roster & Team Channels`, "success", "👤");
     }
   };
 
@@ -200,7 +300,16 @@ export const Messages: React.FC<MessagesProps> = ({
   }, [activeChannel, unreadCounts]);
 
   const currentChannelDetails = useMemo(() => {
-    const dm = chatRoster.find(t => t.id === activeChannel);
+    const dm = chatRoster.find(t => 
+      t.id === activeChannel || 
+      (t.id === 'u_waynem' && activeChannel === 'dm_wayne') || 
+      (t.id === 'u_david' && activeChannel === 'dm_david') ||
+      (t.id === 'u_jeffb' && activeChannel === 'dm_jeff') ||
+      (t.id === 'u_timb' && activeChannel === 'dm_tim') ||
+      (t.id === 'u_jameyb' && activeChannel === 'dm_jamey') ||
+      (t.id === 'u_matthewb' && activeChannel === 'dm_matt') ||
+      (t.id === 'u_jasonm' && activeChannel === 'dm_jason')
+    );
     if (dm) {
       return { 
         name: dm.name, 
@@ -219,8 +328,20 @@ export const Messages: React.FC<MessagesProps> = ({
 
   // Sanitize message objects to match full operational model
   const rawChannelMessages = useMemo(() => {
-    const list = messages[activeChannel] || [];
-    return list.map((m: any, idx) => ({
+    let list = messages[activeChannel];
+    if (!list) {
+      if (activeChannel === 'u_waynem') list = messages['dm_wayne'];
+      else if (activeChannel === 'dm_wayne') list = messages['u_waynem'];
+      else if (activeChannel === 'u_david') list = messages['dm_david'];
+      else if (activeChannel === 'dm_david') list = messages['u_david'];
+      else if (activeChannel === 'u_jeffb') list = messages['dm_jeff'];
+      else if (activeChannel === 'u_timb') list = messages['dm_tim'];
+      else if (activeChannel === 'u_jameyb') list = messages['dm_jamey'];
+      else if (activeChannel === 'u_matthewb') list = messages['dm_matt'];
+      else if (activeChannel === 'u_jasonm') list = messages['dm_jason'];
+    }
+    const finalMsgList = list || [];
+    return finalMsgList.map((m: any, idx) => ({
       id: m.id || `m_seeded_${activeChannel}_${idx}`,
       senderId: m.senderId || "staff_other",
       author: m.author || "Teammate",
@@ -293,13 +414,40 @@ export const Messages: React.FC<MessagesProps> = ({
     }
   };
 
-  // Attach Preset Helper
-  const handleAttachPresetAction = (fileName: string, mime: string, size: string) => {
+  // File Size Format Helper
+  const formatFileSize = (bytes: number): string => {
+    if (!bytes || bytes === 0) return '0 KB';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  // Real File Selection Handler
+  const handleRealFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const selectedFiles = Array.from(e.target.files);
+
+    const newAttachments = selectedFiles.map((file: File) => ({
+      name: file.name,
+      size: formatFileSize(file.size),
+      type: file.type || "application/pdf"
+    }));
+
     setAttachedFiles(prev => {
-      if (prev.some(f => f.name === fileName)) return prev;
-      return [...prev, { name: fileName, size, type: mime }];
+      const existingNames = new Set(prev.map(f => f.name));
+      const filtered = newAttachments.filter(f => !existingNames.has(f.name));
+      return [...prev, ...filtered];
     });
+
+    if (showToast) {
+      showToast(`${selectedFiles.length} file(s) attached from computer`, "success", "📎");
+    }
+
     setShowAttachPresets(false);
+    if (e.target) {
+      e.target.value = "";
+    }
   };
 
   // Primary messaging dispatch
@@ -340,6 +488,64 @@ export const Messages: React.FC<MessagesProps> = ({
       localStorage.setItem("gbk_messages", JSON.stringify(updated));
       return updated;
     });
+
+    // If message is linked to a client, automatically append note to that client's file
+    const targetClientId = linkedChatClientId;
+    if (targetClientId && setClients) {
+      const matchedClient = clients.find(c => c.id === targetClientId);
+      if (matchedClient) {
+        const formattedDate = now.toLocaleDateString("en-CA");
+        const formattedTime = now.toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" });
+        const formattedDateTime = `${formattedDate} ${formattedTime}`;
+        const noteEntry = `[Team Channel - ${formattedDateTime} by ${authorName}]: ${newMsg.text}`;
+
+        setClients(prev => {
+          const updatedClients = prev.map(c => {
+            if (c.id === targetClientId) {
+              const currentNotes = c.notes || c.retentionNotes || "";
+              const updatedNotes = currentNotes ? `${currentNotes}\n${noteEntry}` : noteEntry;
+              return {
+                ...c,
+                notes: updatedNotes,
+                retentionNotes: updatedNotes,
+                appData: {
+                  ...(c.appData || {}),
+                  internalNotes: c.appData?.internalNotes ? `${c.appData.internalNotes}\n${noteEntry}` : noteEntry
+                },
+                updatedAt: now.toISOString()
+              };
+            }
+            return c;
+          });
+          localStorage.setItem("gbk_clients", JSON.stringify(updatedClients));
+          return updatedClients;
+        });
+
+        // Sync with activity engine file notes & timeline
+        try {
+          const existingFileNotes = getNotesForClient(matchedClient);
+          const newFileNote: FileNote = {
+            id: `note_tc_${Date.now()}`,
+            clientId: targetClientId,
+            author: authorName,
+            timestamp: now.toISOString(),
+            type: 'internal',
+            content: noteEntry
+          };
+          saveNotesForClient(targetClientId, [newFileNote, ...existingFileNotes]);
+          logActivityEvent({
+            clientId: targetClientId,
+            clientName: `${matchedClient.first} ${matchedClient.last}`,
+            eventType: "note_added",
+            user: authorName,
+            timestamp: now.toISOString(),
+            description: `Team Channel message automatically appended as note to client dossier.`
+          });
+        } catch (e) {
+          console.error("Failed to sync activityEngine note:", e);
+        }
+      }
+    }
 
     // Reset composer state
     setMsgInputText("");
@@ -742,14 +948,26 @@ export const Messages: React.FC<MessagesProps> = ({
 
             {/* Quick client linking filter */}
             <select
-              value={selectedClientSearch}
-              onChange={(e) => setSelectedClientSearch(e.target.value)}
-              className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl px-2.5 py-1.5 text-[10.5px] text-[var(--color-text-muted)] focus:outline-none font-bold shrink-0 max-w-[130px]"
+              value={selectedClientSearch || linkedChatClientId || ""}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedClientSearch(val);
+                if (setLinkedChatClientId) {
+                  setLinkedChatClientId(val || null);
+                }
+              }}
+              className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl px-2.5 py-1.5 text-[10.5px] text-[var(--color-text-muted)] focus:outline-none font-bold shrink-0 max-w-[190px] sm:max-w-[210px] truncate"
+              title="Link to Client / Filter messages by deal file"
             >
-              <option value="">📎 All Deals</option>
-              {clients.map(c => (
-                <option key={c.id} value={c.id}>{c.last}</option>
-              ))}
+              <option value="">📎 All Clients</option>
+              {clients.map(c => {
+                const tagDetail = c.stage || c.status || c.lender || "Active";
+                return (
+                  <option key={c.id} value={c.id}>
+                    {c.first} {c.last} ({tagDetail})
+                  </option>
+                );
+              })}
             </select>
 
             {/* Toggle pins panel button */}
@@ -1104,6 +1322,7 @@ export const Messages: React.FC<MessagesProps> = ({
                         <button
                           onClick={() => {
                             setLinkedChatClientId(null);
+                            setSelectedClientSearch("");
                             setShowClientLinkDropdown(false);
                           }}
                           className="w-full text-left p-1.5 hover:bg-[var(--color-surface-3)] text-[10.5px] text-[var(--color-text-faint)] rounded font-semibold italic"
@@ -1115,6 +1334,7 @@ export const Messages: React.FC<MessagesProps> = ({
                             key={c.id} 
                             onClick={() => {
                               setLinkedChatClientId(c.id);
+                              setSelectedClientSearch(c.id);
                               setShowClientLinkDropdown(false);
                             }}
                             className="p-1.5 hover:bg-[var(--color-surface-3)] text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] rounded-lg cursor-pointer truncate font-bold flex items-center justify-between"
@@ -1198,34 +1418,89 @@ export const Messages: React.FC<MessagesProps> = ({
               </button>
             </div>
 
-            {/* Quick local attachments */}
+            {/* Real computer document attachments */}
             <div className="relative">
+              <input 
+                type="file" 
+                ref={fileInputRef}
+                onChange={handleRealFileSelect}
+                multiple
+                className="hidden"
+                id="team-channels-file-input"
+              />
               <button 
                 onClick={() => setShowAttachPresets(!showAttachPresets)}
-                className="px-2.5 py-1.5 rounded-lg bg-[var(--color-panel)] hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] text-[10px] font-extrabold border border-[var(--color-border)] transition-all flex items-center gap-1"
+                className="px-2.5 py-1.5 rounded-lg bg-[var(--color-panel)] hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] text-[10px] font-extrabold border border-[var(--color-border)] transition-all flex items-center gap-1.5"
               >
-                <Paperclip className="w-3.5 h-3.5" />
+                <Paperclip className="w-3.5 h-3.5 text-[var(--color-accent)]" />
                 <span>Attach Doc</span>
               </button>
 
               {showAttachPresets && (
-                <div className="absolute bottom-full right-0 mb-2 bg-[var(--color-surface-2)] border border-[var(--color-border)]/80 rounded-2xl p-1.5 w-60 z-30 shadow-2xl">
-                  <div className="text-[9.5px] uppercase font-black text-[var(--color-text-faint)] px-2 py-1 select-none">Simulate Brokerage Files</div>
-                  {[
-                    { name: "signed_commitment_summary.pdf", type: "application/pdf", size: "340 KB" },
-                    { name: "employment_verification_letter.pdf", type: "application/pdf", size: "1.1 MB" },
-                    { name: "bank_history_90_days.pdf", type: "application/pdf", size: "4.2 MB" },
-                    { name: "property_appraisal_barrie.pdf", type: "application/pdf", size: "3.5 MB" }
-                  ].map((pr, id) => (
-                    <button
-                      key={id}
-                      onClick={() => handleAttachPresetAction(pr.name, pr.type, pr.size)}
-                      className="w-full text-left p-2 hover:bg-[var(--color-surface-3)] text-[11px] font-semibold rounded-lg truncate text-[var(--color-text-muted)] hover:text-[var(--color-text)] flex items-center justify-between gap-2"
+                <div className="absolute bottom-full right-0 mb-2 bg-[var(--color-surface-2)] border border-[var(--color-border)]/80 rounded-2xl p-3 w-72 z-30 shadow-2xl text-left select-none">
+                  <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-[var(--color-border)]/60">
+                    <div className="text-[10.5px] font-black uppercase text-[var(--color-text)] flex items-center gap-1.5">
+                      <Upload className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                      <span>Attach Documents</span>
+                    </div>
+                    <button 
+                      onClick={() => setShowAttachPresets(false)}
+                      className="text-[var(--color-text-faint)] hover:text-[var(--color-text)] text-xs font-bold px-1"
                     >
-                      <span className="truncate">{pr.name}</span>
-                      <span className="text-[9px] text-[var(--color-accent)] shrink-0">{pr.size}</span>
+                      ✕
                     </button>
-                  ))}
+                  </div>
+
+                  <p className="text-[10px] text-[var(--color-text-muted)] mb-3 leading-relaxed">
+                    Select mortgage documents directly from your computer to attach to this channel message.
+                  </p>
+
+                  {/* Primary File Chooser Button */}
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full py-2.5 px-3 bg-[var(--color-accent)] hover:brightness-110 text-black font-black text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm mb-2"
+                  >
+                    <Upload className="w-4 h-4 text-black" />
+                    <span>Choose Files from Computer</span>
+                  </button>
+
+                  {/* Drag and Drop Zone */}
+                  <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                        const dtFiles = Array.from(e.dataTransfer.files);
+                        const newItems = dtFiles.map((file: File) => ({
+                          name: file.name,
+                          size: formatFileSize(file.size),
+                          type: file.type || "application/pdf"
+                        }));
+                        setAttachedFiles(prev => {
+                          const existingNames = new Set(prev.map(f => f.name));
+                          const filtered = newItems.filter(f => !existingNames.has(f.name));
+                          return [...prev, ...filtered];
+                        });
+                        if (showToast) {
+                          showToast(`${dtFiles.length} file(s) attached from computer`, "success", "📎");
+                        }
+                        setShowAttachPresets(false);
+                      }
+                    }}
+                    className="border-2 border-dashed border-[var(--color-border)] hover:border-[var(--color-accent)]/60 bg-[var(--color-bg)]/40 hover:bg-[var(--color-bg)] rounded-xl p-2.5 text-center cursor-pointer transition-all"
+                  >
+                    <span className="text-[9.5px] text-[var(--color-text-faint)] block font-semibold">
+                      or drag & drop files here
+                    </span>
+                    <span className="text-[8.5px] text-[var(--color-text-faint)]/70 block mt-0.5 font-mono">
+                      PDF, PNG, JPG, DOCX, XLSX
+                    </span>
+                  </div>
+
+                  <div className="mt-2.5 pt-2 border-t border-[var(--color-border)]/50 text-[9px] text-[var(--color-text-faint)] font-medium leading-normal">
+                    💡 Common files: Paystubs, NOAs, Bank Ledgers, Appraisal Reports, Commitment Letters.
+                  </div>
                 </div>
               )}
             </div>

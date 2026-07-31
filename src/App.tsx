@@ -1255,6 +1255,7 @@ export default function App() {
               messages={messages}
               setMessages={setMessages}
               clients={clients}
+              setClients={setClients}
               currentUser={currentUser}
               activeChannel={activeChannel}
               setActiveChannel={setActiveChannel}
@@ -1265,6 +1266,7 @@ export default function App() {
               setTasks={setTasks}
               showToast={showToast}
               userRoster={userRoster}
+              setUserRoster={setUserRoster}
             />
           )}
 

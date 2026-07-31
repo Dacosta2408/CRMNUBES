@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Client, User } from "../types";
 import { DEFAULT_CLIENTS } from "../data";
 import { checkBridgeHealth, getAllClients, createClient, updateClient, deleteClient } from "../lib/bridgeService";
+import { fetchClientsApi, createClientApi, updateClientApi } from "../lib/api";
 import { safeJsonParse } from "../lib/json";
 
 export interface UseClientsDeps {
@@ -28,15 +29,44 @@ export function useClients({
   const [currentClient, setCurrentClient] = useState<Client | null>(null);
   const [clientViewMode, setClientViewMode] = useState<'database' | 'pipeline'>("database");
 
-  // Load clients from bridge server on mount if online
+  // Load clients from API / bridge server on mount
   useEffect(() => {
     async function loadInitialClients() {
+      let loadedClients: Client[] = [];
       const online = await checkBridgeHealth();
       if (online) {
-        const bridgeClients = await getAllClients();
-        if (bridgeClients && bridgeClients.length > 0) {
-          setClients(bridgeClients);
+        loadedClients = await getAllClients();
+      }
+      
+      // Fallback to PostgreSQL API
+      if (!loadedClients || loadedClients.length === 0) {
+        const apiClients = await fetchClientsApi();
+        if (apiClients && apiClients.length > 0) {
+          loadedClients = apiClients.map((c: any) => ({
+            id: c.id,
+            first: c.first_name,
+            last: c.last_name,
+            email: c.email || "",
+            phone: c.phone || "",
+            status: c.status || "In Review",
+            stage: c.stage || "Initial Application",
+            assignedTo: c.assigned_to || "David Acosta",
+            lender: c.lender || "",
+            source: c.source || "Direct Referral",
+            mtgamt: c.loan_amount || 0,
+            propval: c.property_value || 0,
+            rate: c.interest_rate || 0,
+            beacon: c.beacon_score || 0,
+            notes: c.notes || "",
+            retentionNotes: c.retention_notes || "",
+            createdAt: c.created_at || new Date().toISOString(),
+            updatedAt: c.updated_at || new Date().toISOString()
+          }));
         }
+      }
+
+      if (loadedClients && loadedClients.length > 0) {
+        setClients(loadedClients);
       }
     }
     loadInitialClients();

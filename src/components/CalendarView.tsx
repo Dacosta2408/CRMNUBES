@@ -205,8 +205,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   // Calendar settings state
   const [defaultView, setDefaultView] = useState<"day" | "week" | "month" | "list">("week");
   const [calendarSettingsOpen, setCalendarSettingsOpen] = useState(false);
-  const [workdayStartHour, setWorkdayStartHour] = useState<number>(8);
-  const [workdayEndHour, setWorkdayEndHour] = useState<number>(18);
+  const [workdayStartHour, setWorkdayStartHour] = useState<number>(7);
+  const [workdayEndHour, setWorkdayEndHour] = useState<number>(21);
   const [slotInterval, setSlotInterval] = useState<15 | 30>(15);
   const [defaultDuration, setDefaultDuration] = useState<number>(60);
   const [holidayRegion, setHolidayRegion] = useState<string>("ON");
@@ -1342,14 +1342,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end">
                 <button 
                   onClick={() => setAdvancedFiltersOpen(!advancedFiltersOpen)}
-                  className={`p-2 border rounded-xl transition-all flex items-center gap-1.5 cursor-pointer relative ${
+                  className={`px-3 py-2 border rounded-xl transition-all flex items-center gap-1.5 cursor-pointer relative shadow-xs ${
                     advancedFiltersOpen || isFilterActive
-                      ? "border-[var(--color-calendar-selected-bg)]/40 bg-[var(--color-calendar-selected-bg)]/10 text-[#1C2230] dark:text-[var(--color-calendar-strong-text)] font-extrabold"
-                      : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[#2D3250] dark:text-[var(--color-text-muted)] hover:text-[var(--color-calendar-selected-bg)] hover:border-[var(--color-calendar-selected-bg)]/30 hover:bg-[var(--color-surface-3)]"
+                      ? "border-[var(--color-accent)] bg-[var(--color-accent-subtle)] text-[var(--color-accent)] font-extrabold"
+                      : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent-border)] hover:bg-[var(--color-surface-3)]"
                   }`}
                   title="Toggle Advanced Filters"
                 >
-                  <SlidersHorizontal className="w-4 h-4" />
+                  <SlidersHorizontal className="w-4 h-4 text-[var(--color-accent)] shrink-0" />
                   <span className="hidden sm:inline text-[10px] font-extrabold tracking-wider uppercase px-0.5">Filters</span>
                   {isFilterActive && (
                     <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[var(--color-accent)] ring-2 ring-[var(--color-bg)] animate-pulse" />
@@ -1358,10 +1358,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 
                 <button 
                   onClick={() => setCalendarSettingsOpen(true)}
-                  className="p-2 border border-[var(--color-border)] bg-[var(--color-surface-2)] rounded-xl hover:bg-[var(--color-surface-3)] text-[#2D3250] dark:text-[var(--color-text-muted)] hover:text-[var(--color-calendar-selected-bg)] hover:border-[var(--color-calendar-selected-bg)]/30 transition-all flex items-center gap-1 cursor-pointer"
+                  className="px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface-2)] rounded-xl hover:bg-[var(--color-surface-3)] text-[var(--color-text)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent-border)] transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
                   title="Configure working hours and time slots"
                 >
-                  <Settings className="w-4 h-4" />
+                  <Settings className="w-4 h-4 text-[var(--color-text-muted)] hover:text-[var(--color-accent)] shrink-0" />
                   <span className="hidden sm:inline text-[10px] font-extrabold tracking-wider uppercase px-0.5">Settings</span>
                 </button>
 
@@ -1369,20 +1369,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
                 <button 
                   onClick={prevTimeFrame}
-                  className="p-2 border border-[var(--color-border)] bg-[var(--color-surface-2)] rounded-xl hover:bg-[var(--color-surface-3)] hover:text-[var(--color-calendar-selected-bg)] hover:border-[var(--color-calendar-selected-bg)]/30 transition-all text-[#2D3250] dark:text-[var(--color-text-muted)] cursor-pointer"
+                  className="p-2 border border-[var(--color-border)] bg-[var(--color-surface-2)] rounded-xl hover:bg-[var(--color-surface-3)] text-[var(--color-text)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent-border)] transition-all cursor-pointer flex items-center justify-center shadow-xs"
                   title="Previous range"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <button 
                   onClick={goToToday}
-                  className="px-3.5 py-2 border border-[var(--color-calendar-selected-bg)]/20 text-[#2D3250] dark:text-[var(--color-calendar-strong-text)] bg-[var(--color-calendar-selected-bg)]/5 font-extrabold rounded-xl text-xs hover:bg-[var(--color-calendar-selected-bg)]/15 transition-all cursor-pointer"
+                  className="px-3.5 py-2 border border-[var(--color-accent)]/30 text-[var(--color-text)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-subtle)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)]/60 font-extrabold rounded-xl text-xs transition-all cursor-pointer shadow-xs"
                 >
                   Today
                 </button>
                 <button 
                   onClick={nextTimeFrame}
-                  className="p-2 border border-[var(--color-border)] bg-[var(--color-surface-2)] rounded-xl hover:bg-[var(--color-surface-3)] hover:text-[var(--color-calendar-selected-bg)] hover:border-[var(--color-calendar-selected-bg)]/30 transition-all text-[#2D3250] dark:text-[var(--color-text-muted)] cursor-pointer"
+                  className="p-2 border border-[var(--color-border)] bg-[var(--color-surface-2)] rounded-xl hover:bg-[var(--color-surface-3)] text-[var(--color-text)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent-border)] transition-all cursor-pointer flex items-center justify-center shadow-xs"
                   title="Next range"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -1581,12 +1581,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       className="flex border-b border-[var(--color-border)]/20 group/hour min-h-[72px]"
                     >
                       {/* Time column (sticky left) */}
-                      <div className="w-20 shrink-0 p-3 flex flex-col justify-start border-r border-[var(--color-border)]/60 bg-[var(--color-surface-2)]/20 select-none font-mono text-left">
+                      <div className="w-20 shrink-0 p-3 flex flex-col justify-center border-r border-[var(--color-border)]/60 bg-[var(--color-surface-2)]/20 select-none font-mono text-left">
                         <span className="text-xs font-bold text-[var(--color-text)]">
-                          {hourStr}:00
-                        </span>
-                        <span className="text-[9px] text-[var(--color-text-faint)] font-bold mt-0.5 uppercase tracking-wide">
-                          {block.num >= 12 ? "PM" : "AM"}
+                          {block.num % 12 === 0 ? 12 : block.num % 12}:00 {block.num >= 12 ? "PM" : "AM"}
                         </span>
                       </div>
 
@@ -1801,181 +1798,404 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             </div>
           )}
 
-          {/* VIEW CASE 2: WEEK TIMELINE GRID (Clean 7-Day Agenda Columns) */}
+          {/* VIEW CASE 2: WEEK TIMELINE GRID (Weekday & Weekend Hourly Timeline) */}
           {viewMode === "week" && (
-            <div className="flex-1 flex flex-col min-h-0 bg-[var(--color-surface-2)]/30" id="view-timeline-week">
-              {/* Header summary info */}
-              <div className="p-3 bg-[var(--color-surface-2)] border-b border-[var(--color-border)] flex items-center justify-between shrink-0 select-none text-[10.5px]">
-                <span className="font-bold text-[var(--color-text-muted)]">Weekly Agenda Schedule</span>
-                <span className="text-[var(--color-accent)] font-mono font-bold tracking-wider">Active Month Grid Sync</span>
+            <div className="flex-1 flex flex-col min-h-0 bg-[var(--color-surface-2)]/30 overflow-y-auto p-4 space-y-6" id="view-timeline-week">
+              
+              {/* Top Header Bar */}
+              <div className="p-3 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-2xl flex items-center justify-between shrink-0 select-none">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-[var(--color-accent)]" />
+                  <span className="font-bold text-[var(--color-text)] text-xs uppercase tracking-wider">
+                    Week Timeline ({weekDays[0]?.fullLabel} — {weekDays[6]?.fullLabel})
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleOpenAddModal(selectedDateStr)}
+                  className="px-3 py-1 bg-[var(--color-calendar-selected-bg)]/10 hover:bg-[var(--color-calendar-selected-bg)]/20 border border-[var(--color-calendar-selected-bg)]/30 text-[var(--color-calendar-strong-text)] font-extrabold text-[10px] uppercase rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" /> Book Appointment
+                </button>
               </div>
 
-              {/* Columns container */}
-              <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 flex gap-4 min-w-0 h-full">
-                {weekDays.map(wd => {
-                  const dayEvents = filteredEvents.filter(e => e.date === wd.dateStr);
-                  const isDaySelected = selectedDateStr === wd.dateStr;
+              {/* ROW 1: WEEKDAYS (Monday - Friday) */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm flex flex-col shrink-0">
+                {/* Section Header */}
+                <div className="px-4 py-2.5 bg-[var(--color-surface-2)] border-b border-[var(--color-border)] flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-[var(--color-text)] uppercase tracking-wider">Weekdays</span>
+                    <span className="text-[10px] font-bold text-[var(--color-text-muted)] bg-[var(--color-surface-3)] px-2 py-0.5 rounded-md border border-[var(--color-border)]">
+                      Mon – Fri
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold text-[var(--color-text-faint)]">
+                    {weekDays[0]?.fullLabel} to {weekDays[4]?.fullLabel}
+                  </span>
+                </div>
 
-                  return (
-                    <div
-                      key={wd.dateStr}
-                      className={`flex-1 min-w-[170px] xl:min-w-[180px] 2xl:min-w-[200px] bg-[var(--color-surface)] border rounded-2xl flex flex-col min-h-0 transition-all ${
-                        isDaySelected 
-                          ? "border-[var(--color-calendar-selected-bg)]/40 bg-[var(--color-surface-2)] ring-1 ring-[var(--color-calendar-selected-bg)]/10" 
-                          : wd.isToday 
-                            ? "border-[var(--color-border)] bg-[var(--color-surface-2)]" 
-                            : "border-[var(--color-border)]/50"
-                      }`}
-                    >
-                      {/* Day Header */}
-                      <div className="p-3 border-b border-[var(--color-border)] flex items-center justify-between shrink-0 bg-[var(--color-surface-2)]/50 rounded-t-2xl">
-                        <div 
-                          onClick={() => {
-                            selectDay(wd.dateStr);
-                            setViewMode("day");
-                          }}
-                          className="cursor-pointer group flex flex-col text-left"
-                        >
-                          <span className={`text-[9px] uppercase font-bold tracking-widest ${isDaySelected ? "text-[var(--color-calendar-strong-text)]" : "text-[var(--color-text-faint)] group-hover:text-[var(--color-accent)]"}`}>
-                            {wd.dayLabel}
-                          </span>
-                          <span className={`text-sm font-black mt-0.5 ${isDaySelected ? "text-[var(--color-accent)]" : "text-[var(--color-text)]"}`}>
-                            {wd.dayNum}
-                          </span>
-                        </div>
-
-                        <button
-                          onClick={() => handleOpenAddModal(wd.dateStr)}
-                          className="p-1 bg-[var(--color-surface-3)] hover:bg-[var(--color-calendar-selected-bg)] hover:text-[var(--color-calendar-selected-text)] rounded-lg border border-[var(--color-border)] transition-all text-[var(--color-text)] cursor-pointer"
-                          title={`Book for ${wd.fullLabel}`}
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
-
-                      {/* Day Events List */}
-                      <div className="flex-grow overflow-y-auto p-2.5 space-y-2 min-h-[220px]">
-                        {dayEvents.length === 0 ? (
-                           <div className="h-full flex flex-col items-center justify-center py-10 text-center select-none text-[var(--color-text-faint)]">
-                            <CalendarIcon className="w-6 h-6 opacity-40 mb-1" />
-                            <span className="text-[8.5px] font-bold uppercase tracking-wider">No Events</span>
-                          </div>
-                        ) : (
-                          dayEvents
-                            .sort((a, b) => (a.time || "").localeCompare(b.time || ""))
-                            .map(ev => {
-                              const scheme = getTypeColor(ev.type);
-                              const isCompleted = ev.status === "completed";
-                              const isCanceled = ev.status === "canceled";
-                              return (
-                                  <div
-                                    key={ev.id}
-                                    onClick={() => handleOpenEditModal(ev)}
-                                    className={`p-2.5 rounded-xl border text-[11px] font-bold cursor-pointer select-none relative group hover:brightness-110 active:scale-[0.98] transition-all flex flex-col gap-1 text-left ${scheme.lightBg} ${scheme.border} ${scheme.text} ${scheme.glow} ${
-                                      isCanceled ? "line-through opacity-50 decoration-[var(--color-error)]" : ""
-                                    }`}
-                                  >
-                                    <div className="flex items-center justify-between gap-1">
-                                      <span className="font-mono text-[9px] opacity-75">{ev.time || "All Day"}</span>
-                                      <span className={`w-1.5 h-1.5 rounded-full ${scheme.color} shrink-0`} />
-                                    </div>
-                                    <div className={`line-clamp-2 leading-tight mt-0.5 font-semibold group-hover:opacity-90 flex items-center flex-wrap gap-1 ${
-                                      isCanceled 
-                                        ? "line-through text-[var(--color-text-faint)]/70 decoration-[var(--color-error)]" 
-                                        : isCompleted 
-                                          ? "text-[var(--color-success)] font-extrabold" 
-                                          : "text-[var(--color-text)]"
-                                    }`}>
-                                      {ev.isPrivate && <Lock className="w-2.5 h-2.5 text-[var(--color-warning)] inline-block shrink-0" />}
-                                      {isCompleted && <Check className="w-3.5 h-3.5 text-[var(--color-success)] inline-block shrink-0" />}
-                                      <span>{ev.title}</span>
-                                    </div>
-                                  {ev.notes && (
-                                    <p className="text-[9px] opacity-75 truncate font-normal mt-0.5 text-[var(--color-text-muted)]">
-                                      {ev.notes}
-                                    </p>
-                                  )}
-
-                                    {/* Quick hover-revealed activity actions */}
-                                    <div className="mt-2 pt-1.5 border-t border-[var(--color-border)]/25 flex flex-wrap items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-all">
-                                      {ev.id.startsWith("system-holiday-") ? (
-                                        <span className="text-[8px] font-black uppercase text-[var(--color-text-muted)] bg-[var(--color-surface-2)] border border-[var(--color-border)] px-1.5 py-0.5 rounded select-none">
-                                          Stat Holiday ({holidayRegion})
-                                        </span>
-                                      ) : (
-                                        <>
-                                          {ev.status !== "completed" && (
-                                            <QuickActionButton
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleUpdateEventStatus(ev.id, "completed");
-                                              }}
-                                              variant="done"
-                                              title="Complete"
-                                            />
-                                          )}
-                                          {ev.status !== "canceled" && (
-                                            <QuickActionButton
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleUpdateEventStatus(ev.id, "canceled");
-                                              }}
-                                              variant="cancel"
-                                              title="Cancel"
-                                            />
-                                          )}
-                                          <QuickActionButton
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleDuplicateEvent(ev);
-                                            }}
-                                            variant="copy"
-                                            title="Duplicate"
-                                          />
-                                          <QuickActionButton
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleRescheduleEvent(ev, "next-day");
-                                            }}
-                                            variant="plus1"
-                                            title="Reschedule +1 Day"
-                                          />
-                                          <QuickActionButton
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleRescheduleEvent(ev, "next-week");
-                                            }}
-                                            variant="plus7"
-                                            title="Reschedule +1 Week"
-                                          />
-                                          <QuickActionButton
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleOpenEditModal(ev);
-                                            }}
-                                            variant="edit"
-                                            title="Edit"
-                                          />
-                                          <QuickActionButton
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleRemoveEvent(ev.id);
-                                            }}
-                                            variant="delete"
-                                            title="Delete"
-                                          />
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-                              );
-                            })
-                        )}
-                      </div>
+                {/* All-Day / Unscheduled Bar for Weekdays */}
+                {weekDays.slice(0, 5).some(wd => filteredEvents.some(e => e.date === wd.dateStr && !e.time)) && (
+                  <div className="p-2.5 bg-[var(--color-calendar-selected-bg)]/5 border-b border-[var(--color-border)] flex items-center gap-2 overflow-x-auto text-[10px]">
+                    <span className="font-bold text-[var(--color-text-muted)] uppercase shrink-0">Unscheduled / All-Day:</span>
+                    <div className="flex items-center gap-2">
+                      {weekDays.slice(0, 5).flatMap(wd => 
+                        filteredEvents.filter(e => e.date === wd.dateStr && !e.time).map(ev => {
+                          const scheme = getTypeColor(ev.type);
+                          return (
+                            <div
+                              key={ev.id}
+                              onClick={() => handleOpenEditModal(ev)}
+                              className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold cursor-pointer hover:brightness-110 flex items-center gap-1.5 shrink-0 ${scheme.lightBg} ${scheme.border} ${scheme.text}`}
+                            >
+                              <span className="font-mono text-[9px] opacity-75">[{wd.dayLabel}]</span>
+                              <span>{ev.title}</span>
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
-                  );
-                })}
+                  </div>
+                )}
+
+                {/* Weekdays Grid Table */}
+                <div className="overflow-x-auto">
+                  <div className="min-w-[800px]">
+                    {/* Day Headers (Time + 5 Day Columns) */}
+                    <div className="grid grid-cols-12 bg-[var(--color-surface-2)]/60 border-b border-[var(--color-border)] select-none">
+                      <div className="col-span-2 p-2.5 text-center text-[10px] font-black uppercase text-[var(--color-text-muted)] tracking-wider border-r border-[var(--color-border)]/60 flex items-center justify-center gap-1">
+                        <Clock className="w-3 h-3 text-[var(--color-accent)]" /> Time Axis
+                      </div>
+                      {weekDays.slice(0, 5).map(wd => {
+                        const isDaySelected = selectedDateStr === wd.dateStr;
+                        return (
+                          <div
+                            key={wd.dateStr}
+                            className={`col-span-2 p-2.5 border-r last:border-r-0 border-[var(--color-border)]/60 flex items-center justify-between gap-1 transition-colors ${
+                              isDaySelected ? "bg-[var(--color-calendar-selected-bg)]/15" : wd.isToday ? "bg-[var(--color-calendar-selected-bg)]/5" : ""
+                            }`}
+                          >
+                            <div
+                              onClick={() => {
+                                selectDay(wd.dateStr);
+                                setViewMode("day");
+                              }}
+                              className="cursor-pointer group flex flex-col text-left"
+                            >
+                              <span className={`text-[9px] uppercase font-black tracking-widest ${isDaySelected ? "text-[var(--color-accent)]" : "text-[var(--color-text-faint)] group-hover:text-[var(--color-accent)]"}`}>
+                                {wd.dayLabel}
+                              </span>
+                              <span className={`text-xs font-black ${isDaySelected ? "text-[var(--color-accent)]" : "text-[var(--color-text)]"}`}>
+                                {wd.fullLabel}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => handleOpenAddModal(wd.dateStr)}
+                              className="p-1 bg-[var(--color-surface-3)] hover:bg-[var(--color-calendar-selected-bg)] hover:text-[var(--color-calendar-selected-text)] rounded-md border border-[var(--color-border)] transition-all text-[var(--color-text)] cursor-pointer"
+                              title={`Book for ${wd.fullLabel}`}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Hour-by-Hour Rows for Weekdays */}
+                    <div className="divide-y divide-[var(--color-border)]/40 bg-[var(--color-bg)]/50">
+                      {hoursOfDay.map(block => {
+                        const hourStr = String(block.num).padStart(2, "0");
+                        const ampm = block.num >= 12 ? "PM" : "AM";
+                        const displayHour = block.num % 12 === 0 ? 12 : block.num % 12;
+
+                        return (
+                          <div key={block.num} className="grid grid-cols-12 min-h-[64px] group/row hover:bg-[var(--color-surface-2)]/20 transition-colors">
+                            {/* Time Label Column */}
+                            <div className="col-span-2 p-2 border-r border-[var(--color-border)]/60 bg-[var(--color-surface-2)]/30 flex flex-col justify-center items-center font-mono select-none">
+                              <span className="text-xs font-black text-[var(--color-text)]">{displayHour}:00 {ampm}</span>
+                            </div>
+
+                            {/* 5 Weekday Columns */}
+                            {weekDays.slice(0, 5).map(wd => {
+                              const dayEvents = filteredEvents.filter(ev => {
+                                if (ev.date !== wd.dateStr) return false;
+                                if (!ev.time) return false;
+                                const [evHStr] = ev.time.split(":");
+                                const evH = parseInt(evHStr, 10);
+                                return evH === block.num;
+                              });
+
+                              const isDaySelected = selectedDateStr === wd.dateStr;
+
+                              return (
+                                <div
+                                  key={wd.dateStr}
+                                  onClick={() => handleOpenAddModal(wd.dateStr, `${hourStr}:00`)}
+                                  className={`col-span-2 p-1.5 border-r last:border-r-0 border-[var(--color-border)]/40 flex flex-col gap-1 transition-colors cursor-pointer group/cell relative ${
+                                    isDaySelected ? "bg-[var(--color-calendar-selected-bg)]/5" : "hover:bg-[var(--color-surface-3)]/40"
+                                  }`}
+                                >
+                                  {dayEvents.length > 0 ? (
+                                    dayEvents.map(ev => {
+                                      const scheme = getTypeColor(ev.type);
+                                      const isCompleted = ev.status === "completed";
+                                      const isCanceled = ev.status === "canceled";
+
+                                      return (
+                                        <div
+                                          key={ev.id}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenEditModal(ev);
+                                          }}
+                                          className={`p-2 rounded-lg border text-[10px] font-bold cursor-pointer select-none group/card hover:brightness-110 transition-all flex flex-col gap-1 text-left shadow-xs ${scheme.lightBg} ${scheme.border} ${scheme.text} ${scheme.glow} ${
+                                            isCanceled ? "line-through opacity-50 decoration-[var(--color-error)]" : ""
+                                          }`}
+                                        >
+                                          <div className="flex items-center justify-between gap-1">
+                                            <span className="font-mono text-[8.5px] opacity-80">{ev.time}</span>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${scheme.color} shrink-0`} />
+                                          </div>
+                                          <div className={`truncate font-semibold ${
+                                            isCompleted ? "text-[var(--color-success)]" : "text-[var(--color-text)]"
+                                          }`}>
+                                            {ev.isPrivate && <Lock className="w-2.5 h-2.5 text-[var(--color-warning)] inline mr-0.5" />}
+                                            {isCompleted && <Check className="w-3 h-3 text-[var(--color-success)] inline mr-0.5" />}
+                                            {ev.title}
+                                          </div>
+
+                                          {/* Quick hover action bar */}
+                                          <div className="mt-1 pt-1 border-t border-[var(--color-border)]/20 flex items-center justify-end gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                                            {ev.status !== "completed" && (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleUpdateEventStatus(ev.id, "completed");
+                                                }}
+                                                className="p-1 rounded bg-[var(--color-success-subtle)] text-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white transition-all text-[8px]"
+                                                title="Complete"
+                                              >
+                                                <Check className="w-2.5 h-2.5" />
+                                              </button>
+                                            )}
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenEditModal(ev);
+                                              }}
+                                              className="p-1 rounded bg-[var(--color-surface-3)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-all text-[8px]"
+                                              title="Edit"
+                                            >
+                                              <Edit3 className="w-2.5 h-2.5" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="h-full min-h-[40px] flex items-center justify-center opacity-0 group-hover/cell:opacity-100 text-[9px] text-[var(--color-text-faint)] font-mono transition-opacity">
+                                      + {hourStr}:00
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               </div>
+
+              {/* ROW 2: WEEKEND (Saturday & Sunday) */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm flex flex-col shrink-0">
+                {/* Section Header */}
+                <div className="px-4 py-2.5 bg-[var(--color-surface-2)] border-b border-[var(--color-border)] flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-[var(--color-text)] uppercase tracking-wider">Weekend</span>
+                    <span className="text-[10px] font-bold text-[var(--color-text-muted)] bg-[var(--color-surface-3)] px-2 py-0.5 rounded-md border border-[var(--color-border)]">
+                      Sat – Sun
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold text-[var(--color-text-faint)]">
+                    {weekDays[5]?.fullLabel} & {weekDays[6]?.fullLabel}
+                  </span>
+                </div>
+
+                {/* All-Day / Unscheduled Bar for Weekend */}
+                {weekDays.slice(5, 7).some(wd => filteredEvents.some(e => e.date === wd.dateStr && !e.time)) && (
+                  <div className="p-2.5 bg-[var(--color-calendar-selected-bg)]/5 border-b border-[var(--color-border)] flex items-center gap-2 overflow-x-auto text-[10px]">
+                    <span className="font-bold text-[var(--color-text-muted)] uppercase shrink-0">Unscheduled / All-Day:</span>
+                    <div className="flex items-center gap-2">
+                      {weekDays.slice(5, 7).flatMap(wd => 
+                        filteredEvents.filter(e => e.date === wd.dateStr && !e.time).map(ev => {
+                          const scheme = getTypeColor(ev.type);
+                          return (
+                            <div
+                              key={ev.id}
+                              onClick={() => handleOpenEditModal(ev)}
+                              className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold cursor-pointer hover:brightness-110 flex items-center gap-1.5 shrink-0 ${scheme.lightBg} ${scheme.border} ${scheme.text}`}
+                            >
+                              <span className="font-mono text-[9px] opacity-75">[{wd.dayLabel}]</span>
+                              <span>{ev.title}</span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Weekend Grid Table */}
+                <div className="overflow-x-auto">
+                  <div className="min-w-[600px]">
+                    {/* Day Headers (Time + 2 Day Columns) */}
+                    <div className="grid grid-cols-12 bg-[var(--color-surface-2)]/60 border-b border-[var(--color-border)] select-none">
+                      <div className="col-span-2 p-2.5 text-center text-[10px] font-black uppercase text-[var(--color-text-muted)] tracking-wider border-r border-[var(--color-border)]/60 flex items-center justify-center gap-1">
+                        <Clock className="w-3 h-3 text-[var(--color-accent)]" /> Time Axis
+                      </div>
+                      {weekDays.slice(5, 7).map(wd => {
+                        const isDaySelected = selectedDateStr === wd.dateStr;
+                        return (
+                          <div
+                            key={wd.dateStr}
+                            className={`col-span-5 p-2.5 border-r last:border-r-0 border-[var(--color-border)]/60 flex items-center justify-between gap-1 transition-colors ${
+                              isDaySelected ? "bg-[var(--color-calendar-selected-bg)]/15" : wd.isToday ? "bg-[var(--color-calendar-selected-bg)]/5" : ""
+                            }`}
+                          >
+                            <div
+                              onClick={() => {
+                                selectDay(wd.dateStr);
+                                setViewMode("day");
+                              }}
+                              className="cursor-pointer group flex flex-col text-left"
+                            >
+                              <span className={`text-[9px] uppercase font-black tracking-widest ${isDaySelected ? "text-[var(--color-accent)]" : "text-[var(--color-text-faint)] group-hover:text-[var(--color-accent)]"}`}>
+                                {wd.dayLabel}
+                              </span>
+                              <span className={`text-xs font-black ${isDaySelected ? "text-[var(--color-accent)]" : "text-[var(--color-text)]"}`}>
+                                {wd.fullLabel}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => handleOpenAddModal(wd.dateStr)}
+                              className="p-1 bg-[var(--color-surface-3)] hover:bg-[var(--color-calendar-selected-bg)] hover:text-[var(--color-calendar-selected-text)] rounded-md border border-[var(--color-border)] transition-all text-[var(--color-text)] cursor-pointer"
+                              title={`Book for ${wd.fullLabel}`}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Hour-by-Hour Rows for Weekend */}
+                    <div className="divide-y divide-[var(--color-border)]/40 bg-[var(--color-bg)]/50">
+                      {hoursOfDay.map(block => {
+                        const hourStr = String(block.num).padStart(2, "0");
+                        const ampm = block.num >= 12 ? "PM" : "AM";
+                        const displayHour = block.num % 12 === 0 ? 12 : block.num % 12;
+
+                        return (
+                          <div key={block.num} className="grid grid-cols-12 min-h-[56px] group/row hover:bg-[var(--color-surface-2)]/20 transition-colors">
+                            {/* Time Label Column */}
+                            <div className="col-span-2 p-2 border-r border-[var(--color-border)]/60 bg-[var(--color-surface-2)]/30 flex flex-col justify-center items-center font-mono select-none">
+                              <span className="text-xs font-black text-[var(--color-text)]">{displayHour}:00 {ampm}</span>
+                            </div>
+
+                            {/* 2 Weekend Columns (Sat, Sun) */}
+                            {weekDays.slice(5, 7).map(wd => {
+                              const dayEvents = filteredEvents.filter(ev => {
+                                if (ev.date !== wd.dateStr) return false;
+                                if (!ev.time) return false;
+                                const [evHStr] = ev.time.split(":");
+                                const evH = parseInt(evHStr, 10);
+                                return evH === block.num;
+                              });
+
+                              const isDaySelected = selectedDateStr === wd.dateStr;
+
+                              return (
+                                <div
+                                  key={wd.dateStr}
+                                  onClick={() => handleOpenAddModal(wd.dateStr, `${hourStr}:00`)}
+                                  className={`col-span-5 p-1.5 border-r last:border-r-0 border-[var(--color-border)]/40 flex flex-col gap-1 transition-colors cursor-pointer group/cell relative ${
+                                    isDaySelected ? "bg-[var(--color-calendar-selected-bg)]/5" : "hover:bg-[var(--color-surface-3)]/40"
+                                  }`}
+                                >
+                                  {dayEvents.length > 0 ? (
+                                    dayEvents.map(ev => {
+                                      const scheme = getTypeColor(ev.type);
+                                      const isCompleted = ev.status === "completed";
+                                      const isCanceled = ev.status === "canceled";
+
+                                      return (
+                                        <div
+                                          key={ev.id}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenEditModal(ev);
+                                          }}
+                                          className={`p-2 rounded-lg border text-[10px] font-bold cursor-pointer select-none group/card hover:brightness-110 transition-all flex flex-col gap-1 text-left shadow-xs ${scheme.lightBg} ${scheme.border} ${scheme.text} ${scheme.glow} ${
+                                            isCanceled ? "line-through opacity-50 decoration-[var(--color-error)]" : ""
+                                          }`}
+                                        >
+                                          <div className="flex items-center justify-between gap-1">
+                                            <span className="font-mono text-[8.5px] opacity-80">{ev.time}</span>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${scheme.color} shrink-0`} />
+                                          </div>
+                                          <div className={`truncate font-semibold ${
+                                            isCompleted ? "text-[var(--color-success)]" : "text-[var(--color-text)]"
+                                          }`}>
+                                            {ev.isPrivate && <Lock className="w-2.5 h-2.5 text-[var(--color-warning)] inline mr-0.5" />}
+                                            {isCompleted && <Check className="w-3 h-3 text-[var(--color-success)] inline mr-0.5" />}
+                                            {ev.title}
+                                          </div>
+
+                                          {/* Quick hover action bar */}
+                                          <div className="mt-1 pt-1 border-t border-[var(--color-border)]/20 flex items-center justify-end gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                                            {ev.status !== "completed" && (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleUpdateEventStatus(ev.id, "completed");
+                                                }}
+                                                className="p-1 rounded bg-[var(--color-success-subtle)] text-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white transition-all text-[8px]"
+                                                title="Complete"
+                                              >
+                                                <Check className="w-2.5 h-2.5" />
+                                              </button>
+                                            )}
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenEditModal(ev);
+                                              }}
+                                              className="p-1 rounded bg-[var(--color-surface-3)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-all text-[8px]"
+                                              title="Edit"
+                                            >
+                                              <Edit3 className="w-2.5 h-2.5" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="h-full min-h-[36px] flex items-center justify-center opacity-0 group-hover/cell:opacity-100 text-[9px] text-[var(--color-text-faint)] font-mono transition-opacity">
+                                      + {hourStr}:00
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
             </div>
           )}
 
