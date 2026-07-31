@@ -22,104 +22,94 @@ function getHeaders(contentType?: string): HeadersInit {
 }
 
 /**
+ * Safely fetches an API endpoint and parses JSON.
+ * Returns fallback if network fails, HTTP status is non-2xx, or body is not valid JSON.
+ */
+async function safeFetchJson<T>(url: string, options?: RequestInit, fallback: T = null as any): Promise<T> {
+  try {
+    const res = await fetch(url, options);
+    if (!res.ok) {
+      return fallback;
+    }
+    const text = await res.text();
+    if (!text || !text.trim()) {
+      return fallback;
+    }
+    const trimmed = text.trim();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+      console.warn(`[bridgeService] Non-JSON response received from ${url}`);
+      return fallback;
+    }
+    try {
+      return JSON.parse(trimmed) as T;
+    } catch (parseErr) {
+      console.warn(`[bridgeService] JSON parse error from ${url}:`, parseErr);
+      return fallback;
+    }
+  } catch (err) {
+    // Network error or offline - return fallback cleanly without throwing
+    return fallback;
+  }
+}
+
+/**
  * Checks if the bridge server is running and accessible.
  */
 export async function checkBridgeHealth(): Promise<boolean> {
-  try {
-    const res = await fetch(`${BRIDGE_URL}/api/health`, {
-      method: "GET",
-      headers: { "Accept": "application/json" },
-      signal: AbortSignal.timeout(2000) // 2s timeout for snappy check
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    return data.status === "ok";
-  } catch (err) {
-    console.warn("Z Drive Bridge connection failed (offline):", err);
-    return false;
-  }
+  const data = await safeFetchJson<{ status?: string }>(`${BRIDGE_URL}/api/health`, {
+    method: "GET",
+    headers: { "Accept": "application/json" },
+    signal: AbortSignal.timeout(2000) // 2s timeout for snappy check
+  }, null);
+
+  return data !== null && (data.status === "ok" || data.status === "online");
 }
 
 /**
  * Fetches the version of the bridge server.
  */
 export async function getBridgeVersion(): Promise<{ version: string; env: string } | null> {
-  try {
-    const res = await fetch(`${BRIDGE_URL}/api/version`, {
-      method: "GET",
-      headers: getHeaders(),
-      signal: AbortSignal.timeout(2000)
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    console.warn("Failed to fetch bridge version:", err);
-    return null;
-  }
+  return safeFetchJson(`${BRIDGE_URL}/api/version`, {
+    method: "GET",
+    headers: getHeaders(),
+    signal: AbortSignal.timeout(2000)
+  }, null);
 }
 
 /**
  * Clients CRUD
  */
 export async function getAllClients(): Promise<Client[]> {
-  try {
-    const res = await fetch(`${BRIDGE_URL}/api/clients`, {
-      headers: getHeaders()
-    });
-    if (!res.ok) return [];
-    return await res.json();
-  } catch (err) {
-    logError("bridgeService.getAllClients error:", err);
-    return [];
-  }
+  return safeFetchJson(`${BRIDGE_URL}/api/clients`, {
+    headers: getHeaders()
+  }, []);
 }
 
 export async function getClient(id: string): Promise<Client | null> {
-  try {
-    const res = await fetch(`${BRIDGE_URL}/api/clients/${id}`, {
-      headers: getHeaders()
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    logError(`bridgeService.getClient error for id ${id}:`, err);
-    return null;
-  }
+  return safeFetchJson(`${BRIDGE_URL}/api/clients/${encodeURIComponent(id)}`, {
+    headers: getHeaders()
+  }, null);
 }
 
 export async function createClient(client: Client): Promise<Client | null> {
-  try {
-    const res = await fetch(`${BRIDGE_URL}/api/clients`, {
-      method: "POST",
-      headers: getHeaders("application/json"),
-      body: JSON.stringify(client)
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    logError("bridgeService.createClient error:", err);
-    return null;
-  }
+  return safeFetchJson(`${BRIDGE_URL}/api/clients`, {
+    method: "POST",
+    headers: getHeaders("application/json"),
+    body: JSON.stringify(client)
+  }, null);
 }
 
 export async function updateClient(id: string, client: Client): Promise<Client | null> {
-  try {
-    const res = await fetch(`${BRIDGE_URL}/api/clients/${id}`, {
-      method: "PUT",
-      headers: getHeaders("application/json"),
-      body: JSON.stringify(client)
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    logError(`bridgeService.updateClient error for id ${id}:`, err);
-    return null;
-  }
+  return safeFetchJson(`${BRIDGE_URL}/api/clients/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: getHeaders("application/json"),
+    body: JSON.stringify(client)
+  }, null);
 }
 
 export async function deleteClient(id: string): Promise<boolean> {
   try {
-    const res = await fetch(`${BRIDGE_URL}/api/clients/${id}`, {
+    const res = await fetch(`${BRIDGE_URL}/api/clients/${encodeURIComponent(id)}`, {
       method: "DELETE",
       headers: getHeaders("application/json"),
       body: JSON.stringify({ confirmed: true })
@@ -141,16 +131,9 @@ export interface ClientDocument {
 }
 
 export async function getClientDocuments(id: string): Promise<ClientDocument[]> {
-  try {
-    const res = await fetch(`${BRIDGE_URL}/api/clients/${id}/documents`, {
-      headers: getHeaders()
-    });
-    if (!res.ok) return [];
-    return await res.json();
-  } catch (err) {
-    logError(`bridgeService.getClientDocuments error for id ${id}:`, err);
-    return [];
-  }
+  return safeFetchJson(`${BRIDGE_URL}/api/clients/${encodeURIComponent(id)}/documents`, {
+    headers: getHeaders()
+  }, []);
 }
 
 export async function uploadDocument(clientId: string, file: File): Promise<boolean> {
@@ -158,7 +141,7 @@ export async function uploadDocument(clientId: string, file: File): Promise<bool
     const formData = new FormData();
     formData.append("file", file);
 
-    const res = await fetch(`${BRIDGE_URL}/api/clients/${clientId}/documents`, {
+    const res = await fetch(`${BRIDGE_URL}/api/clients/${encodeURIComponent(clientId)}/documents`, {
       method: "POST",
       headers: {
         "x-gbk-token": BRIDGE_TOKEN
@@ -174,7 +157,7 @@ export async function uploadDocument(clientId: string, file: File): Promise<bool
 
 export async function deleteDocument(clientId: string, filename: string): Promise<boolean> {
   try {
-    const res = await fetch(`${BRIDGE_URL}/api/clients/${clientId}/documents/${encodeURIComponent(filename)}`, {
+    const res = await fetch(`${BRIDGE_URL}/api/clients/${encodeURIComponent(clientId)}/documents/${encodeURIComponent(filename)}`, {
       method: "DELETE",
       headers: getHeaders()
     });
@@ -189,16 +172,9 @@ export async function deleteDocument(clientId: string, filename: string): Promis
  * System Data
  */
 export async function getRoster(): Promise<User[]> {
-  try {
-    const res = await fetch(`${BRIDGE_URL}/api/system/roster`, {
-      headers: getHeaders()
-    });
-    if (!res.ok) return [];
-    return await res.json();
-  } catch (err) {
-    logError("bridgeService.getRoster error:", err);
-    return [];
-  }
+  return safeFetchJson(`${BRIDGE_URL}/api/system/roster`, {
+    headers: getHeaders()
+  }, []);
 }
 
 export async function updateRoster(roster: User[]): Promise<boolean> {
@@ -216,16 +192,9 @@ export async function updateRoster(roster: User[]): Promise<boolean> {
 }
 
 export async function getLenders(): Promise<Lender[]> {
-  try {
-    const res = await fetch(`${BRIDGE_URL}/api/system/lenders`, {
-      headers: getHeaders()
-    });
-    if (!res.ok) return [];
-    return await res.json();
-  } catch (err) {
-    logError("bridgeService.getLenders error:", err);
-    return [];
-  }
+  return safeFetchJson(`${BRIDGE_URL}/api/system/lenders`, {
+    headers: getHeaders()
+  }, []);
 }
 
 export async function updateLenders(lenders: Lender[]): Promise<boolean> {
@@ -243,16 +212,9 @@ export async function updateLenders(lenders: Lender[]): Promise<boolean> {
 }
 
 export async function getAuditLogs(): Promise<any[]> {
-  try {
-    const res = await fetch(`${BRIDGE_URL}/api/system/audit`, {
-      headers: getHeaders()
-    });
-    if (!res.ok) return [];
-    return await res.json();
-  } catch (err) {
-    logError("bridgeService.getAuditLogs error:", err);
-    return [];
-  }
+  return safeFetchJson(`${BRIDGE_URL}/api/system/audit`, {
+    headers: getHeaders()
+  }, []);
 }
 
 export async function addAuditLog(logEntry: any): Promise<boolean> {
@@ -270,16 +232,9 @@ export async function addAuditLog(logEntry: any): Promise<boolean> {
 }
 
 export async function getBroadcasts(): Promise<any[]> {
-  try {
-    const res = await fetch(`${BRIDGE_URL}/api/system/broadcasts`, {
-      headers: getHeaders()
-    });
-    if (!res.ok) return [];
-    return await res.json();
-  } catch (err) {
-    logError("bridgeService.getBroadcasts error:", err);
-    return [];
-  }
+  return safeFetchJson(`${BRIDGE_URL}/api/system/broadcasts`, {
+    headers: getHeaders()
+  }, []);
 }
 
 export async function updateBroadcasts(broadcasts: any[]): Promise<boolean> {

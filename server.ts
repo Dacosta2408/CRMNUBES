@@ -50,8 +50,19 @@ async function startServer() {
       changeOrigin: true,
       pathRewrite: {
         "^/api/bridge": ""
+      },
+      on: {
+        error: (err: any, req: any, res: any) => {
+          if (!res.headersSent) {
+            res.status(502).json({
+              error: true,
+              message: "Z Drive Bridge is currently offline or starting up.",
+              details: err.message
+            });
+          }
+        }
       }
-    })
+    } as any)
   );
 
   app.use(express.json({ limit: "10mb" }));

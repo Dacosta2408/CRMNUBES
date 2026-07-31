@@ -1,6 +1,6 @@
 /**
  * GBK CRM Frontend API Client
- * Provides structured, typed access to local PostgreSQL backend service API endpoints
+ * Provides structured, typed access to backend service API endpoints
  */
 
 export interface ApiHealthResponse {
@@ -29,170 +29,107 @@ export interface UserSettingsDto {
   updated_at?: string;
 }
 
-// Check backend health and PostgreSQL connection
-export async function fetchApiHealth(): Promise<ApiHealthResponse | null> {
+/**
+ * Helper to safely fetch and parse JSON from API endpoints
+ */
+async function safeFetchJson<T>(url: string, options?: RequestInit, fallback: T = null as any): Promise<T> {
   try {
-    const res = await fetch("/api/health");
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    console.warn("Backend API /api/health check failed:", err);
-    return null;
+    const res = await fetch(url, options);
+    if (!res.ok) return fallback;
+    const text = await res.text();
+    if (!text || !text.trim()) return fallback;
+    const trimmed = text.trim();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return fallback;
+    try {
+      return JSON.parse(trimmed) as T;
+    } catch {
+      return fallback;
+    }
+  } catch {
+    return fallback;
   }
+}
+
+// Check backend health and database connection
+export async function fetchApiHealth(): Promise<ApiHealthResponse | null> {
+  return safeFetchJson<ApiHealthResponse>("/api/health", undefined, null);
 }
 
 // User Settings API
 export async function fetchUserSettings(userId: string): Promise<UserSettingsDto | null> {
-  try {
-    const res = await fetch(`/api/settings/${encodeURIComponent(userId)}`);
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    console.warn(`Failed to fetch settings for user ${userId}:`, err);
-    return null;
-  }
+  return safeFetchJson<UserSettingsDto>(`/api/settings/${encodeURIComponent(userId)}`, undefined, null);
 }
 
 export async function updateUserSettingsApi(userId: string, settings: Partial<UserSettingsDto>): Promise<UserSettingsDto | null> {
-  try {
-    const res = await fetch(`/api/settings/${encodeURIComponent(userId)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(settings)
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    console.warn(`Failed to update settings for user ${userId}:`, err);
-    return null;
-  }
+  return safeFetchJson<UserSettingsDto>(`/api/settings/${encodeURIComponent(userId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings)
+  }, null);
 }
 
 // Clients API
 export async function fetchClientsApi(): Promise<any[] | null> {
-  try {
-    const res = await fetch("/api/clients");
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    console.warn("Failed to fetch clients from API:", err);
-    return null;
-  }
+  return safeFetchJson<any[]>("/api/clients", undefined, null);
 }
 
 export async function createClientApi(clientData: any): Promise<any | null> {
-  try {
-    const res = await fetch("/api/clients", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(clientData)
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    console.warn("Failed to create client via API:", err);
-    return null;
-  }
+  return safeFetchJson<any>("/api/clients", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(clientData)
+  }, null);
 }
 
 export async function updateClientApi(id: string, updates: any): Promise<any | null> {
-  try {
-    const res = await fetch(`/api/clients/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(updates)
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    console.warn(`Failed to update client ${id} via API:`, err);
-    return null;
-  }
+  return safeFetchJson<any>(`/api/clients/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates)
+  }, null);
 }
 
 // Tasks API
 export async function fetchTasksApi(): Promise<any[] | null> {
-  try {
-    const res = await fetch("/api/tasks");
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    console.warn("Failed to fetch tasks from API:", err);
-    return null;
-  }
+  return safeFetchJson<any[]>("/api/tasks", undefined, null);
 }
 
 export async function createTaskApi(taskData: any): Promise<any | null> {
-  try {
-    const res = await fetch("/api/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(taskData)
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    console.warn("Failed to create task via API:", err);
-    return null;
-  }
+  return safeFetchJson<any>("/api/tasks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(taskData)
+  }, null);
 }
 
 export async function updateTaskApi(id: string, updates: any): Promise<any | null> {
-  try {
-    const res = await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(updates)
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    console.warn(`Failed to update task ${id} via API:`, err);
-    return null;
-  }
+  return safeFetchJson<any>(`/api/tasks/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates)
+  }, null);
 }
 
 // Audit Logs API
 export async function fetchAuditLogsApi(): Promise<any[] | null> {
-  try {
-    const res = await fetch("/api/audit-logs");
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (err) {
-    console.warn("Failed to fetch audit logs from API:", err);
-    return null;
-  }
+  return safeFetchJson<any[]>("/api/audit-logs", undefined, null);
 }
 
 // AI Service API
 export async function summarizeClientApi(clientData: any): Promise<string | null> {
-  try {
-    const res = await fetch("/api/ai/summarize-client", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientData })
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.summary;
-  } catch (err) {
-    console.warn("AI summarize client request failed:", err);
-    return null;
-  }
+  const data = await safeFetchJson<{ summary?: string }>("/api/ai/summarize-client", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ clientData })
+  }, null);
+  return data?.summary || null;
 }
 
 export async function generateNoteApi(purpose: string, clientName: string, details?: string): Promise<string | null> {
-  try {
-    const res = await fetch("/api/ai/generate-note", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ purpose, clientName, details })
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.draft;
-  } catch (err) {
-    console.warn("AI generate note request failed:", err);
-    return null;
-  }
+  const data = await safeFetchJson<{ draft?: string }>("/api/ai/generate-note", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ purpose, clientName, details })
+  }, null);
+  return data?.draft || null;
 }

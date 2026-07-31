@@ -2,35 +2,19 @@ const express = require("express");
 const router = express.Router();
 const path = require("path");
 const fs = require("fs");
+const { safeReadJsonFile, safeWriteJsonFile } = require("../utils/jsonUtils");
 
 const getRootPath = () => {
   return path.normalize(process.env.GBK_ROOT_PATH || "./gbk-crm-data");
 };
 
-// Safe JSON Reader Helper
+// Delegate to jsonUtils
 function readJsonFile(filePath, defaultVal = []) {
-  if (!fs.existsSync(filePath)) {
-    return defaultVal;
-  }
-  try {
-    const content = fs.readFileSync(filePath, "utf8");
-    return JSON.parse(content || JSON.stringify(defaultVal));
-  } catch (err) {
-    console.error(`Error reading/parsing file at ${filePath}:`, err);
-    return defaultVal;
-  }
+  return safeReadJsonFile(filePath, defaultVal);
 }
 
-// Safe JSON Writer Helper
 function writeJsonFile(filePath, data) {
-  try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
-    return true;
-  } catch (err) {
-    console.error(`Error writing file at ${filePath}:`, err);
-    return false;
-  }
+  return safeWriteJsonFile(filePath, data);
 }
 
 // GET /api/system/roster

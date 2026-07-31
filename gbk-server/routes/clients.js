@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const path = require("path");
 const fs = require("fs");
+const { safeReadJsonFile, safeWriteJsonFile } = require("../utils/jsonUtils");
 
 /**
  * Recursively strips out any HTML tags from text inputs to prevent XSS.
@@ -44,17 +45,13 @@ function findClientFolderPathAndDataById(id) {
           if (fs.statSync(clientFolderPath).isDirectory()) {
             const clientJsonPath = path.join(clientFolderPath, "client.json");
             if (fs.existsSync(clientJsonPath)) {
-              try {
-                const data = JSON.parse(fs.readFileSync(clientJsonPath, "utf8"));
-                if (data.id === id) {
-                  return {
-                    folderPath: clientFolderPath,
-                    jsonPath: clientJsonPath,
-                    data: data
-                  };
-                }
-              } catch (e) {
-                // Ignore parse errors on individual file read, skip
+              const data = safeReadJsonFile(clientJsonPath, null);
+              if (data && data.id === id) {
+                return {
+                  folderPath: clientFolderPath,
+                  jsonPath: clientJsonPath,
+                  data: data
+                };
               }
             }
           }
@@ -88,11 +85,9 @@ router.get("/", (req, res) => {
           if (fs.statSync(clientFolderPath).isDirectory()) {
             const clientJsonPath = path.join(clientFolderPath, "client.json");
             if (fs.existsSync(clientJsonPath)) {
-              try {
-                const data = JSON.parse(fs.readFileSync(clientJsonPath, "utf8"));
+              const data = safeReadJsonFile(clientJsonPath, null);
+              if (data) {
                 allClients.push(data);
-              } catch (e) {
-                console.error(`Error parsing client.json at ${clientJsonPath}:`, e);
               }
             }
           }
@@ -144,9 +139,9 @@ router.post("/", (req, res) => {
     fs.mkdirSync(clientFolderPath, { recursive: true });
 
     // Write client.json, notes.json (empty array), tasks.json (empty array)
-    fs.writeFileSync(path.join(clientFolderPath, "client.json"), JSON.stringify(client, null, 2), "utf8");
-    fs.writeFileSync(path.join(clientFolderPath, "notes.json"), JSON.stringify([], null, 2), "utf8");
-    fs.writeFileSync(path.join(clientFolderPath, "tasks.json"), JSON.stringify([], null, 2), "utf8");
+    safeWriteJsonFile(path.join(clientFolderPath, "client.json"), client);
+    safeWriteJsonFile(path.join(clientFolderPath, "notes.json"), []);
+    safeWriteJsonFile(path.join(clientFolderPath, "tasks.json"), []);
 
     // Also create documents subfolder
     fs.mkdirSync(path.join(clientFolderPath, "documents"), { recursive: true });
@@ -187,7 +182,7 @@ router.put("/:id", (req, res) => {
     }
 
     const finalJsonPath = path.join(finalFolderPath, "client.json");
-    fs.writeFileSync(finalJsonPath, JSON.stringify(updatedClient, null, 2), "utf8");
+    safeWriteJsonFile(finalJsonPath, updatedClient);
 
     res.json(updatedClient);
   } catch (err) {
