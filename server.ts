@@ -54,10 +54,13 @@ async function startServer() {
       on: {
         error: (err: any, req: any, res: any) => {
           if (!res.headersSent) {
+            res.setHeader("Content-Type", "application/json");
             res.status(502).json({
+              ok: false,
+              status: "offline",
               error: true,
               message: "Z Drive Bridge is currently offline or starting up.",
-              details: err.message
+              details: err?.message || "Bridge proxy connection failed"
             });
           }
         }

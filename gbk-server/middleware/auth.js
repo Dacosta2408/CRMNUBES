@@ -3,8 +3,16 @@
  * Checks for a valid "x-gbk-token" header matches GBK_BRIDGE_SECRET
  */
 module.exports = (req, res, next) => {
-  // Allow public health checks
-  if (req.method === 'GET' && (req.path === '/api/health' || req.path === '/health')) {
+  // Allow public health checks and version checks
+  const isPublicRoute = req.method === 'GET' && (
+    req.path === '/api/health' || 
+    req.path === '/health' ||
+    req.path === '/api/version' ||
+    req.path === '/version' ||
+    req.path.includes('/health')
+  );
+
+  if (isPublicRoute) {
     return next();
   }
 

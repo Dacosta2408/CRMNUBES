@@ -42,6 +42,8 @@ export const Settings: React.FC<SettingsProps> = ({
   const [profilePhone, setProfilePhone] = useState(currentUser.phone || "");
   const [profilePhoto, setProfilePhoto] = useState(currentUser.photo || "");
   const [profileJobTitle, setProfileJobTitle] = useState(currentUser.jobTitle || "Senior Mortgage Agent");
+  const [profileFsra, setProfileFsra] = useState(currentUser.fsraNum || "");
+  const [profileEoPolicy, setProfileEoPolicy] = useState(currentUser.eoPolicy || "");
 
   // Local File Upload / Avatar State
   const [avatarError, setAvatarError] = useState<string | null>(null);
@@ -66,6 +68,8 @@ export const Settings: React.FC<SettingsProps> = ({
     setProfilePhone(currentUser.phone || "");
     setProfilePhoto(currentUser.photo || "");
     setProfileJobTitle(currentUser.jobTitle || "Senior Mortgage Agent");
+    setProfileFsra(currentUser.fsraNum || "");
+    setProfileEoPolicy(currentUser.eoPolicy || "");
   }, [currentUser]);
 
   // Clean up object URLs on change/unmount
@@ -149,7 +153,9 @@ export const Settings: React.FC<SettingsProps> = ({
       email: profileEmail,
       phone: profilePhone || undefined,
       photo: profilePhoto || null,
-      jobTitle: profileJobTitle
+      jobTitle: profileJobTitle,
+      fsraNum: profileFsra || undefined,
+      eoPolicy: profileEoPolicy || undefined
     };
 
     // Update active user state
@@ -647,6 +653,32 @@ export const Settings: React.FC<SettingsProps> = ({
                         onChange={(e) => setProfilePhone(e.target.value)}
                         placeholder="e.g. 416-555-0199"
                         className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-lg px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/40"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5">
+                        FSRA Licence #
+                      </label>
+                      <input 
+                        type="text"
+                        value={profileFsra}
+                        onChange={(e) => setProfileFsra(e.target.value)}
+                        placeholder="e.g. M12003456"
+                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-lg px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/40 font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5">
+                        E&amp;O Policy / Insurer
+                      </label>
+                      <input 
+                        type="text"
+                        value={profileEoPolicy}
+                        onChange={(e) => setProfileEoPolicy(e.target.value)}
+                        placeholder="e.g. Marsh / EO-998124"
+                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-lg px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/40 font-mono"
                       />
                     </div>
                   </div>

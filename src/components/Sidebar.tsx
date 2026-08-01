@@ -311,7 +311,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className="text-xs font-black truncate"
               style={{ color: "#FFFFFF" }}
             >
-              {currentUser.name || "Broker Profile"}
+              {currentUser.name || `${currentUser.first || ''} ${currentUser.last || ''}`.trim() || currentUser.displayName || "User Profile"}
             </div>
             <div
               className="text-[10px] truncate font-semibold leading-none mt-0.5"
@@ -320,27 +320,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {currentUser.role || "Mortgage Broker"}
             </div>
           </div>
-        </div>
-
-        {/* Version banner */}
-        <div
-          className="px-1 flex items-center justify-between font-mono font-bold select-none leading-none"
-          style={{ fontSize: "10px", color: "rgba(200,216,232,0.25)" }}
-        >
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>v{(import.meta as any).env?.VITE_APP_VERSION || "1.0.0"}</span>
-          </div>
-          <span
-            className="px-1 py-0.5 rounded text-[8px] font-black tracking-wider uppercase"
-            style={{
-              background: "rgba(255,255,255,0.05)",
-              border: "1px solid var(--color-sidebar-border)",
-              color: "rgba(200,216,232,0.30)"
-            }}
-          >
-            {(import.meta as any).env?.VITE_APP_ENV || "DEV"}
-          </span>
         </div>
       </div>
     </aside>

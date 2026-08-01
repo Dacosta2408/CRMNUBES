@@ -1,6 +1,6 @@
 import { Client, Lender, User } from "../types";
 
-export const BRIDGE_URL = (import.meta as any).env?.VITE_BRIDGE_URL || "http://localhost:3001";
+export const BRIDGE_URL = (import.meta as any).env?.VITE_BRIDGE_URL || "/api/bridge";
 
 const BRIDGE_TOKEN = (import.meta as any).env?.VITE_BRIDGE_TOKEN || "gbk-local-secret-2024";
 
@@ -28,22 +28,22 @@ function getHeaders(contentType?: string): HeadersInit {
 async function safeFetchJson<T>(url: string, options?: RequestInit, fallback: T = null as any): Promise<T> {
   try {
     const res = await fetch(url, options);
-    if (!res.ok) {
-      return fallback;
-    }
     const text = await res.text();
     if (!text || !text.trim()) {
       return fallback;
     }
     const trimmed = text.trim();
     if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
-      console.warn(`[bridgeService] Non-JSON response received from ${url}`);
+      // Non-JSON response (e.g. HTML or plain text) handled gracefully
       return fallback;
     }
     try {
-      return JSON.parse(trimmed) as T;
+      const parsed = JSON.parse(trimmed);
+      if (!res.ok) {
+        return parsed || fallback;
+      }
+      return parsed as T;
     } catch (parseErr) {
-      console.warn(`[bridgeService] JSON parse error from ${url}:`, parseErr);
       return fallback;
     }
   } catch (err) {
@@ -56,13 +56,13 @@ async function safeFetchJson<T>(url: string, options?: RequestInit, fallback: T 
  * Checks if the bridge server is running and accessible.
  */
 export async function checkBridgeHealth(): Promise<boolean> {
-  const data = await safeFetchJson<{ status?: string }>(`${BRIDGE_URL}/api/health`, {
+  const data = await safeFetchJson<{ status?: string; ok?: boolean }>(`${BRIDGE_URL}/api/health`, {
     method: "GET",
     headers: { "Accept": "application/json" },
-    signal: AbortSignal.timeout(2000) // 2s timeout for snappy check
+    signal: AbortSignal.timeout(3000)
   }, null);
 
-  return data !== null && (data.status === "ok" || data.status === "online");
+  return data !== null && (data.status === "ok" || data.status === "online" || data.ok === true);
 }
 
 /**
@@ -128,6 +128,28 @@ export interface ClientDocument {
   name: string;
   size: number;
   modified: string;
+}
+
+export interface BridgeGlobalFile {
+  id: string;
+  clientId: string;
+  clientName: string;
+  name: string;
+  filename: string;
+  size: number;
+  sizeFormatted: string;
+  type: string;
+  updatedAt: string;
+  uploadedAt: string;
+  uploadedBy: string;
+  path: string;
+  downloadUrl: string;
+}
+
+export async function getAllBridgeDocuments(): Promise<BridgeGlobalFile[]> {
+  return safeFetchJson(`${BRIDGE_URL}/api/clients/all-documents`, {
+    headers: getHeaders()
+  }, []);
 }
 
 export async function getClientDocuments(id: string): Promise<ClientDocument[]> {

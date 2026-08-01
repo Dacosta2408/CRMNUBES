@@ -11,11 +11,16 @@ import {
   checkBridgeHealth, 
   getBridgeVersion, 
   getAllClients, 
-  getRoster 
+  getRoster,
+  getAllBridgeDocuments,
+  uploadDocument,
+  BridgeGlobalFile
 } from "../lib/bridgeService";
 
 interface ZDriveFile {
   id: string;
+  clientId?: string;
+  clientName?: string;
   name: string;
   type: "html" | "txt" | "pdf";
   size: string;
@@ -23,6 +28,7 @@ interface ZDriveFile {
   author: string;
   content: string;
   isIntakeReady: boolean;
+  downloadUrl?: string;
 }
 
 export interface BridgeLogEntry {
@@ -66,161 +72,39 @@ export const ZDrivePanel: React.FC<ZDrivePanelProps> = ({
   const [bridgeStatus, setBridgeStatus] = useState<"checking" | "online" | "offline">("checking");
   const [lastPingTime, setLastPingTime] = useState<string>("Never");
 
-  // Raw unprocessed client application data pending intake from the Z:\ Drive
-  const [pendingFiles, setPendingFiles] = useState<ZDriveFile[]>([
-    {
-      id: "sarah_jenkins_app",
-      name: "Sarah_Jenkins_App_Form.html",
-      type: "html",
-      size: "18.4 KB",
-      updatedAt: "2026-06-25 15:42",
-      author: "apply@gbkfinancial.ca",
-      isIntakeReady: true,
-      content: `Applicant: Sarah Jenkins
-Co-applicant: David Jenkins (Partner)
-Email: sarah.j@example.com
-Phone: (416) 555-0199
-DOB: 1985-11-23
-Marital: Married
-Employment: Salaried Accountant at Jenkins Tax Services
-Income: $120,000/yr. Self-employed part-time BFS business: $35,000/yr.
-Co-Applicant: David Jenkins, Salaried Manager at Rogers Telecom earning $85,000/yr.
-Property Address: 154 Simcoe Street, Unit 201, Toronto ON
-Property Type: Condo Apartment, Tenure: Condominium
-Estimated Purchase Value: $750,000
-Mortgage Requested: $525,000
-Lender Preferred: TD Bank
-Assigned Agent: Wayne MacLeod
-Status: Lead Generation Stage`
-    },
-    {
-      id: "robert_taylor_app",
-      name: "Robert_Taylor_Ontario_Purchase.txt",
-      type: "txt",
-      size: "4.2 KB",
-      updatedAt: "2026-06-26 06:12",
-      author: "web-portal@gbk.ca",
-      isIntakeReady: true,
-      content: `Robert Taylor (Single), Cell (416) 555-0322. Email robert.t1991@example.com.
-Working at Shopify as Software Architect, earning $145,000 base Salary.
-No Co-applicant.
-Buying detached house in Barrie: 14 Maple Drive, Barrie ON.
-Estimated purchase price: $820,000.
-Mortgage requested: $600,000 conventional.
-Beacon credit score: 780.
-No debts on credit report.
-Assigned Agent: Sarah Jenkins`
-    },
-    {
-      id: "underwriting_rules_ref",
-      name: "GBK_Underwriting_Rules_v4.txt",
-      type: "txt",
-      size: "8.5 KB",
-      updatedAt: "2026-06-20 14:00",
-      author: "compliance-team@gbk.ca",
-      isIntakeReady: false,
-      content: `GBK UNDERWRITING REFERENCE GUIDE (Z:\\ GUIDELINES)
-=====================================================
-1. MINIMUM CREDIT SCORE: 600 for alternative lenders, 680+ for prime lenders.
-2. MAX LTV: 80% for conventional refinancing, up to 95% for high-ratio purchases.
-3. INCOME RATIOS: GDS max 39%, TDS max 44% for prime. Alt-A can allow higher with compensating factors.
-4. BFS (Business For Self) requirements: 2 years NOAs, business license, or articles of incorporation required.
-5. CONDO FEES: Always include 50% of condo fees in GDS/TDS calculations.
-6. HEAT COST: Use actual or $150/month flat rate as a standard guideline.`
-    },
-    {
-      id: "michael_chang_refi",
-      name: "Michael_Chang_Refinance.html",
-      type: "html",
-      size: "15.1 KB",
-      updatedAt: "2026-06-24 11:05",
-      author: "michael.c@gmail.com",
-      isIntakeReady: true,
-      content: `Applicant: Michael Chang (Married)
-Email: michael.chang@gmail.com
-Phone: (905) 555-8844
-DOB: 1978-04-12
-Address: 88 Copper Creek Dr, Markham ON (Own)
-Existing 1st Mortgage: Balance owing $380,000, monthly payment $2,100 with Scotiabank.
-Income: BFS Self-employed contractor earning $160,000/yr net.
-Co-Applicant Spouse: Emily Chang, earning $45,000/yr part-time.
-Refinancing Request: Increase mortgage to $550,000 to payout high interest credit cards.
-Property value estimated at $1,100,000.
-Beacon: 650.
-Assigned Broker: Wayne MacLeod`
-    },
-    {
-      id: "lender_rates_ref",
-      name: "Lender_Prime_Rates_June2026.html",
-      type: "html",
-      size: "6.1 KB",
-      updatedAt: "2026-06-25 09:00",
-      author: "rates-desk@gbk.ca",
-      isIntakeReady: false,
-      content: `LENDER PRIME RATES LISTING - EFFECTIVE JUNE 2026
-=======================================================
-Lender: TD Bank
-- 5-Yr Fixed: 4.89%
-- 3-Yr Fixed: 5.14%
-- 5-Yr Variable: Prime - 0.90%
+  // Real client application files fetched from Z:\ Drive
+  const [pendingFiles, setPendingFiles] = useState<ZDriveFile[]>([]);
+  const [isLoadingFiles, setIsLoadingFiles] = useState<boolean>(false);
 
-Lender: Scotiabank
-- 5-Yr Fixed: 4.94%
-- 3-Yr Fixed: 5.19%
-- 5-Yr Variable: Prime - 0.85%
-
-Lender: MCAP
-- 5-Yr Fixed: 4.79%
-- 3-Yr Fixed: 5.09%
-- 5-Yr Variable: Prime - 0.95%`
-    },
-    {
-      id: "amanda_kaur_app",
-      name: "Amanda_Kaur_Brampton_Purchase.txt",
-      type: "txt",
-      size: "5.8 KB",
-      updatedAt: "2026-06-26 07:10",
-      author: "portal-app@gbk.ca",
-      isIntakeReady: true,
-      content: `Applicant: Amanda Kaur
-Email: amanda.kaur@example.com
-Cell: (647) 555-9121
-DOB: 1990-09-15
-Marital: Single
-Employment: Senior Human Resources Specialist at PepsiCo (Full Time)
-Income: $92,000/yr salary
-Address: 110 Main Street South, Brampton ON (Rent, $1,800/mo)
-Property to Purchase: 45 Cloverbloom Crescent, Brampton ON
-Property Type: Semi-Detached
-Estimated Purchase Value: $680,000
-Mortgage Requested: $544,000 (80% LTV)
-Beacon: 740
-Assigned Broker: Wayne MacLeod`
-    },
-    {
-      id: "david_miller_app",
-      name: "David_Miller_Hamilton_Refi.html",
-      type: "html",
-      size: "12.4 KB",
-      updatedAt: "2026-06-23 09:30",
-      author: "david.miller@example.com",
-      isIntakeReady: true,
-      content: `Applicant: David Miller
-Email: miller.d@example.com
-Cell: (905) 555-4321
-DOB: 1982-02-18
-Marital: Divorced
-Dependents: 1
-Address: 242 Aberdeen Avenue, Hamilton ON (Owns)
-Property Value: $850,000
-Current Mortgage Balance: $410,000 with TD Bank
-Proposed Refinance Amount: $550,000 (to fund home renovations and pay off Line of Credit)
-Employment: Lead Mechanic at Hamilton Transit (Full Time, Unionized)
-Income: $88,000/yr base salary + $12,000/yr overtime
-Beacon Score: 715
-Assigned Broker: Sarah Jenkins`
+  // Load real files from bridge
+  const fetchRealBridgeFiles = async () => {
+    setIsLoadingFiles(true);
+    try {
+      const bridgeFiles = await getAllBridgeDocuments();
+      if (Array.isArray(bridgeFiles) && bridgeFiles.length > 0) {
+        const mapped: ZDriveFile[] = bridgeFiles.map(bf => ({
+          id: bf.id || `file_${bf.filename}`,
+          clientId: bf.clientId,
+          clientName: bf.clientName,
+          name: bf.filename,
+          type: bf.type === "html" ? "html" : bf.type === "pdf" ? "pdf" : "txt",
+          size: bf.sizeFormatted || `${(bf.size / 1024).toFixed(1)} KB`,
+          updatedAt: bf.updatedAt || new Date().toISOString().replace("T", " ").substring(0, 16),
+          author: bf.uploadedBy || bf.clientName || "Z Drive Storage",
+          isIntakeReady: bf.filename.toLowerCase().includes("app") || bf.filename.toLowerCase().includes("intake") || bf.type === "html" || bf.type === "txt",
+          content: `Client Record: ${bf.clientName}\nClient ID: ${bf.clientId}\nFile Name: ${bf.filename}\nSize: ${bf.sizeFormatted}\nUploaded: ${bf.updatedAt}\nStorage Location: gbk-crm-data/Clients/${bf.clientId}/documents/${bf.filename}`,
+          downloadUrl: bf.downloadUrl
+        }));
+        setPendingFiles(mapped);
+      } else {
+        setPendingFiles([]);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch bridge documents:", e);
+    } finally {
+      setIsLoadingFiles(false);
     }
-  ]);
+  };
 
   // Add a log entry helper
   const addLog = (entry: Omit<BridgeLogEntry, "id" | "timestamp">) => {
@@ -346,6 +230,7 @@ Assigned Broker: Sarah Jenkins`
   // Initial diagnostic run on component mount & auto-poll timer
   useEffect(() => {
     runDiagnostics();
+    fetchRealBridgeFiles();
   }, []);
 
   useEffect(() => {
@@ -414,9 +299,9 @@ Assigned Broker: Sarah Jenkins`
 
   const handleRefreshDrive = () => {
     setIsRefreshing(true);
-    runDiagnostics().then(() => {
+    Promise.all([runDiagnostics(), fetchRealBridgeFiles()]).then(() => {
       setIsRefreshing(false);
-      showToast("Z:\\ Drive connection & bridge diagnostic refreshed.", "info");
+      showToast("Z:\\ Drive connection & bridge document repository refreshed.", "info");
     });
   };
 
