@@ -5,6 +5,7 @@ import {
   RefreshCw, X, ShieldCheck, Info, Key, Eye, EyeOff, Globe
 } from "lucide-react";
 import { User, Client } from "../types";
+import { Avatar } from "./Avatar";
 import { encryptValue } from "../lib/cryptoUtils";
 import { hashPin } from "../hooks/useAuth";
 import { COMMON_TIMEZONES, getUserTimeZone, setUserTimeZone, getDetectedSystemTimeZone } from "../lib/timeUtils";
@@ -494,18 +495,14 @@ export const Settings: React.FC<SettingsProps> = ({
                     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
                       {/* Avatar Preview */}
                       <div className="relative group shrink-0">
-                        {profilePhoto ? (
-                          <img 
-                            src={profilePhoto} 
-                            alt="Profile Avatar" 
-                            referrerPolicy="no-referrer"
-                            className="w-20 h-20 rounded-full object-cover border-2 border-[var(--color-accent)] shadow-md"
-                          />
-                        ) : (
-                          <div className="w-20 h-20 rounded-full bg-[var(--color-accent)]/15 border-2 border-[var(--color-accent)]/40 flex items-center justify-center font-black text-2xl text-[var(--color-accent)] shadow-inner">
-                            {profileFirst[0] || ""}{profileLast[0] || ""}
-                          </div>
-                        )}
+                        <Avatar
+                          src={profilePhoto}
+                          first={profileFirst}
+                          last={profileLast}
+                          name={profileDisplayName}
+                          size="xl"
+                          className="shadow-md"
+                        />
                       </div>
 
                       {/* File Controls */}

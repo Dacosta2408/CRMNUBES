@@ -17,6 +17,7 @@ import {
 import { Client, Lender, User, Task, Event, Email, EmailTemplate, Partner, Post } from "./types";
 import { safeJsonParse } from "./lib/json";
 import { Sidebar } from "./components/Sidebar";
+import { Avatar } from "./components/Avatar";
 import { Dashboard } from "./components/Dashboard";
 import { ClientsList } from "./components/ClientsList";
 import { Calculators } from "./components/Calculators";
@@ -947,21 +948,13 @@ export default function App() {
                 }}
                 id="header-profile-button"
               >
-                {currentUser.photo ? (
-                  <img
-                    src={currentUser.photo}
-                    alt="Profile"
-                    referrerPolicy="no-referrer"
-                    className="w-5.5 h-5.5 rounded-full object-cover border border-[var(--color-accent)]/30"
-                  />
-                ) : (
-                  <div 
-                    className="w-5.5 h-5.5 rounded-full flex items-center justify-center font-bold text-[9px] text-[var(--color-text-inverse)] shrink-0"
-                    style={{ background: "var(--grad-warm-highlight)" }}
-                  >
-                    {currentUser.first[0]}{currentUser.last[0]}
-                  </div>
-                )}
+                <Avatar
+                  src={currentUser.photo}
+                  first={currentUser.first}
+                  last={currentUser.last}
+                  name={currentUser.displayName}
+                  size="sm"
+                />
                 <div className="hidden md:block">
                   <div className="text-[10px] font-black text-[var(--color-text)] leading-tight">
                     {currentUser.displayName || `${currentUser.first} ${currentUser.last}`}
@@ -983,10 +976,19 @@ export default function App() {
                     className="absolute right-0 mt-2 w-56 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] p-1.5 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-100"
                     id="header-profile-dropdown-menu"
                   >
-                    <div className="px-2.5 py-2 border-b border-[var(--color-divider)] mb-1.5">
-                      <p className="text-[9px] uppercase font-black tracking-widest text-[var(--color-text-faint)]">Broker Account</p>
-                      <p className="text-xs font-black text-[var(--color-text)] mt-0.5 truncate">{currentUser.first} {currentUser.last}</p>
-                      <p className="text-[10px] text-[var(--color-text-muted)] truncate font-mono">{currentUser.email}</p>
+                    <div className="flex items-center gap-2.5 px-2.5 py-2 border-b border-[var(--color-divider)] mb-1.5">
+                      <Avatar
+                        src={currentUser.photo}
+                        first={currentUser.first}
+                        last={currentUser.last}
+                        name={currentUser.displayName}
+                        size="md"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[9px] uppercase font-black tracking-widest text-[var(--color-text-faint)]">Broker Account</p>
+                        <p className="text-xs font-black text-[var(--color-text)] truncate">{currentUser.displayName || `${currentUser.first} ${currentUser.last}`}</p>
+                        <p className="text-[10px] text-[var(--color-text-muted)] truncate font-mono">{currentUser.email}</p>
+                      </div>
                     </div>
 
                     <button
@@ -1632,7 +1634,7 @@ export default function App() {
               animate={{ scale: 1, y: 0 }}
               exit={shouldReduceMotion ? { scale: 1 } : { scale: 0.95, y: 15 }}
               transition={{ type: "spring", damping: 25, stiffness: 350 }}
-              className="border rounded-2xl w-full max-w-md p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto flex flex-col scrollbar-thin border-t-2"
+              className="border rounded-3xl w-full max-w-xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto flex flex-col [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden border-t-2"
               style={{
                 background: "var(--color-surface)",
                 borderColor: "var(--color-border)",
@@ -1686,24 +1688,28 @@ export default function App() {
               {/* TAB CONTENT: PROFILE SYNC EDIT */}
               {profileTab === 'profile' && (
                 <div className="flex flex-col gap-4">
-                  <div className="bg-[var(--color-surface-2)] p-4 rounded-xl border border-[var(--color-border)] flex flex-col gap-3">
+                  <div className="bg-[var(--color-surface-2)] p-4 rounded-2xl border border-[var(--color-border)] flex flex-col gap-3">
                     <div className="flex items-center gap-3 border-b pb-2 mb-1" style={{ borderColor: "var(--color-divider)" }}>
-                      {profPhoto ? (
-                        <img 
-                          src={profPhoto} 
-                          alt={profFirst} 
-                          referrerPolicy="no-referrer"
-                          className="w-10 h-10 rounded-full object-cover border border-[var(--color-accent)]" 
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/30 flex items-center justify-center text-xs font-bold text-[var(--color-accent)] uppercase">
-                          {profFirst[0] || ""}{profLast[0] || ""}
-                        </div>
-                      )}
-                      <div>
-                        <div className="text-xs font-black text-[var(--color-text)]">{currentUser.first} {currentUser.last}</div>
+                      <Avatar 
+                        src={profPhoto} 
+                        first={profFirst} 
+                        last={profLast} 
+                        name={`${profFirst} ${profLast}`} 
+                        size="lg" 
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-black text-[var(--color-text)] truncate">{profFirst} {profLast}</div>
                         <div className="text-[10px] text-[var(--color-accent)] font-extrabold uppercase tracking-wider">{currentUser.role}</div>
                       </div>
+                      {profPhoto && (
+                        <button
+                          type="button"
+                          onClick={() => setProfPhoto("")}
+                          className="text-[9px] text-[var(--color-error, #e05c6e)] hover:underline font-bold uppercase tracking-wider"
+                        >
+                          Remove Photo
+                        </button>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
@@ -1763,12 +1769,61 @@ export default function App() {
                         <label className="block text-[8px] text-[var(--color-text-muted)] uppercase font-black tracking-widest mb-1">Avatar Photo URL</label>
                         <input 
                           type="text" 
-                          placeholder="https://..."
+                          placeholder="https://... or upload below"
                           value={profPhoto}
                           onChange={(e) => setProfPhoto(e.target.value)}
                           className="w-full bg-[var(--color-surface-3)] border border-[var(--color-border)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/40 transition-all font-semibold"
                         />
                       </div>
+                    </div>
+
+                    {/* Quick Avatar File Upload & Preset Selection */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[var(--color-border)]/50">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] text-[var(--color-text-faint)] font-bold uppercase tracking-wider">Presets:</span>
+                        {[
+                          "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+                          "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+                          "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=150&auto=format&fit=crop&q=80",
+                          "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80"
+                        ].map((presetUrl, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setProfPhoto(presetUrl)}
+                            className="w-5 h-5 rounded-full overflow-hidden border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-all cursor-pointer shrink-0"
+                          >
+                            <img src={presetUrl} alt={`Preset ${idx + 1}`} className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+
+                      <label className="text-[9px] font-extrabold uppercase text-[var(--color-accent)] hover:underline cursor-pointer">
+                        Upload Image File
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              if (file.size > 5 * 1024 * 1024) {
+                                showToast("Image file size exceeds 5MB limit", "error");
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                const result = ev.target?.result as string;
+                                if (result) {
+                                  setProfPhoto(result);
+                                  showToast("Image loaded into profile photo", "success");
+                                }
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </label>
                     </div>
 
                     <div className="flex justify-end mt-1">

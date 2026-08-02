@@ -5,6 +5,7 @@ import {
   Settings, BarChart3
 } from "lucide-react";
 import { User, Client, Task, Event } from "../types";
+import { Avatar } from "./Avatar";
 import { motion, useReducedMotion } from "motion/react";
 
 interface SidebarProps {
@@ -294,30 +295,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }}
         >
           {/* Avatar */}
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs text-white shrink-0"
-            style={{
-              background: "var(--grad-warm-highlight)",
-              boxShadow: "0 2px 8px rgba(244, 163, 132, 0.3)"
-            }}
-          >
-            {currentUser.name
-              ? currentUser.name.split(" ").map(n => n[0]).join("").toUpperCase()
-              : "U"}
-          </div>
+          <Avatar 
+            src={currentUser.photo}
+            first={currentUser.first}
+            last={currentUser.last}
+            name={currentUser.displayName || currentUser.name}
+            size="md"
+          />
 
           <div className="flex-1 min-w-0">
             <div
               className="text-xs font-black truncate"
               style={{ color: "#FFFFFF" }}
             >
-              {currentUser.name || `${currentUser.first || ''} ${currentUser.last || ''}`.trim() || currentUser.displayName || "User Profile"}
+              {currentUser.displayName || `${currentUser.first || ''} ${currentUser.last || ''}`.trim() || currentUser.name || "Broker Profile"}
             </div>
             <div
               className="text-[10px] truncate font-semibold leading-none mt-0.5"
               style={{ color: "var(--color-text-sidebar-muted)" }}
             >
-              {currentUser.role || "Mortgage Broker"}
+              {currentUser.jobTitle || currentUser.role || currentUser.email || "Mortgage Broker"}
             </div>
           </div>
         </div>

@@ -5,6 +5,7 @@ import {
   FileCheck, ShieldAlert, Award, AlertCircle, FileText, RefreshCw, UserX
 } from "lucide-react";
 import { User, Client, Task } from "../../types";
+import { Avatar } from "../Avatar";
 
 interface UserManagementProps {
   userRoster: User[];
@@ -454,18 +455,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                   {/* Avatar & Profile */}
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
-                      {user.photo ? (
-                        <img 
-                          src={user.photo} 
-                          alt={user.first} 
-                          referrerPolicy="no-referrer"
-                          className="w-9 h-9 rounded-full object-cover border border-[var(--color-accent)]/40" 
-                        />
-                      ) : (
-                        <div className="w-9 h-9 rounded-full bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/30 flex items-center justify-center text-xs font-bold text-[var(--color-accent)] uppercase">
-                          {user.first[0]}{user.last[0]}
-                        </div>
-                      )}
+                      <Avatar
+                        src={user.photo}
+                        first={user.first}
+                        last={user.last}
+                        name={user.displayName || `${user.first} ${user.last}`}
+                        size="md"
+                      />
                       <div>
                         <div className="font-bold text-[var(--color-text)] flex items-center gap-1.5">
                           {user.first} {user.last}

@@ -6,6 +6,7 @@ import {
   ChevronRight, Sparkles, Smile, ShieldAlert, BadgeInfo, Calendar, UserPlus, Eye, Upload
 } from "lucide-react";
 import { Client, Task } from "../types";
+import { Avatar } from "./Avatar";
 import { DEFAULT_USERS } from "../data";
 import { getNotesForClient, saveNotesForClient, logActivityEvent, FileNote } from "../lib/activityEngine";
 
@@ -822,13 +823,11 @@ export const Messages: React.FC<MessagesProps> = ({
                   >
                     <span className="flex items-center gap-2 min-w-0">
                       <span className="relative flex-shrink-0">
-                        {tm.avatar ? (
-                          <img src={tm.avatar} alt={tm.name} className="w-7 h-7 rounded-full object-cover border border-[var(--color-border)]" referrerPolicy="no-referrer" />
-                        ) : (
-                          <span className="w-7 h-7 rounded-full bg-[var(--color-panel)] border border-[var(--color-border)] font-mono text-[9px] flex items-center justify-center text-[var(--color-text-muted)]">
-                            {tm.name.split(" ").map(n => n[0]).join("")}
-                          </span>
-                        )}
+                        <Avatar
+                          src={tm.avatar}
+                          name={tm.name}
+                          size="sm"
+                        />
                         <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-[var(--color-bg)] ${tm.color}`} />
                       </span>
                       <div className="min-w-0">
@@ -860,13 +859,13 @@ export const Messages: React.FC<MessagesProps> = ({
         {/* Current User Session Overview */}
         <div className="p-3 border-t border-[var(--color-border)] bg-[var(--color-panel)]/30 flex items-center gap-2.5 shrink-0">
           <div className="relative">
-            {(currentUser.avatar || currentUser.photo) ? (
-              <img src={currentUser.avatar || currentUser.photo} alt={currentUser.first} className="w-8 h-8 rounded-full object-cover border border-[var(--color-border)]" referrerPolicy="no-referrer" />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[var(--color-accent)] to-yellow-600 text-black text-xs font-black flex items-center justify-center shrink-0">
-                {((currentUser.first?.[0] || "") + (currentUser.last?.[0] || "")).toUpperCase()}
-              </div>
-            )}
+            <Avatar
+              src={currentUser.photo || currentUser.avatar}
+              first={currentUser.first}
+              last={currentUser.last}
+              name={currentUser.displayName}
+              size="sm"
+            />
             <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[var(--color-bg)] bg-emerald-500" />
           </div>
           <div className="min-w-0">
