@@ -70,23 +70,23 @@ export default function App() {
   };
 
   const TAB_TITLE_GRADIENTS: Record<string, string> = {
-    dashboard:      "linear-gradient(90deg, #00C6FF, #0072FF)",   // Ocean Breeze
-    clients:        "linear-gradient(90deg, #FF416C, #FFB347)",   // Sunset Vibes
-    pipeline:       "linear-gradient(90deg, #FF416C, #FFB347)",   // Sunset Vibes
-    calculators:    "linear-gradient(90deg, #FF8800, #FCEE21)",   // Citrus Burst
-    ai:             "linear-gradient(90deg, #6A11CB, #FF758C)",   // Royal Purple
-    messages:       "linear-gradient(90deg, #00FFFF, #0077FF)",   // Arctic Glacier
-    emails:         "linear-gradient(90deg, #00C6FF, #0072FF)",   // Ocean Breeze
-    lenders:        "linear-gradient(90deg, #56AB2F, #A8E063)",   // Nature Fresh
-    calendar:       "linear-gradient(90deg, #8360C3, #FF8FBF)",   // Lavender Sky
-    tasks:          "linear-gradient(90deg, #FF7E5F, #FEB47B)",   // Warm Horizon
-    partners:       "linear-gradient(90deg, #56AB2F, #A8E063)",   // Nature Fresh
-    reports:        "linear-gradient(90deg, #FF8800, #FCEE21)",   // Citrus Burst
-    retention:      "linear-gradient(90deg, #FF00CC, #3333FF)",   // Neon Dream
-    compliance:     "linear-gradient(90deg, #6A11CB, #FF758C)",   // Royal Purple
-    file_readiness: "linear-gradient(90deg, #FF7E5F, #FEB47B)",   // Warm Horizon
-    admin:          "linear-gradient(90deg, #FF416C, #FFB347)",   // Sunset Vibes
-    settings:       "linear-gradient(90deg, #8360C3, #FF8FBF)",   // Lavender Sky
+    dashboard:      "linear-gradient(90deg, #00C6FF, #0072FF)",
+    clients:        "linear-gradient(90deg, #56AB2F, #A8E063)",
+    pipeline:       "linear-gradient(90deg, #FF416C, #FFB347)",
+    ai:             "linear-gradient(90deg, #6A11CB, #A855F7)",
+    calculators:    "linear-gradient(90deg, #FF8800, #FCEE21)",
+    lenders:        "linear-gradient(90deg, #00FFFF, #0077FF)",
+    calendar:       "linear-gradient(90deg, #8360C3, #FF8FBF)",
+    tasks:          "linear-gradient(90deg, #FF7E5F, #FEB47B)",
+    messages:       "linear-gradient(90deg, #FF00CC, #3333FF)",
+    emails:         "linear-gradient(90deg, #00C6FF, #0072FF)",
+    retention:      "linear-gradient(90deg, #FF416C, #FFB347)",
+    partners:       "linear-gradient(90deg, #56AB2F, #A8E063)",
+    reports:        "linear-gradient(90deg, #FF8800, #FCEE21)",
+    compliance:     "linear-gradient(90deg, #00FFFF, #0077FF)",
+    file_readiness: "linear-gradient(90deg, #FF7E5F, #FEB47B)",
+    admin:          "linear-gradient(90deg, #FF416C, #FF6B6B)",
+    settings:       "linear-gradient(90deg, #8360C3, #FF8FBF)",
   };
 
   // ─── REMAINING SHARED STATE ───
