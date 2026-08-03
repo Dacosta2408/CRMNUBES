@@ -46,7 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const iconColorMap: Record<string, string> = {
     dashboard:     "#00C6FF",
     clients:       "#56AB2F",
-    pipeline:      "#FF416C",
+    pipeline:      "#3D97C9",
     ai:            "#A855F7",
     calculators:   "#FF8800",
     lenders:       "#00FFFF",
@@ -55,7 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     messages:      "#FF00CC",
     emails:        "#0072FF",
     retention:     "#FFB347",
-    partners:      "#A8E063",
+    partners:      "#8360C3",
     reports:       "#FCEE21",
     compliance:    "#0077FF",
     file_readiness:"#FEB47B",
@@ -77,8 +77,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { 
           id: "pipeline", 
           label: "Pipeline Board", 
-          icon: () => (
-            <svg className="h-4 w-4 stroke-current" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          icon: (props: React.ComponentProps<"svg">) => (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
               <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
             </svg>
           ) 
@@ -114,8 +114,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { 
           id: "partners", 
           label: "Partner Network", 
-          icon: () => (
-            <svg className="h-4 w-4 stroke-current" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          icon: (props: React.ComponentProps<"svg">) => (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
               <circle cx="18" cy="18" r="3"/>
               <circle cx="12" cy="7" r="4"/>
               <path d="M12 12c-2.3 0-5.3 1.1-6.1 3.5"/>
@@ -129,8 +129,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { 
           id: "file_readiness", 
           label: "File Readiness", 
-          icon: () => (
-            <svg className="h-4 w-4 stroke-current" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          icon: (props: React.ComponentProps<"svg">) => (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
               <polyline points="14 2 14 8 20 8"/>
               <path d="m9 15 2 2 4-4"/>
