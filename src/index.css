@@ -88,6 +88,9 @@
   --grad-card:                linear-gradient(145deg, #16263F 0%, #112036 100%);
   --grad-soft:                linear-gradient(135deg, #142137 0%, #1C2E4C 100%);
   --grad-deep:                linear-gradient(135deg, #0f1c2e 0%, #060e1a 100%);
+  --grad-lock-panel:          linear-gradient(145deg, #0d1f3c 0%, #0a1628 40%, #110828 80%, #0d1f3c 100%);
+  --grad-lock-icon:           linear-gradient(135deg, #FFC30B 0%, #FF8800 100%);
+  --grad-lock-button:         linear-gradient(135deg, #FFC30B 0%, #FF8800 60%, #FFC30B 100%);
 
   /* ── Glass & Blur (Layered & premium) ── */
   --glass-bg:                 rgba(13, 21, 37, 0.70); /* Stronger liquid glass blend */
@@ -185,6 +188,9 @@
   --grad-card:                linear-gradient(145deg, #FFFFFF 0%, #F8FAFC 100%);
   --grad-soft:                linear-gradient(135deg, #FFFFFF 0%, #F1F5F9 100%);
   --grad-deep:                linear-gradient(135deg, #2D3250 0%, #1F223B 100%);
+  --grad-lock-panel:          linear-gradient(145deg, #0d1f3c 0%, #0a1628 40%, #110828 80%, #0d1f3c 100%);
+  --grad-lock-icon:           linear-gradient(135deg, #FFC30B 0%, #FF8800 100%);
+  --grad-lock-button:         linear-gradient(135deg, #FFC30B 0%, #FF8800 60%, #FFC30B 100%);
 
   /* ── Glass & Blur (Warm, slightly translucent, matching #F2EEE8) ── */
   --glass-bg:                 rgba(255, 255, 255, 0.75);
@@ -499,21 +505,70 @@ input:focus, textarea:focus, select:focus {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   SCROLLBAR STYLIZATION
+   SCROLLBAR HIDING (GLOBAL & UNIVERSAL)
+   Ensures visual scrollbars are hidden across all elements,
+   menus, submenus, modals, popups, drawers, tables, and panels,
+   while scrolling functionality remains 100% active.
    ───────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 4px;
+*,
+*::before,
+*::after,
+html,
+body,
+div,
+section,
+main,
+aside,
+nav,
+form,
+ul,
+ol,
+table,
+tbody,
+thead,
+textarea,
+select {
+  -ms-overflow-style: none !important; /* IE and Edge */
+  scrollbar-width: none !important; /* Firefox */
 }
-::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
 
-.sidebar-shell ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.10);
+::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
 }
-.sidebar-shell ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-primary-hover);
+
+::-webkit-scrollbar-track {
+  display: none !important;
+  background: transparent !important;
+}
+
+::-webkit-scrollbar-thumb {
+  display: none !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+::-webkit-scrollbar-corner {
+  display: none !important;
+  background: transparent !important;
+}
+
+.scrollbar-thin,
+.custom-scrollbar,
+.scrollbar-none {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+.scrollbar-thin::-webkit-scrollbar,
+.custom-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -526,6 +581,51 @@ input:focus, textarea:focus, select:focus {
 
 .lock-bg-pulse {
   animation: slow-pulse 4s ease-in-out infinite;
+}
+
+@keyframes lock-border-spin {
+  0%   { background-position: 0% 50%;   }
+  25%  { background-position: 100% 50%; }
+  50%  { background-position: 100% 0%;  }
+  75%  { background-position: 0% 0%;    }
+  100% { background-position: 0% 50%;   }
+}
+.lock-panel-ring {
+  position: relative;
+  border-radius: 22px;
+}
+.lock-panel-ring::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 24px;
+  background: linear-gradient(
+    270deg,
+    #FF416C, #FFB347, #6A11CB, #FF758C,
+    #00FFFF, #0077FF, #FF00CC, #3333FF,
+    #00C6FF, #0072FF, #FFC30B, #FF416C
+  );
+  background-size: 400% 400%;
+  animation: lock-border-spin 5s ease infinite;
+  z-index: -1;
+  filter: blur(0.5px);
+}
+.lock-panel-ring::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 24px;
+  background: linear-gradient(
+    270deg,
+    #FF416C, #FFB347, #6A11CB, #FF758C,
+    #00FFFF, #0077FF, #FF00CC, #3333FF,
+    #00C6FF, #0072FF, #FFC30B, #FF416C
+  );
+  background-size: 400% 400%;
+  animation: lock-border-spin 5s ease infinite;
+  z-index: -1;
+  filter: blur(8px);
+  opacity: 0.6;
 }
 
 /* ─────────────────────────────────────────────────────────────

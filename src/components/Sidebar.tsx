@@ -36,6 +36,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const shouldReduceMotion = useReducedMotion();
   const activeTasksCount = tasks.filter(t => t.status === "open").length;
 
+  React.useEffect(() => {
+    document.querySelectorAll<HTMLElement>(".sidebar-nav-btn").forEach(el => {
+      el.style.background = "";
+      el.style.color = "";
+    });
+  }, [activeTab]);
+
+  const iconColorMap: Record<string, string> = {
+    dashboard:     "#00C6FF",
+    clients:       "#56AB2F",
+    pipeline:      "#FF416C",
+    ai:            "#A855F7",
+    calculators:   "#FF8800",
+    lenders:       "#00FFFF",
+    calendar:      "#8360C3",
+    tasks:         "#FF7E5F",
+    messages:      "#FF00CC",
+    emails:        "#0072FF",
+    retention:     "#FFB347",
+    partners:      "#A8E063",
+    reports:       "#FCEE21",
+    compliance:    "#0077FF",
+    file_readiness:"#FEB47B",
+    admin:         "var(--color-error)",
+    settings:      "#FF8FBF",
+  };
+
   const menuGroups = [
     {
       label: "Main",
@@ -191,7 +218,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onClick={() => setActiveTab(item.id)}
                   whileHover={{}}
                   whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
-                  className="group relative flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-lg outline-none cursor-pointer w-full text-left"
+                  className="sidebar-nav-btn group relative flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-lg outline-none cursor-pointer w-full text-left"
                   style={{
                     color: isActive
                       ? "#FFFFFF"
@@ -207,8 +234,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                   onMouseLeave={e => {
                     if (!isActive) {
-                      (e.currentTarget as HTMLElement).style.background = "transparent";
-                      (e.currentTarget as HTMLElement).style.color = "var(--color-text-sidebar)";
+                      (e.currentTarget as HTMLElement).style.background = "";
+                      (e.currentTarget as HTMLElement).style.color = "";
                     }
                   }}
                 >
@@ -220,17 +247,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         className="absolute inset-0 rounded-lg pointer-events-none"
                         style={{
                           background: "var(--color-sidebar-active)",
-                          border: "1px solid rgba(249, 177, 122, 0.20)",
+                          border: `1px solid ${iconColorMap[item.id] ?? "rgba(249,177,122,0.20)"}33`,
                           boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)"
                         }}
                       />
                       {/* Slim rounded left-side active indicator */}
                       <motion.div
                         layoutId="sidebar-active-indicator"
-                        className="absolute left-1.5 top-1.5 bottom-1.5 w-[3px] rounded-full z-20 pointer-events-none"
+                        className="absolute -left-[3px] top-1/2 -translate-y-1/2 w-[6px] h-[26px] rounded-full z-20 pointer-events-none"
                         style={{
-                          background: "var(--color-brand-peach)"
+                          background: iconColorMap[item.id] ?? "var(--color-brand-peach)",
+                          boxShadow: `0 0 10px 3px ${iconColorMap[item.id] ?? "rgba(249,177,122,0.6)"}88,
+                                       0 0 4px 1px ${iconColorMap[item.id] ?? "rgba(249,177,122,0.4)"}bb`,
                         }}
+                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
                       />
                     </>
                   )}
@@ -239,13 +269,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <Icon
                       className="h-4 w-4 shrink-0"
                       style={{
-                        color: isActive
-                          ? "var(--color-brand-peach)"
-                          : item.highlight
-                            ? "var(--color-brand-peach)"
-                            : item.alert
-                              ? "var(--color-error)"
-                              : "var(--color-text-sidebar-muted)",
+                        color: item.alert
+                          ? "var(--color-error)"
+                          : iconColorMap[item.id] ?? "var(--color-text-sidebar-muted)",
+                        filter: isActive
+                          ? `drop-shadow(0 0 5px ${iconColorMap[item.id] ?? "#ffffff"}99)`
+                          : "none",
                         transition: "var(--transition-fast)"
                       }}
                     />

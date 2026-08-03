@@ -714,20 +714,24 @@ export default function App() {
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center flex-col gap-6"
             style={{
-              background: "var(--grad-soft)"
+              background: "linear-gradient(135deg, #060d1a 0%, #0a0f23 40%, #06050f 100%)"
             }}
           >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(244,163,132,0.12)_0%,transparent_60%)] animate-pulse pointer-events-none" />
+            <div 
+              className="absolute inset-0 animate-pulse pointer-events-none"
+              style={{ background: "radial-gradient(circle at center, rgba(0,198,255,0.10) 0%, rgba(106,17,203,0.07) 40%, transparent 70%)" }}
+            />
             <motion.div 
               initial={{ scale: 0.92, y: 15 }}
               animate={{ scale: 1, y: 0 }}
-              className="panel-card p-8 w-80 text-center shadow-2xl relative border-t-2"
+              className="lock-panel-ring p-8 w-80 text-center shadow-2xl relative"
               style={{
-                borderTopColor: "var(--color-accent)",
-                boxShadow: "0 20px 50px rgba(0, 0, 0, 0.4), 0 0 30px rgba(244, 163, 132, 0.08)"
+                background: "var(--grad-lock-panel)",
+                borderRadius: "20px",
+                boxShadow: "0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(0, 198, 255, 0.08)"
               }}
             >
-              <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: "var(--grad-warm-highlight)", boxShadow: "0 4px 14px rgba(244, 163, 132, 0.3)" }}>
+              <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: "var(--grad-lock-icon)", boxShadow: "0 4px 18px rgba(255, 195, 11, 0.35)" }}>
                 <Lock className="w-6 h-6 text-[var(--color-text-inverse)]" />
               </div>
               <h3 className="text-sm font-black uppercase tracking-widest text-[var(--color-text)] mb-1">Workstation Locked</h3>
@@ -747,8 +751,8 @@ export default function App() {
               <button 
                 onClick={handleUnlock}
                 disabled={lockoutActive}
-                className="w-full text-[var(--color-text-inverse)] font-black uppercase tracking-wider text-[11px] py-3.5 rounded-xl hover:opacity-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-md hover:shadow-[0_0_24px_rgba(244,163,132,0.4)]"
-                style={{ background: "var(--grad-warm-highlight)" }}
+                className="w-full text-[var(--color-text-inverse)] font-black uppercase tracking-wider text-[11px] py-3.5 rounded-xl hover:opacity-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-md hover:shadow-[0_0_28px_rgba(255,195,11,0.45)]"
+                style={{ background: "var(--grad-lock-button)", boxShadow: "0 4px 20px rgba(255, 195, 11, 0.25)" }}
               >
                 Unlock Workstation
               </button>
