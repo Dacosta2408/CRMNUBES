@@ -164,46 +164,39 @@ export const KPICards: React.FC<KPICardsProps> = ({
           <motion.div
             key={card.id}
             onClick={() => setActiveTab(card.tab)}
-            whileHover={{}}
+            whileHover={shouldReduceMotion ? {} : { y: -2 }}
             whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className={`gradient-card ${variant} relative overflow-hidden pt-5 pb-3.5 px-3.5 flex flex-col justify-between cursor-pointer group transition-all duration-200`}
+            className={`gradient-card ${variant} rounded-xl relative overflow-hidden pt-5 pb-3.5 px-3.5 flex flex-col justify-between cursor-pointer group transition-all duration-200`}
           >
-            {/* Top Border Color Strip with Glass Glow effect */}
-            <div 
-              className="absolute top-0 left-0 right-0 h-[3px] rounded-t-xl"
-              style={{ background: card.alert ? "linear-gradient(135deg, var(--color-error) 0%, var(--color-primary) 100%)" : card.isPrimary ? "var(--grad-warm-highlight)" : "var(--grad-slate-blue)" }}
-            />
-
             {/* Inner top lighting reflection */}
-            <div className="absolute inset-0 bg-gradient-to-b from-white/[0.03] to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-b from-white/[0.04] to-transparent pointer-events-none" />
 
             {card.alert && (
               <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[var(--color-error)] animate-pulse shadow-[0_0_6px_var(--color-error)]" />
             )}
 
-            <div className="flex items-center justify-between gap-1.5">
-              <span className="text-[10px] text-[var(--color-text)]/80 font-extrabold uppercase tracking-[0.14em] truncate">
+            <div className="flex items-center justify-between gap-1.5 z-10">
+              <span className="text-[10px] text-[var(--color-text)]/85 font-extrabold uppercase tracking-[0.14em] truncate">
                 {card.title}
               </span>
-              <div className={`p-1.5 rounded-lg shrink-0 ${card.alert ? 'bg-[var(--color-error)]/10 text-[var(--color-error)]' : 'bg-[var(--color-surface-3)]/60 text-[var(--color-primary)] border border-[var(--color-border)]/40'} group-hover:scale-105 transition-transform duration-200`}>
+              <div className={`p-1.5 rounded-lg shrink-0 ${card.alert ? 'bg-[var(--color-error)]/10 text-[var(--color-error)] border border-[var(--color-error)]/30' : 'bg-white/10 text-[var(--color-text)] border border-white/10'} group-hover:scale-105 transition-transform duration-200`}>
                 <Icon className="w-3.5 h-3.5" />
               </div>
             </div>
 
-            <div className="mt-3 flex items-baseline justify-between">
+            <div className="mt-3 flex items-baseline justify-between z-10">
               <span
-                className={`font-black tracking-tight font-sans leading-none ${String(card.value).length > 6 ? "text-base" : "text-2xl"}`}
-                style={{ color: "var(--color-accent)" }}
+                className={`font-black tracking-tight font-sans leading-none ${String(card.value).length > 6 ? "text-base" : "text-2xl"} text-[var(--color-text)]`}
               >
                 {card.value}
               </span>
-              <span className="text-[10px] text-[var(--color-text-muted)]/75 group-hover:text-[var(--color-primary)] transition-colors">
+              <span className="text-[10px] text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)] transition-colors">
                 <ArrowUpRight className="w-3.5 h-3.5" />
               </span>
             </div>
 
-            <div className="mt-2.5 w-full rounded-md border border-[var(--color-border)]/35 bg-[var(--color-surface-2)]/85 px-2 py-1 text-center text-[10px] font-semibold text-[var(--color-text-muted)] leading-tight">
+            <div className="mt-2.5 w-full rounded-md border border-white/10 bg-white/5 backdrop-blur-sm px-2 py-1 text-center text-[10px] font-semibold text-[var(--color-text-muted)] leading-tight z-10">
               {card.sub}
             </div>
           </motion.div>
