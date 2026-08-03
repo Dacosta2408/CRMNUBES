@@ -138,6 +138,53 @@
     0 0 0 1.5px rgba(0, 198, 255, 0.30),
     0 0 12px rgba(0, 114, 255, 0.18),
     0 4px 16px rgba(0, 0, 0, 0.15);
+
+  /* ── 9 Gradient Palette System ── */
+  /* 1. Sunset Vibes */
+  --grad-sunset: linear-gradient(135deg, #FF416C 0%, #FFB347 100%);
+  --color-sunset-start: #FF416C;
+  --color-sunset-end: #FFB347;
+  --shadow-sunset-panel: 0 0 0 1px rgba(255, 65, 108, 0.20), 0 0 24px rgba(255, 179, 71, 0.12), inset 0 1px 1px rgba(255, 65, 108, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 2. Royal Purple */
+  --grad-royal-purple: linear-gradient(135deg, #6A11C8 0%, #FF758C 100%);
+  --color-royal-start: #6A11C8;
+  --color-royal-end: #FF758C;
+  --shadow-royal-panel: 0 0 0 1px rgba(106, 17, 200, 0.20), 0 0 24px rgba(255, 117, 140, 0.12), inset 0 1px 1px rgba(106, 17, 200, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 3. Arctic Glacier */
+  --grad-arctic: linear-gradient(135deg, #00FFFF 0%, #0077FF 100%);
+  --color-arctic-start: #00FFFF;
+  --color-arctic-end: #0077FF;
+  --shadow-arctic-panel: 0 0 0 1px rgba(0, 255, 255, 0.20), 0 0 24px rgba(0, 119, 255, 0.12), inset 0 1px 1px rgba(0, 255, 255, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 4. Neon Dream */
+  --grad-neon: linear-gradient(135deg, #FF00CC 0%, #3333FF 100%);
+  --color-neon-start: #FF00CC;
+  --color-neon-end: #3333FF;
+  --shadow-neon-panel: 0 0 0 1px rgba(255, 0, 204, 0.20), 0 0 24px rgba(51, 51, 255, 0.12), inset 0 1px 1px rgba(255, 0, 204, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 5. Citrus Burst */
+  --grad-citrus: linear-gradient(135deg, #FF8800 0%, #FCEE21 100%);
+  --color-citrus-start: #FF8800;
+  --color-citrus-end: #FCEE21;
+  --shadow-citrus-panel: 0 0 0 1px rgba(255, 136, 0, 0.20), 0 0 24px rgba(252, 238, 33, 0.12), inset 0 1px 1px rgba(255, 136, 0, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 6. Ocean Breeze */
+  --grad-ocean: linear-gradient(135deg, #00C6FF 0%, #0072FF 100%);
+  --color-ocean-start: #00C6FF;
+  --color-ocean-end: #0072FF;
+  --shadow-ocean-panel: 0 0 0 1px rgba(0, 198, 255, 0.20), 0 0 24px rgba(0, 114, 255, 0.12), inset 0 1px 1px rgba(0, 198, 255, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 7. Nature Fresh */
+  --grad-nature: linear-gradient(135deg, #56AB2F 0%, #A8E063 100%);
+  --color-nature-start: #56AB2F;
+  --color-nature-end: #A8E063;
+  --shadow-nature-panel: 0 0 0 1px rgba(86, 171, 47, 0.20), 0 0 24px rgba(168, 224, 99, 0.12), inset 0 1px 1px rgba(86, 171, 47, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 8. Warm Horizon */
+  --grad-warm: linear-gradient(135deg, #FF7E5F 0%, #FEB47B 100%);
+  --color-warm-start: #FF7E5F;
+  --color-warm-end: #FEB47B;
+  --shadow-warm-panel: 0 0 0 1px rgba(255, 126, 95, 0.20), 0 0 24px rgba(254, 180, 123, 0.12), inset 0 1px 1px rgba(255, 126, 95, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 9. Lavender Sky */
+  --grad-lavender: linear-gradient(135deg, #8360C3 0%, #FF8FBF 100%);
+  --color-lavender-start: #8360C3;
+  --color-lavender-end: #FF8FBF;
+  --shadow-lavender-panel: 0 0 0 1px rgba(131, 96, 195, 0.20), 0 0 24px rgba(255, 143, 191, 0.12), inset 0 1px 1px rgba(131, 96, 195, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -247,6 +294,53 @@
     0 0 0 1.5px rgba(0, 198, 255, 0.30),
     0 0 12px rgba(0, 114, 255, 0.18),
     0 4px 16px rgba(0, 0, 0, 0.15);
+
+  /* ── 9 Gradient Palette System ── */
+  /* 1. Sunset Vibes */
+  --grad-sunset: linear-gradient(135deg, #FF416C 0%, #FFB347 100%);
+  --color-sunset-start: #FF416C;
+  --color-sunset-end: #FFB347;
+  --shadow-sunset-panel: 0 0 0 1px rgba(255, 65, 108, 0.20), 0 0 24px rgba(255, 179, 71, 0.12), inset 0 1px 1px rgba(255, 65, 108, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 2. Royal Purple */
+  --grad-royal-purple: linear-gradient(135deg, #6A11C8 0%, #FF758C 100%);
+  --color-royal-start: #6A11C8;
+  --color-royal-end: #FF758C;
+  --shadow-royal-panel: 0 0 0 1px rgba(106, 17, 200, 0.20), 0 0 24px rgba(255, 117, 140, 0.12), inset 0 1px 1px rgba(106, 17, 200, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 3. Arctic Glacier */
+  --grad-arctic: linear-gradient(135deg, #00FFFF 0%, #0077FF 100%);
+  --color-arctic-start: #00FFFF;
+  --color-arctic-end: #0077FF;
+  --shadow-arctic-panel: 0 0 0 1px rgba(0, 255, 255, 0.20), 0 0 24px rgba(0, 119, 255, 0.12), inset 0 1px 1px rgba(0, 255, 255, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 4. Neon Dream */
+  --grad-neon: linear-gradient(135deg, #FF00CC 0%, #3333FF 100%);
+  --color-neon-start: #FF00CC;
+  --color-neon-end: #3333FF;
+  --shadow-neon-panel: 0 0 0 1px rgba(255, 0, 204, 0.20), 0 0 24px rgba(51, 51, 255, 0.12), inset 0 1px 1px rgba(255, 0, 204, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 5. Citrus Burst */
+  --grad-citrus: linear-gradient(135deg, #FF8800 0%, #FCEE21 100%);
+  --color-citrus-start: #FF8800;
+  --color-citrus-end: #FCEE21;
+  --shadow-citrus-panel: 0 0 0 1px rgba(255, 136, 0, 0.20), 0 0 24px rgba(252, 238, 33, 0.12), inset 0 1px 1px rgba(255, 136, 0, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 6. Ocean Breeze */
+  --grad-ocean: linear-gradient(135deg, #00C6FF 0%, #0072FF 100%);
+  --color-ocean-start: #00C6FF;
+  --color-ocean-end: #0072FF;
+  --shadow-ocean-panel: 0 0 0 1px rgba(0, 198, 255, 0.20), 0 0 24px rgba(0, 114, 255, 0.12), inset 0 1px 1px rgba(0, 198, 255, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 7. Nature Fresh */
+  --grad-nature: linear-gradient(135deg, #56AB2F 0%, #A8E063 100%);
+  --color-nature-start: #56AB2F;
+  --color-nature-end: #A8E063;
+  --shadow-nature-panel: 0 0 0 1px rgba(86, 171, 47, 0.20), 0 0 24px rgba(168, 224, 99, 0.12), inset 0 1px 1px rgba(86, 171, 47, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 8. Warm Horizon */
+  --grad-warm: linear-gradient(135deg, #FF7E5F 0%, #FEB47B 100%);
+  --color-warm-start: #FF7E5F;
+  --color-warm-end: #FEB47B;
+  --shadow-warm-panel: 0 0 0 1px rgba(255, 126, 95, 0.20), 0 0 24px rgba(254, 180, 123, 0.12), inset 0 1px 1px rgba(255, 126, 95, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+  /* 9. Lavender Sky */
+  --grad-lavender: linear-gradient(135deg, #8360C3 0%, #FF8FBF 100%);
+  --color-lavender-start: #8360C3;
+  --color-lavender-end: #FF8FBF;
+  --shadow-lavender-panel: 0 0 0 1px rgba(131, 96, 195, 0.20), 0 0 24px rgba(255, 143, 191, 0.12), inset 0 1px 1px rgba(131, 96, 195, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -1035,4 +1129,42 @@ select {
     0 0 0 2px rgba(0, 150, 220, 0.18),
     0 0 16px rgba(0, 100, 200, 0.16),
     0 4px 16px rgba(15, 23, 42, 0.06);
+}
+
+/* ── Gradient Card Classes (for KPI cards) ── */
+.gradient-card {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-radius: var(--radius-card);
+  position: relative;
+  overflow: hidden;
+  animation: ocean-edge-pulse 4s ease-in-out infinite;
+}
+.gradient-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--card-gradient, var(--grad-ocean));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+/* Individual gradient card variants */
+.gradient-card.sunset { --card-gradient: var(--grad-sunset); box-shadow: var(--shadow-sunset-panel); }
+.gradient-card.royal { --card-gradient: var(--grad-royal-purple); box-shadow: var(--shadow-royal-panel); }
+.gradient-card.arctic { --card-gradient: var(--grad-arctic); box-shadow: var(--shadow-arctic-panel); }
+.gradient-card.neon { --card-gradient: var(--grad-neon); box-shadow: var(--shadow-neon-panel); }
+.gradient-card.citrus { --card-gradient: var(--grad-citrus); box-shadow: var(--shadow-citrus-panel); }
+.gradient-card.ocean { --card-gradient: var(--grad-ocean); box-shadow: var(--shadow-ocean-panel); }
+.gradient-card.nature { --card-gradient: var(--grad-nature); box-shadow: var(--shadow-nature-panel); }
+.gradient-card.warm { --card-gradient: var(--grad-warm); box-shadow: var(--shadow-warm-panel); }
+.gradient-card.lavender { --card-gradient: var(--grad-lavender); box-shadow: var(--shadow-lavender-panel); }
+/* Light mode adjustments */
+[data-theme="light"] .gradient-card {
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 0 24px rgba(0, 0, 0, 0.07), inset 0 1px 1px rgba(255, 255, 255, 0.95), 0 6px 24px rgba(15, 23, 42, 0.05);
 }

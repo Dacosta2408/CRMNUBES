@@ -143,10 +143,23 @@ export const KPICards: React.FC<KPICardsProps> = ({
     }
   ];
 
+  const GRADIENT_VARIANTS = [
+    "sunset",
+    "royal",
+    "arctic",
+    "neon",
+    "citrus",
+    "ocean",
+    "nature",
+    "warm",
+    "lavender"
+  ];
+
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 select-none" id="kpi-summary-row">
-      {cards.map((card) => {
+      {cards.map((card, index) => {
         const Icon = card.icon;
+        const variant = GRADIENT_VARIANTS[index] ?? "lavender";
         return (
           <motion.div
             key={card.id}
@@ -154,7 +167,7 @@ export const KPICards: React.FC<KPICardsProps> = ({
             whileHover={{}}
             whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className="glass-card relative overflow-hidden pt-5 pb-3.5 px-3.5 flex flex-col justify-between cursor-pointer group border border-[var(--color-border)]/80 hover:border-[var(--color-accent)]/40 hover:bg-[var(--color-surface-2)]/40 hover:shadow-[inset_0_1px_3px_rgba(255,255,255,0.05),0_10px_20px_-5px_rgba(0,0,0,0.15)] shadow-md transition-all duration-200"
+            className={`gradient-card ${variant} relative overflow-hidden pt-5 pb-3.5 px-3.5 flex flex-col justify-between cursor-pointer group transition-all duration-200`}
           >
             {/* Top Border Color Strip with Glass Glow effect */}
             <div 
