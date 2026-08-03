@@ -286,8 +286,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <span
                       className="z-10 text-[9px] font-black px-1.5 py-0.5 rounded-full min-w-4 text-center"
                       style={{
-                        background: "var(--color-brand-peach)",
-                        color: "var(--color-brand-slate-darker)"
+                        background: `${iconColorMap[item.id] ?? "var(--color-brand-peach)"}22`,
+                        color: iconColorMap[item.id] ?? "var(--color-brand-peach)",
+                        border: `1px solid ${iconColorMap[item.id] ?? "var(--color-brand-peach)"}55`,
+                        boxShadow: `0 0 6px ${iconColorMap[item.id] ?? "var(--color-brand-peach)"}44`
                       }}
                     >
                       {item.badge}

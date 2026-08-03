@@ -120,6 +120,24 @@
   --color-calendar-toolbar-icon:  #9FB4CC;
   --color-calendar-strong-text:   #F0F4F8;
   --color-calendar-muted-control: #5C7594;
+
+  /* ── Ocean Breeze Glass Panel System ── */
+  --grad-ocean-breeze:         linear-gradient(135deg, #00C6FF 0%, #0072FF 100%);
+  --grad-ocean-edge:           linear-gradient(135deg, #00C6FF 0%, #0072FF 100%);
+  --color-ocean-start:         #00C6FF;
+  --color-ocean-end:           #0072FF;
+  --color-ocean-glow:          rgba(0, 198, 255, 0.18);
+  --color-ocean-glow-strong:   rgba(0, 114, 255, 0.22);
+  --border-ocean-glass:        1px solid rgba(0, 198, 255, 0.22);
+  --shadow-ocean-panel:
+    0 0 0 1px rgba(0, 198, 255, 0.15),
+    0 0 24px rgba(0, 114, 255, 0.10),
+    inset 0 1px 1px rgba(0, 198, 255, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.20);
+  --shadow-ocean-btn:
+    0 0 0 1.5px rgba(0, 198, 255, 0.30),
+    0 0 12px rgba(0, 114, 255, 0.18),
+    0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -211,6 +229,24 @@
   --color-calendar-toolbar-icon:  #2D3250;
   --color-calendar-strong-text:   #1C2230;
   --color-calendar-muted-control: #4F5E7B;
+
+  /* ── Ocean Breeze Glass Panel System ── */
+  --grad-ocean-breeze:         linear-gradient(135deg, #00C6FF 0%, #0072FF 100%);
+  --grad-ocean-edge:           linear-gradient(135deg, #00C6FF 0%, #0072FF 100%);
+  --color-ocean-start:         #00C6FF;
+  --color-ocean-end:           #0072FF;
+  --color-ocean-glow:          rgba(0, 198, 255, 0.18);
+  --color-ocean-glow-strong:   rgba(0, 114, 255, 0.22);
+  --border-ocean-glass:        1px solid rgba(0, 198, 255, 0.22);
+  --shadow-ocean-panel:
+    0 0 0 1px rgba(0, 198, 255, 0.15),
+    0 0 24px rgba(0, 114, 255, 0.10),
+    inset 0 1px 1px rgba(0, 198, 255, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.20);
+  --shadow-ocean-btn:
+    0 0 0 1.5px rgba(0, 198, 255, 0.30),
+    0 0 12px rgba(0, 114, 255, 0.18),
+    0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -391,6 +427,22 @@ button, a {
   background: var(--color-sidebar-active);
   color: var(--color-primary); /* Uses the modern slate brand color */
   border-left: 2px solid var(--color-primary);
+}
+
+/* ── Force-freeze all sidebar text & icon colors in both themes ── */
+[data-theme="light"] aside,
+[data-theme="light"] .sidebar-shell,
+[data-theme="light"] .sidebar-nav-btn {
+  color: var(--color-text-sidebar) !important;
+}
+[data-theme="light"] aside .sidebar-nav-label,
+[data-theme="light"] aside [class*="text-sidebar-muted"],
+[data-theme="light"] aside .sidebar-nav-label {
+  color: var(--color-text-sidebar-muted) !important;
+}
+/* Ensure the sidebar never inherits the light mode body text color */
+aside {
+  color: var(--color-text-sidebar);
 }
 
 /* --- 4. BUTTONS & ACTIONS --- */
@@ -900,4 +952,87 @@ select {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ── Ocean Breeze Edge Animation ── */
+@keyframes ocean-edge-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(0, 198, 255, 0.20),
+      0 0 16px rgba(0, 114, 255, 0.10),
+      inset 0 1px 1px rgba(0, 198, 255, 0.06);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1.5px rgba(0, 198, 255, 0.38),
+      0 0 32px rgba(0, 114, 255, 0.20),
+      inset 0 1px 1px rgba(0, 198, 255, 0.10);
+  }
+}
+@keyframes ocean-btn-shimmer {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+/* Reusable panel class — apply to any large dashboard card */
+.ocean-panel {
+  border: 1px solid rgba(0, 198, 255, 0.18);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--shadow-ocean-panel);
+  animation: ocean-edge-pulse 4s ease-in-out infinite;
+  border-radius: var(--radius-panel);
+  position: relative;
+  overflow: hidden;
+}
+.ocean-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(0,198,255,0.25) 0%, rgba(0,114,255,0.12) 50%, rgba(0,198,255,0.08) 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+/* Reusable animated button edge */
+.ocean-btn-edge {
+  position: relative;
+  border: 1px solid rgba(0, 198, 255, 0.35) !important;
+  box-shadow: var(--shadow-ocean-btn);
+  transition: box-shadow 200ms cubic-bezier(0.16,1,0.3,1), border-color 200ms ease;
+}
+.ocean-btn-edge:hover {
+  border-color: rgba(0, 198, 255, 0.65) !important;
+  box-shadow:
+    0 0 0 2px rgba(0, 198, 255, 0.22),
+    0 0 20px rgba(0, 114, 255, 0.28),
+    0 4px 20px rgba(0, 0, 0, 0.18);
+}
+/* Light mode ocean panel override */
+[data-theme="light"] .ocean-panel {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(0, 198, 255, 0.20);
+  box-shadow:
+    0 0 0 1px rgba(0, 198, 255, 0.12),
+    0 0 24px rgba(0, 114, 255, 0.07),
+    inset 0 1px 1px rgba(255, 255, 255, 0.95),
+    0 6px 24px rgba(15, 23, 42, 0.05);
+}
+[data-theme="light"] .ocean-btn-edge {
+  border: 1px solid rgba(0, 150, 220, 0.35) !important;
+  box-shadow:
+    0 0 0 1.5px rgba(0, 150, 220, 0.18),
+    0 0 10px rgba(0, 100, 200, 0.10),
+    0 2px 8px rgba(15, 23, 42, 0.06);
+}
+[data-theme="light"] .ocean-btn-edge:hover {
+  border-color: rgba(0, 150, 220, 0.55) !important;
+  box-shadow:
+    0 0 0 2px rgba(0, 150, 220, 0.18),
+    0 0 16px rgba(0, 100, 200, 0.16),
+    0 4px 16px rgba(15, 23, 42, 0.06);
 }
