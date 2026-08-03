@@ -69,6 +69,26 @@ export default function App() {
     settings: "Settings"
   };
 
+  const TAB_TITLE_GRADIENTS: Record<string, string> = {
+    dashboard:      "linear-gradient(90deg, #00C6FF, #0072FF)",   // Ocean Breeze
+    clients:        "linear-gradient(90deg, #FF416C, #FFB347)",   // Sunset Vibes
+    pipeline:       "linear-gradient(90deg, #FF416C, #FFB347)",   // Sunset Vibes
+    calculators:    "linear-gradient(90deg, #FF8800, #FCEE21)",   // Citrus Burst
+    ai:             "linear-gradient(90deg, #6A11CB, #FF758C)",   // Royal Purple
+    messages:       "linear-gradient(90deg, #00FFFF, #0077FF)",   // Arctic Glacier
+    emails:         "linear-gradient(90deg, #00C6FF, #0072FF)",   // Ocean Breeze
+    lenders:        "linear-gradient(90deg, #56AB2F, #A8E063)",   // Nature Fresh
+    calendar:       "linear-gradient(90deg, #8360C3, #FF8FBF)",   // Lavender Sky
+    tasks:          "linear-gradient(90deg, #FF7E5F, #FEB47B)",   // Warm Horizon
+    partners:       "linear-gradient(90deg, #56AB2F, #A8E063)",   // Nature Fresh
+    reports:        "linear-gradient(90deg, #FF8800, #FCEE21)",   // Citrus Burst
+    retention:      "linear-gradient(90deg, #FF00CC, #3333FF)",   // Neon Dream
+    compliance:     "linear-gradient(90deg, #6A11CB, #FF758C)",   // Royal Purple
+    file_readiness: "linear-gradient(90deg, #FF7E5F, #FEB47B)",   // Warm Horizon
+    admin:          "linear-gradient(90deg, #FF416C, #FFB347)",   // Sunset Vibes
+    settings:       "linear-gradient(90deg, #8360C3, #FF8FBF)",   // Lavender Sky
+  };
+
   // ─── REMAINING SHARED STATE ───
   const [lenders, setLenders] = useState<Lender[]>(() => {
     const saved = localStorage.getItem("gbk_lenders");
@@ -731,7 +751,9 @@ export default function App() {
                 boxShadow: "0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(0, 198, 255, 0.08)"
               }}
             >
-              <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: "var(--grad-lock-icon)", boxShadow: "0 4px 18px rgba(255, 195, 11, 0.35)" }}>
+              {/* Orb glow halo layer — must be first child */}
+              <div className="lock-orb-halo" aria-hidden="true" />
+              <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: "var(--grad-lock-icon)", boxShadow: "0 4px 18px rgba(0, 198, 255, 0.35)" }}>
                 <Lock className="w-6 h-6 text-[var(--color-text-inverse)]" />
               </div>
               <h3 className="text-sm font-black uppercase tracking-widest text-[var(--color-text)] mb-1">Workstation Locked</h3>
@@ -751,8 +773,8 @@ export default function App() {
               <button 
                 onClick={handleUnlock}
                 disabled={lockoutActive}
-                className="w-full text-[var(--color-text-inverse)] font-black uppercase tracking-wider text-[11px] py-3.5 rounded-xl hover:opacity-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-md hover:shadow-[0_0_28px_rgba(255,195,11,0.45)]"
-                style={{ background: "var(--grad-lock-button)", boxShadow: "0 4px 20px rgba(255, 195, 11, 0.25)" }}
+                className="w-full text-[var(--color-text-inverse)] font-black uppercase tracking-wider text-[11px] py-3.5 rounded-xl hover:opacity-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-md hover:shadow-[0_0_28px_rgba(0,198,255,0.45)]"
+                style={{ background: "var(--grad-lock-button)", boxShadow: "0 4px 20px rgba(0, 198, 255, 0.25)" }}
               >
                 Unlock Workstation
               </button>
@@ -824,7 +846,12 @@ export default function App() {
             borderBottom: "1px solid var(--color-divider)"
           }}
         >
-          <div className="text-sm font-semibold text-[var(--color-text)] tracking-tight">{TAB_LABELS[activeTab] || activeTab} Section</div>
+          <div
+            className="text-sm font-semibold tracking-tight bg-clip-text text-transparent"
+            style={{ backgroundImage: TAB_TITLE_GRADIENTS[activeTab] || "linear-gradient(90deg, var(--color-text), var(--color-text-muted))" }}
+          >
+            {TAB_LABELS[activeTab] || activeTab} Section
+          </div>
           <div className="flex items-center gap-3">
             {/* Quick search input */}
             <div className="relative">
@@ -839,7 +866,7 @@ export default function App() {
                   onChange={(e) => {
                     setGlobalSearch(e.target.value);
                   }}
-                  className="bg-transparent border-none text-[11px] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] placeholder:opacity-90 focus:outline-none w-full font-medium"
+                  className="bg-transparent border-none text-[11px] text-[var(--color-text-muted)] focus:text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] placeholder:opacity-75 focus:outline-none w-full font-medium transition-colors duration-150"
                 />
               </div>
 
@@ -913,10 +940,11 @@ export default function App() {
             {/* New Client Button */}
             <button 
               onClick={openManualIntake}
-              className="flex items-center gap-1 px-4 py-1.5 text-[11px] font-extrabold text-[var(--color-text-inverse)] transition-all shrink-0 hover:shadow-[0_0_20px_rgba(244,163,132,0.3)] duration-200 active:scale-95 cursor-pointer"
+              className="flex items-center gap-1 px-4 py-1.5 text-[11px] font-extrabold text-[var(--color-text-inverse)] transition-all shrink-0 hover:shadow-[0_0_22px_rgba(0,198,255,0.45)] duration-200 active:scale-95 cursor-pointer"
               style={{
-                background: "var(--grad-warm-highlight)",
-                borderRadius: "10px"
+                background: "linear-gradient(90deg, #00C6FF 0%, #0072FF 100%)",
+                borderRadius: "9999px",
+                boxShadow: "0 0 14px rgba(0, 198, 255, 0.30)"
               }}
               id="header-new-client-btn"
             >
@@ -940,32 +968,37 @@ export default function App() {
             <div className="w-px h-5 bg-[var(--color-divider)] shrink-0 mx-0.5" />
 
             {/* Top Header Profile Section */}
-            <div className="relative shrink-0" id="header-profile-dropdown-container">
-              <button
-                onClick={() => setHeaderProfileOpen(!headerProfileOpen)}
-                className="flex items-center gap-2.5 px-3 py-1.5 rounded-full transition-all duration-200 cursor-pointer text-left select-none"
-                style={{
-                  background: "var(--glass-bg)",
-                  backdropFilter: "var(--glass-blur)",
-                  WebkitBackdropFilter: "var(--glass-blur)",
-                  border: "1px solid var(--glass-border)"
-                }}
-                id="header-profile-button"
+            <div className="relative shrink-0">
+              <div
+                className="p-[1.5px] rounded-full shrink-0"
+                style={{ background: "linear-gradient(90deg, #FF416C, #FFB347)" }}
+                id="header-profile-dropdown-container"
               >
-                <Avatar
-                  src={currentUser.photo}
-                  first={currentUser.first}
-                  last={currentUser.last}
-                  name={currentUser.displayName}
-                  size="sm"
-                />
-                <div className="hidden md:block">
-                  <div className="text-[10px] font-black text-[var(--color-text)] leading-tight">
-                    {currentUser.displayName || `${currentUser.first} ${currentUser.last}`}
+                <button
+                  onClick={() => setHeaderProfileOpen(!headerProfileOpen)}
+                  className="flex items-center gap-2.5 px-3 py-1.5 rounded-full transition-all duration-200 cursor-pointer text-left select-none"
+                  style={{
+                    background: "var(--glass-bg)",
+                    backdropFilter: "var(--glass-blur)",
+                    WebkitBackdropFilter: "var(--glass-blur)"
+                  }}
+                  id="header-profile-button"
+                >
+                  <Avatar
+                    src={currentUser.photo}
+                    first={currentUser.first}
+                    last={currentUser.last}
+                    name={currentUser.displayName}
+                    size="sm"
+                  />
+                  <div className="hidden md:block">
+                    <div className="text-[10px] font-black text-[var(--color-text)] leading-tight">
+                      {currentUser.displayName || `${currentUser.first} ${currentUser.last}`}
+                    </div>
                   </div>
-                </div>
-                <ChevronDown className="w-3.5 h-3.5 text-[var(--color-text-muted)] shrink-0" />
-              </button>
+                  <ChevronDown className="w-3.5 h-3.5 text-[var(--color-text-muted)] shrink-0" />
+                </button>
+              </div>
 
               {/* Dropdown Menu */}
               {headerProfileOpen && (

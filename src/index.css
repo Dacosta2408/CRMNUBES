@@ -89,8 +89,8 @@
   --grad-soft:                linear-gradient(135deg, #142137 0%, #1C2E4C 100%);
   --grad-deep:                linear-gradient(135deg, #0f1c2e 0%, #060e1a 100%);
   --grad-lock-panel:          linear-gradient(145deg, #0d1f3c 0%, #0a1628 40%, #110828 80%, #0d1f3c 100%);
-  --grad-lock-icon:           linear-gradient(135deg, #FFC30B 0%, #FF8800 100%);
-  --grad-lock-button:         linear-gradient(135deg, #FFC30B 0%, #FF8800 60%, #FFC30B 100%);
+  --grad-lock-icon:           linear-gradient(135deg, #00FFFF 0%, #00C6FF 50%, #0072FF 100%);
+  --grad-lock-button:         linear-gradient(135deg, #00C6FF 0%, #0072FF 60%, #00C6FF 100%);
 
   /* ── Glass & Blur (Layered & premium) ── */
   --glass-bg:                 rgba(13, 21, 37, 0.70); /* Stronger liquid glass blend */
@@ -189,8 +189,8 @@
   --grad-soft:                linear-gradient(135deg, #FFFFFF 0%, #F1F5F9 100%);
   --grad-deep:                linear-gradient(135deg, #2D3250 0%, #1F223B 100%);
   --grad-lock-panel:          linear-gradient(145deg, #0d1f3c 0%, #0a1628 40%, #110828 80%, #0d1f3c 100%);
-  --grad-lock-icon:           linear-gradient(135deg, #FFC30B 0%, #FF8800 100%);
-  --grad-lock-button:         linear-gradient(135deg, #FFC30B 0%, #FF8800 60%, #FFC30B 100%);
+  --grad-lock-icon:           linear-gradient(135deg, #00FFFF 0%, #00C6FF 50%, #0072FF 100%);
+  --grad-lock-button:         linear-gradient(135deg, #00C6FF 0%, #0072FF 60%, #00C6FF 100%);
 
   /* ── Glass & Blur (Warm, slightly translucent, matching #F2EEE8) ── */
   --glass-bg:                 rgba(255, 255, 255, 0.75);
@@ -437,6 +437,218 @@ button, a {
   transform: translateY(0);
 }
 
+/* --- 5. LIQUID GLASS BUTTON SYSTEM --- */
+/* Shared keyframe for border flow animation */
+@keyframes btn-border-flow {
+  0%   { background-position: 0% 50%;   }
+  100% { background-position: 300% 50%; }
+}
+/* ── BASE GLASS STRUCTURE (shared by all glass button tiers) ── */
+.btn-glass,
+.btn-glass-primary,
+.btn-glass-secondary,
+.btn-glass-ghost {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border: none;
+  cursor: pointer;
+  transition:
+    transform 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    background 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  overflow: visible;
+}
+/* ── SIZE VARIANTS ── */
+.btn-glass-sm {
+  padding: 0.375rem 0.875rem;
+  font-size: 0.6875rem;
+  border-radius: 8px;
+}
+.btn-glass-md {
+  padding: 0.5rem 1.125rem;
+  font-size: 0.6875rem;
+  border-radius: 10px;
+}
+.btn-glass-lg {
+  padding: 0.75rem 1.5rem;
+  font-size: 0.75rem;
+  border-radius: 12px;
+}
+.btn-glass-pill {
+  border-radius: 9999px !important;
+}
+/* ── TIER 1: PRIMARY CTA — animated gradient border + gold glass ── */
+.btn-glass-primary {
+  background: rgba(255, 195, 11, 0.08);
+  color: #FFC30B;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.20),
+    0 4px 20px rgba(0, 0, 0, 0.30),
+    0 0 12px rgba(255, 195, 11, 0.08);
+}
+/* Animated gradient border ring */
+.btn-glass-primary::before {
+  content: "";
+  position: absolute;
+  inset: -1.5px;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: linear-gradient(
+    90deg,
+    #FF416C, #FFB347, #6A11CB, #FF758C,
+    #00C6FF, #FFC30B, #56AB2F, #FF7E5F,
+    #FF416C
+  );
+  background-size: 300% 100%;
+  animation: btn-border-flow 4s linear infinite;
+  z-index: -1;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+/* Soft glow halo behind the button */
+.btn-glass-primary::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    #FF416C, #FFB347, #6A11CB,
+    #00C6FF, #FFC30B, #FF416C
+  );
+  background-size: 300% 100%;
+  animation: btn-border-flow 4s linear infinite;
+  z-index: -2;
+  filter: blur(10px);
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+.btn-glass-primary:hover {
+  background: rgba(255, 195, 11, 0.13);
+  color: #FFD44D;
+  transform: translateY(-1.5px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+    0 8px 28px rgba(0, 0, 0, 0.35),
+    0 0 20px rgba(255, 195, 11, 0.15);
+}
+.btn-glass-primary:hover::after {
+  opacity: 0.35;
+}
+.btn-glass-primary:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 2px 10px rgba(0, 0, 0, 0.25);
+}
+.btn-glass-primary:active::after {
+  opacity: 0.15;
+}
+/* ── TIER 2: SECONDARY — static border, softer glass ── */
+.btn-glass-secondary {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+    0 2px 12px rgba(0, 0, 0, 0.20);
+}
+.btn-glass-secondary:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--color-text);
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 6px 20px rgba(0, 0, 0, 0.25);
+}
+.btn-glass-secondary:active {
+  transform: translateY(0) scale(0.98);
+  background: rgba(255, 255, 255, 0.03);
+}
+/* ── TIER 3: GHOST — hover-only glass reveal ── */
+.btn-glass-ghost {
+  background: transparent;
+  color: var(--color-text-faint);
+  border: 1px solid transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.btn-glass-ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-muted);
+  border-color: rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+.btn-glass-ghost:active {
+  transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.03);
+}
+/* ── LIGHT MODE OVERRIDES ── */
+[data-theme="light"] .btn-glass-primary {
+  background: rgba(255, 195, 11, 0.10);
+  color: #B8860B;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.90),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.06),
+    0 4px 16px rgba(15, 23, 42, 0.10),
+    0 0 10px rgba(255, 195, 11, 0.06);
+}
+[data-theme="light"] .btn-glass-primary:hover {
+  background: rgba(255, 195, 11, 0.15);
+  color: #996A00;
+}
+[data-theme="light"] .btn-glass-secondary {
+  background: rgba(255, 255, 255, 0.60);
+  color: var(--color-text-muted);
+  border: 1px solid rgba(28, 34, 48, 0.10);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 2px 10px rgba(15, 23, 42, 0.06);
+}
+[data-theme="light"] .btn-glass-secondary:hover {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(28, 34, 48, 0.16);
+  color: var(--color-text);
+}
+[data-theme="light"] .btn-glass-ghost:hover {
+  background: rgba(28, 34, 48, 0.04);
+  border-color: rgba(28, 34, 48, 0.08);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+/* Pause animation when user prefers reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .btn-glass-primary::before,
+  .btn-glass-primary::after {
+    animation: none;
+  }
+  .btn-glass,
+  .btn-glass-primary,
+  .btn-glass-secondary,
+  .btn-glass-ghost {
+    transition: none;
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────
    INPUTS & SELECTION CONTROLS
    ───────────────────────────────────────────────────────────── */
@@ -578,54 +790,105 @@ select {
   0%, 100% { transform: scale(1);    opacity: 0.8; }
   50%       { transform: scale(1.03); opacity: 1;   }
 }
-
 .lock-bg-pulse {
   animation: slow-pulse 4s ease-in-out infinite;
 }
-
-@keyframes lock-border-spin {
-  0%   { background-position: 0% 50%;   }
-  25%  { background-position: 100% 50%; }
-  50%  { background-position: 100% 0%;  }
-  75%  { background-position: 0% 0%;    }
-  100% { background-position: 0% 50%;   }
+/* ── Orb travel animation — rotates the conic-gradient origin clockwise ── */
+@keyframes lock-orb-travel {
+  0%   { --orb-angle: 0deg;   }
+  100% { --orb-angle: 360deg; }
+}
+/* Register the custom property so the browser can interpolate it */
+@property --orb-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@property --orb-hue {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+@keyframes lock-orb-hue {
+  0%   { --orb-hue: 0;   }
+  100% { --orb-hue: 360; }
 }
 .lock-panel-ring {
   position: relative;
   border-radius: 22px;
+  isolation: isolate;
 }
+/* ── Layer 1: The static glass border — always visible, dark & subtle ── */
 .lock-panel-ring::before {
   content: "";
   position: absolute;
-  inset: -2px;
-  border-radius: 24px;
-  background: linear-gradient(
-    270deg,
-    #FF416C, #FFB347, #6A11CB, #FF758C,
-    #00FFFF, #0077FF, #FF00CC, #3333FF,
-    #00C6FF, #0072FF, #FFC30B, #FF416C
-  );
-  background-size: 400% 400%;
-  animation: lock-border-spin 5s ease infinite;
-  z-index: -1;
-  filter: blur(0.5px);
+  inset: -1.5px;
+  border-radius: 23.5px;
+  /* Dark glass border — the "track" the orb runs on */
+  background: rgba(255, 255, 255, 0.07);
+  z-index: -2;
+  /* Inner mask so only the 1.5px edge strip shows */
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 1.5px;
 }
+/* ── Layer 2: The traveling orb — a bright concentrated bloom on the edge ── */
 .lock-panel-ring::after {
   content: "";
   position: absolute;
   inset: -2px;
   border-radius: 24px;
-  background: linear-gradient(
-    270deg,
-    #FF416C, #FFB347, #6A11CB, #FF758C,
-    #00FFFF, #0077FF, #FF00CC, #3333FF,
-    #00C6FF, #0072FF, #FFC30B, #FF416C
+  /* Conic gradient: 5% bright orb bloom, 95% fully transparent track */
+  background: conic-gradient(
+    from var(--orb-angle),
+    transparent 0deg,
+    transparent 160deg,
+    oklch(0.78 0.18 calc(var(--orb-hue) + 200)) 168deg,
+    oklch(0.90 0.22 calc(var(--orb-hue) + 195)) 172deg,
+    #ffffff                                       176deg,
+    oklch(0.90 0.22 calc(var(--orb-hue) + 195)) 180deg,
+    oklch(0.78 0.18 calc(var(--orb-hue) + 200)) 184deg,
+    transparent 190deg,
+    transparent 360deg
   );
-  background-size: 400% 400%;
-  animation: lock-border-spin 5s ease infinite;
+  animation:
+    lock-orb-travel 3.5s linear infinite,
+    lock-orb-hue 8s linear infinite;
   z-index: -1;
-  filter: blur(8px);
-  opacity: 0.6;
+  /* Orb glow bloom — the soft halo around the bright point */
+  filter: blur(2.5px);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 2px;
+}
+/* ── Glow halo: a third layer — blurred duplicate for the bloom effect ── */
+.lock-panel-ring .lock-orb-halo {
+  position: absolute;
+  inset: -6px;
+  border-radius: 28px;
+  background: conic-gradient(
+    from var(--orb-angle),
+    transparent 0deg,
+    transparent 155deg,
+    oklch(0.65 0.20 calc(var(--orb-hue) + 200)) 165deg,
+    oklch(0.80 0.25 calc(var(--orb-hue) + 195)) 176deg,
+    oklch(0.65 0.20 calc(var(--orb-hue) + 200)) 187deg,
+    transparent 196deg,
+    transparent 360deg
+  );
+  animation:
+    lock-orb-travel 3.5s linear infinite,
+    lock-orb-hue 8s linear infinite;
+  z-index: -3;
+  filter: blur(10px);
+  opacity: 0.75;
+  pointer-events: none;
 }
 
 /* ─────────────────────────────────────────────────────────────
