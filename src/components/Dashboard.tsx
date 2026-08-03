@@ -116,9 +116,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     <div className="flex flex-col gap-6 h-full overflow-y-auto pr-2 pb-6 text-sans" id="gbk-crm-dashboard">
       
       {/* Dynamic Executive Console Header Section */}
-      <div className="relative overflow-visible isolate rounded-2xl border border-[var(--color-border)] bg-gradient-to-r from-[var(--color-surface-2)]/85 via-[var(--color-surface)]/70 to-[var(--color-surface-2)]/40 p-6 shadow-xl backdrop-blur-md space-y-4">
+      <div className="greeting-glass-panel relative overflow-visible isolate rounded-2xl p-6 space-y-4">
         {/* Subtle upper light reflection bar */}
-        <div className="absolute top-0 left-0 right-0 h-[1.5px] rounded-t-2xl bg-gradient-to-r from-white/15 via-white/5 to-transparent" />
+        <div className="absolute top-0 left-0 right-0 h-[1.5px] rounded-t-2xl bg-gradient-to-r from-white/25 via-white/10 to-transparent pointer-events-none" />
         
         <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="space-y-1.5">
