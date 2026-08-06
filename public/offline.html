@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline Mode - GBK CRM</title>
+  <style>
+    :root {
+      --color-bg: #0b0f19;
+      --color-surface: #111827;
+      --color-border: #1f2937;
+      --color-accent: #3b82f6;
+      --color-accent-hover: #2563eb;
+      --color-text: #f3f4f6;
+      --color-text-muted: #9ca3af;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--color-bg);
+      color: var(--color-text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+
+    .container {
+      background-color: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 1rem;
+      max-width: 32rem;
+      width: 100%;
+      padding: 2.5rem;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+      text-align: center;
+    }
+
+    .icon-box {
+      width: 4.5rem;
+      height: 4.5rem;
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      border-radius: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.5rem auto;
+      color: var(--color-accent);
+    }
+
+    .icon-box svg {
+      width: 2.25rem;
+      height: 2.25rem;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      margin-bottom: 0.5rem;
+    }
+
+    p {
+      color: var(--color-text-muted);
+      font-size: 0.9375rem;
+      line-height: 1.5;
+      margin-bottom: 1.5rem;
+    }
+
+    .features-list {
+      text-align: left;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--color-border);
+      border-radius: 0.75rem;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .features-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--color-accent);
+      margin-bottom: 0.75rem;
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      font-size: 0.875rem;
+      color: var(--color-text);
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .feature-dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+      background-color: #10b981;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      background-color: var(--color-accent);
+      color: white;
+      font-weight: 600;
+      font-size: 0.875rem;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem;
+      border: none;
+      cursor: pointer;
+      width: 100%;
+      transition: background-color 0.2s;
+    }
+
+    .btn:hover {
+      background-color: var(--color-accent-hover);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon-box">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728m-12.728 0a9 9 0 010-12.728m12.728 0L5.636 18.364M12 12h.01" />
+      </svg>
+    </div>
+
+    <h1>You are currently offline</h1>
+    <p>Your internet connection appears to be unavailable. Don't worry, GBK CRM has safely cached your working data locally.</p>
+
+    <div class="features-list">
+      <div class="features-title">Available Offline Features</div>
+      <div class="feature-item">
+        <div class="feature-dot"></div>
+        <span>View cached client records &amp; pipeline stages</span>
+      </div>
+      <div class="feature-item">
+        <div class="feature-dot"></div>
+        <span>Draft new client tasks and notes (queued for sync)</span>
+      </div>
+      <div class="feature-item">
+        <div class="feature-dot"></div>
+        <span>Use Mortgage &amp; Qualification Calculators</span>
+      </div>
+      <div class="feature-item">
+        <div class="feature-dot"></div>
+        <span>Access saved Lender Matrix &amp; contacts</span>
+      </div>
+    </div>
+
+    <button class="btn" onclick="window.location.reload()">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+      Try Reconnecting
+    </button>
+  </div>
+
+  <script>
+    window.addEventListener('online', () => {
+      window.location.href = '/';
+    });
+  </script>
+</body>
+</html>

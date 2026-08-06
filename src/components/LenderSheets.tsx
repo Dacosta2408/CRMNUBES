@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useMemo, memo } from "react";
 import { 
   Search, Plus, Edit2, Trash2, Globe, Mail, Phone, 
   ShieldAlert, CheckCircle2, AlertCircle, Sparkles, 
   ExternalLink, FileText, Check, TrendingUp, User, X, Info
 } from "lucide-react";
 import { Lender, Client } from "../types";
+import { useDebounce } from "../hooks/useDebounce";
 
 interface LenderSheetsProps {
   lenders: Lender[];
@@ -14,7 +15,7 @@ interface LenderSheetsProps {
   onOpenComposeEmail?: (defaultTo: string, defaultSubject: string, defaultBody: string) => void;
 }
 
-export const LenderSheets: React.FC<LenderSheetsProps> = ({
+export const LenderSheets: React.FC<LenderSheetsProps> = memo(({
   lenders,
   setLenders,
   clients,
@@ -24,6 +25,7 @@ export const LenderSheets: React.FC<LenderSheetsProps> = ({
   // Tabs and view filters
   const [activeTier, setActiveTier] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const debouncedSearchQuery = useDebounce(searchQuery, 250);
   const [activeSubTab, setActiveSubTab] = useState<"directory" | "matcher" | "trends">("directory");
 
   // Client matcher state
@@ -236,15 +238,17 @@ export const LenderSheets: React.FC<LenderSheetsProps> = ({
   };
 
   // Filtering
-  const filteredLenders = lenders.filter(x => {
-    const matchesTier = activeTier === "All" || x.tier === activeTier;
-    const matchesSearch = searchQuery === "" || 
-      x.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (x.bdm || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (x.products || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (x.notes || "").toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesTier && matchesSearch;
-  });
+  const filteredLenders = useMemo(() => {
+    return lenders.filter(x => {
+      const matchesTier = activeTier === "All" || x.tier === activeTier;
+      const matchesSearch = debouncedSearchQuery === "" || 
+        x.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+        (x.bdm || "").toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+        (x.products || "").toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+        (x.notes || "").toLowerCase().includes(debouncedSearchQuery.toLowerCase());
+      return matchesTier && matchesSearch;
+    });
+  }, [lenders, activeTier, debouncedSearchQuery]);
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-bg)] text-[var(--color-text)]" id="lender-sheets-parent">
@@ -948,4 +952,6 @@ export const LenderSheets: React.FC<LenderSheetsProps> = ({
       )}
     </div>
   );
-};
+});
+
+LenderSheets.displayName = "LenderSheets";

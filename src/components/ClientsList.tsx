@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, memo } from "react";
 import { 
   Plus, Search, Filter, Sparkles
 } from "lucide-react";
@@ -8,6 +8,7 @@ import {
   STAGES, calculateRatios, fd, filterDatabaseClients, filterPipelineClients, normalizeStatus, pn 
 } from "../lib/clientPipelineUtils";
 import { PipelineBoard } from "./pipeline/PipelineBoard";
+import { useDebounce } from "../hooks/useDebounce";
 
 interface ClientsListProps {
   clients: Client[];
@@ -27,7 +28,7 @@ interface ClientsListProps {
   onUpdateClient?: (updatedClient: Client) => void;
 }
 
-export const ClientsList: React.FC<ClientsListProps> = ({
+export const ClientsList: React.FC<ClientsListProps> = memo(({
   clients,
   lenders,
   onOpenClient,
@@ -60,26 +61,29 @@ export const ClientsList: React.FC<ClientsListProps> = ({
   const activeSearchQuery = searchQuery !== undefined ? searchQuery : localSearchQuery;
   const handleSearchChange = onSearchQueryChange || setLocalSearchQuery;
 
-  // Separate dataset for the Directory Table View (respects dbFilter, agentFilter, search)
+  // ✦ Performance Optimization: Debounce search query to reduce expensive array filter operations ✦
+  const debouncedSearchQuery = useDebounce(activeSearchQuery, 250);
+
+  // Separate dataset for the Directory Table View (respects dbFilter, agentFilter, debounced search)
   const databaseClients = useMemo(() => {
     return filterDatabaseClients(
       clients,
       dbFilter,
       agentFilter,
-      activeSearchQuery
+      debouncedSearchQuery
     );
-  }, [clients, dbFilter, agentFilter, activeSearchQuery]);
+  }, [clients, dbFilter, agentFilter, debouncedSearchQuery]);
 
-  // Separate dataset for the Pipeline Board View (ignores dbFilter, respects search, agentFilter, pipelineAlertFilter)
+  // Separate dataset for the Pipeline Board View (ignores dbFilter, respects debounced search, agentFilter, pipelineAlertFilter)
   const pipelineClients = useMemo(() => {
     return filterPipelineClients(
       clients,
       agentFilter,
-      activeSearchQuery,
+      debouncedSearchQuery,
       pipelineAlertFilter,
       docVault
     );
-  }, [clients, agentFilter, activeSearchQuery, pipelineAlertFilter, docVault]);
+  }, [clients, agentFilter, debouncedSearchQuery, pipelineAlertFilter, docVault]);
 
   return (
     <div className="flex flex-col gap-5 h-full select-none">
@@ -398,4 +402,6 @@ export const ClientsList: React.FC<ClientsListProps> = ({
 
     </div>
   );
-};
+});
+
+ClientsList.displayName = "ClientsList";

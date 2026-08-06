@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, memo } from "react";
 import { Calendar, Clock, AlertTriangle, FileText, UserCheck, CheckSquare } from "lucide-react";
 import { Client, Task, Event, User as UserType } from "../types";
 import { getFormattedLiveTime, formatDateInTimeZone, formatDateInTimezone, useUserTimeZone, useUserDateFormat } from "../lib/timeUtils";
@@ -34,7 +34,7 @@ interface DashboardProps {
   onClearLogs?: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({
+export const Dashboard: React.FC<DashboardProps> = memo(({
   clients,
   tasks,
   events,
@@ -345,4 +345,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     </div>
   );
-};
+});
+
+Dashboard.displayName = "Dashboard";

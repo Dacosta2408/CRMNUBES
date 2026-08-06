@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo, useMemo } from "react";
 import { 
   FolderOpen, UserCheck, FileText, AlertTriangle, 
   HelpCircle, ShieldCheck, DollarSign, ArrowUpRight 
@@ -14,7 +14,7 @@ interface KPICardsProps {
   setActiveTab: (tab: string) => void;
 }
 
-export const KPICards: React.FC<KPICardsProps> = ({
+export const KPICards: React.FC<KPICardsProps> = memo(({
   clients,
   tasks,
   docVault,
@@ -25,123 +25,127 @@ export const KPICards: React.FC<KPICardsProps> = ({
   const isAgent = currentUser.role === "Agent" || currentUser.role === "Senior Broker";
   const userFullName = `${currentUser.first} ${currentUser.last}`;
 
-  const myClients = isAgent ? clients.filter(c => c.agent === userFullName) : clients;
-  const activeFiles = myClients.filter(c => c.status !== "closed" && c.status !== "funded");
-  const newLeads = myClients.filter(c => c.status === "lead" || c.status === "open");
-  const conditionalFiles = myClients.filter(c => c.status === "conditional");
-  const approvedFiles = myClients.filter(c => c.status === "approved");
-  const thisMonth = new Date().toISOString().slice(0, 7);
-  const fundedFiles = myClients.filter(c => c.status === "funded" && c.fundedDate && c.fundedDate.startsWith(thisMonth));
+  const { cards } = useMemo(() => {
+    const myClients = isAgent ? clients.filter(c => c.agent === userFullName) : clients;
+    const activeFiles = myClients.filter(c => c.status !== "closed" && c.status !== "funded");
+    const newLeads = myClients.filter(c => c.status === "lead" || c.status === "open");
+    const conditionalFiles = myClients.filter(c => c.status === "conditional");
+    const approvedFiles = myClients.filter(c => c.status === "approved");
+    const thisMonth = new Date().toISOString().slice(0, 7);
+    const fundedFiles = myClients.filter(c => c.status === "funded" && c.fundedDate && c.fundedDate.startsWith(thisMonth));
 
-  let pendingDocsCount = 0;
-  const targetClients = isAgent ? myClients : clients;
-  targetClients.forEach(c => {
-    const clientDocs = docVault[c.id] || {};
-    Object.values(clientDocs).forEach((doc: any) => {
-      if (doc && (doc.status === "required" || doc.status === "requested" || doc.status === "pending")) {
-        pendingDocsCount++;
-      }
+    let pendingDocsCount = 0;
+    const targetClients = isAgent ? myClients : clients;
+    targetClients.forEach(c => {
+      const clientDocs = docVault[c.id] || {};
+      Object.values(clientDocs).forEach((doc: any) => {
+        if (doc && (doc.status === "required" || doc.status === "requested" || doc.status === "pending")) {
+          pendingDocsCount++;
+        }
+      });
     });
-  });
 
-  const myTasks = isAgent ? tasks.filter(t => t.assignedTo?.trim().toLowerCase() === userFullName.trim().toLowerCase()) : tasks;
-  const nowStr = new Date().toISOString().split("T")[0];
-  const overdueTasks = myTasks.filter(t => t.status === "open" && t.dueDate && t.dueDate < nowStr);
+    const myTasks = isAgent ? tasks.filter(t => t.assignedTo?.trim().toLowerCase() === userFullName.trim().toLowerCase()) : tasks;
+    const nowStr = new Date().toISOString().split("T")[0];
+    const overdueTasks = myTasks.filter(t => t.status === "open" && t.dueDate && t.dueDate < nowStr);
 
-  const fdShort = (n: number) => {
-    if (n >= 1000000) return "$" + (n / 1000000).toFixed(1) + "M";
-    if (n >= 1000) return "$" + (n / 1000).toFixed(0) + "K";
-    return "$" + n;
-  };
+    const fdShort = (n: number) => {
+      if (n >= 1000000) return "$" + (n / 1000000).toFixed(1) + "M";
+      if (n >= 1000) return "$" + (n / 1000).toFixed(0) + "K";
+      return "$" + n;
+    };
 
-  const fd = (n: any) => {
-    return "$" + Math.round(parseFloat(String(n).replace(/[$,\s]/g, "")) || 0).toLocaleString("en-CA");
-  };
+    const fd = (n: any) => {
+      return "$" + Math.round(parseFloat(String(n).replace(/[$,\s]/g, "")) || 0).toLocaleString("en-CA");
+    };
 
-  const totalPipelineValue = myClients.reduce((sum, c) => {
-    const val = c.mtgamt || c.purchasePrice || c.mortgageAmount;
-    const num = parseFloat(String(val || 0).replace(/[$,\s]/g, "")) || 0;
-    return sum + num;
-  }, 0);
+    const totalPipelineValue = myClients.reduce((sum, c) => {
+      const val = c.mtgamt || c.purchasePrice || c.mortgageAmount;
+      const num = parseFloat(String(val || 0).replace(/[$,\s]/g, "")) || 0;
+      return sum + num;
+    }, 0);
 
-  const pipelineValue = activeFiles.reduce((sum, c) => sum + (parseFloat(String(c.mtgamt || c.purchasePrice || c.mortgageAmount || 0).replace(/[$,\s]/g, "")) || 0), 0);
-  const fundedValue = fundedFiles.reduce((sum, c) => sum + (parseFloat(String(c.mtgamt).replace(/[$,\s]/g, "")) || 0), 0);
+    const pipelineValue = activeFiles.reduce((sum, c) => sum + (parseFloat(String(c.mtgamt || c.purchasePrice || c.mortgageAmount || 0).replace(/[$,\s]/g, "")) || 0), 0);
+    const fundedValue = fundedFiles.reduce((sum, c) => sum + (parseFloat(String(c.mtgamt).replace(/[$,\s]/g, "")) || 0), 0);
 
-  const cards = [
-    {
-      id: "total_pipeline_val",
-      title: "Total Pipeline Value",
-      value: fd(totalPipelineValue),
-      sub: "Cumulative folder volume",
-      icon: DollarSign,
-      isPrimary: true,
-      tab: "pipeline"
-    },
-    {
-      id: "active",
-      title: isAgent ? "My Active Files" : "Active Pipeline",
-      value: activeFiles.length,
-      sub: `${fdShort(pipelineValue)} in progress`,
-      icon: FolderOpen,
-      isPrimary: true,
-      tab: "pipeline"
-    },
-    {
-      id: "leads",
-      title: "New Leads",
-      value: newLeads.length,
-      sub: `${newLeads.filter(c => c.status === "lead" && !c.agent).length} unassigned leads`,
-      icon: UserCheck,
-      isPrimary: true,
-      tab: "clients"
-    },
-    {
-      id: "conditional",
-      title: "Conditional Stage",
-      value: conditionalFiles.length,
-      sub: "Clearing outstanding conditions",
-      icon: HelpCircle,
-      isPrimary: true,
-      tab: "pipeline"
-    },
-    {
-      id: "docs",
-      title: "Pending Docs",
-      value: pendingDocsCount,
-      sub: pendingDocsCount === 0 ? "No documents tracked yet" : "Awaiting upload",
-      icon: FileText,
-      isPrimary: false,
-      tab: "clients"
-    },
-    {
-      id: "tasks",
-      title: "Overdue Tasks",
-      value: overdueTasks.length,
-      sub: overdueTasks.length > 0 ? "Action required" : "On schedule",
-      icon: AlertTriangle,
-      isPrimary: false,
-      tab: "tasks",
-      alert: overdueTasks.length > 0
-    },
-    {
-      id: "approved",
-      title: "Fully Approved",
-      value: approvedFiles.length,
-      sub: "Awaiting instructions",
-      icon: ShieldCheck,
-      isPrimary: false,
-      tab: "pipeline"
-    },
-    {
-      id: "funded",
-      title: "Funded Monthly",
-      value: fundedFiles.length,
-      sub: `This month: ${fdShort(fundedValue)}`,
-      icon: DollarSign,
-      isPrimary: false,
-      tab: "pipeline"
-    }
-  ];
+    return {
+      cards: [
+        {
+          id: "total_pipeline_val",
+          title: "Total Pipeline Value",
+          value: fd(totalPipelineValue),
+          sub: "Cumulative folder volume",
+          icon: DollarSign,
+          isPrimary: true,
+          tab: "pipeline"
+        },
+        {
+          id: "active",
+          title: isAgent ? "My Active Files" : "Active Pipeline",
+          value: activeFiles.length,
+          sub: `${fdShort(pipelineValue)} in progress`,
+          icon: FolderOpen,
+          isPrimary: true,
+          tab: "pipeline"
+        },
+        {
+          id: "leads",
+          title: "New Leads",
+          value: newLeads.length,
+          sub: `${newLeads.filter(c => c.status === "lead" && !c.agent).length} unassigned leads`,
+          icon: UserCheck,
+          isPrimary: true,
+          tab: "clients"
+        },
+        {
+          id: "conditional",
+          title: "Conditional Stage",
+          value: conditionalFiles.length,
+          sub: "Clearing outstanding conditions",
+          icon: HelpCircle,
+          isPrimary: true,
+          tab: "pipeline"
+        },
+        {
+          id: "docs",
+          title: "Pending Docs",
+          value: pendingDocsCount,
+          sub: pendingDocsCount === 0 ? "No documents tracked yet" : "Awaiting upload",
+          icon: FileText,
+          isPrimary: false,
+          tab: "clients"
+        },
+        {
+          id: "tasks",
+          title: "Overdue Tasks",
+          value: overdueTasks.length,
+          sub: overdueTasks.length > 0 ? "Action required" : "On schedule",
+          icon: AlertTriangle,
+          isPrimary: false,
+          tab: "tasks",
+          alert: overdueTasks.length > 0
+        },
+        {
+          id: "approved",
+          title: "Fully Approved",
+          value: approvedFiles.length,
+          sub: "Awaiting instructions",
+          icon: ShieldCheck,
+          isPrimary: false,
+          tab: "pipeline"
+        },
+        {
+          id: "funded",
+          title: "Funded Monthly",
+          value: fundedFiles.length,
+          sub: `This month: ${fdShort(fundedValue)}`,
+          icon: DollarSign,
+          isPrimary: false,
+          tab: "pipeline"
+        }
+      ]
+    };
+  }, [clients, tasks, docVault, isAgent, userFullName]);
 
   const GRADIENT_VARIANTS = [
     "sunset",
@@ -204,4 +208,6 @@ export const KPICards: React.FC<KPICardsProps> = ({
       })}
     </div>
   );
-};
+});
+
+KPICards.displayName = "KPICards";

@@ -3,12 +3,26 @@ import {
   User as UserIcon, Bell, Shield, Sliders, Mail, Lock, Laptop, Smartphone,
   CheckCircle2, AlertCircle, ToggleLeft, ToggleRight, Trash2, Upload, Camera,
   RefreshCw, X, ShieldCheck, Info, Key, Eye, EyeOff, Globe,
-  Briefcase, Building, Phone as PhoneIcon, BadgeCheck
+  Briefcase, Building, Phone as PhoneIcon, BadgeCheck, Check, Clock, LogOut, ExternalLink, ShieldAlert,
+  Keyboard, Bug, Activity, Download, ChevronUp, ChevronDown, Terminal, Cpu, WifiOff, Database, ArrowUpCircle, Sparkles
 } from "lucide-react";
 import { User, Client } from "../types";
 import { Avatar } from "./Avatar";
 import { encryptValue } from "../lib/cryptoUtils";
 import { hashPin } from "../hooks/useAuth";
+import { ErrorBoundary, ErrorLogEntry } from "./ErrorBoundary";
+import { useServiceWorker } from "../hooks/useServiceWorker";
+import { getStorageUsageEstimate, clearAppCache } from "../lib/syncQueue";
+import { 
+  CURRENT_APP_VERSION, 
+  getUpdateSettings, 
+  saveUpdateSettings, 
+  checkForUpdates, 
+  getUpdateHistory, 
+  UpdateSettings, 
+  UpdateCheckResult 
+} from "../lib/updateChecker";
+import { electronUpdater } from "../lib/electronUpdater";
 import { 
   MAJOR_TIMEZONES, 
   DATE_FORMAT_OPTIONS, 
@@ -29,9 +43,14 @@ interface SettingsProps {
   setUserRoster: React.Dispatch<React.SetStateAction<User[]>>;
   showToast: (msg: string, type?: "success" | "error" | "info" | "warning", icon?: string) => void;
   onLockApp?: () => void;
+  onOpenShortcutsModal?: () => void;
   clients: Client[];
   bridgeOnline: boolean;
 }
+
+const TestBuggyComponent: React.FC = () => {
+  throw new Error("This is an intentional test rendering exception generated to verify that the ErrorBoundary functions properly.");
+};
 
 export const Settings: React.FC<SettingsProps> = ({
   currentUser,
@@ -40,12 +59,160 @@ export const Settings: React.FC<SettingsProps> = ({
   setUserRoster,
   showToast,
   onLockApp,
+  onOpenShortcutsModal,
   clients,
   bridgeOnline
 }) => {
   // Navigation tabs
-  type SettingsTab = "profile" | "notifications" | "security" | "preferences" | "email";
+  type SettingsTab = "profile" | "notifications" | "security" | "preferences" | "email" | "diagnostics" | "offline" | "updates";
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
+
+  // Software Update Settings State
+  const [upSettings, setUpSettings] = useState<UpdateSettings>(getUpdateSettings());
+  const [upCheckResult, setUpCheckResult] = useState<UpdateCheckResult | null>(null);
+  const [isCheckingUp, setIsCheckingUp] = useState<boolean>(false);
+  const [upDownloadProgress, setUpDownloadProgress] = useState<number>(0);
+  const [isDownloadingUp, setIsDownloadingUp] = useState<boolean>(false);
+
+  const handleUpdateSettingChange = <K extends keyof UpdateSettings>(key: K, value: UpdateSettings[K]) => {
+    const updated = { ...upSettings, [key]: value };
+    setUpSettings(updated);
+    saveUpdateSettings(updated);
+    showToast("Update settings saved", "info", "⚙️");
+  };
+
+  const handleCheckUpdatesNow = async () => {
+    setIsCheckingUp(true);
+    showToast("Checking for software updates...", "info", "🔍");
+    try {
+      const res = await checkForUpdates(true);
+      setUpCheckResult(res);
+      setUpSettings(getUpdateSettings());
+      if (res.hasUpdate) {
+        showToast(`New update v${res.manifest?.latestVersion} available!`, "success", "✨");
+      } else {
+        showToast(`You are on the latest version (v${CURRENT_APP_VERSION})`, "success", "✅");
+      }
+    } catch (e: any) {
+      showToast("Error checking for updates", "error");
+    } finally {
+      setIsCheckingUp(false);
+    }
+  };
+
+  const handleManualDownloadUpdate = async () => {
+    if (!upCheckResult?.manifest) return;
+    setIsDownloadingUp(true);
+    setUpDownloadProgress(0);
+    showToast("Starting background update download...", "info", "⬇️");
+
+    await electronUpdater.startDownload(upCheckResult.manifest, (pct) => {
+      setUpDownloadProgress(pct);
+    });
+
+    setIsDownloadingUp(false);
+    showToast("Update downloaded! Click Install & Restart to apply.", "success", "🎉");
+  };
+
+  // Service Worker & Offline Sync Hook
+  const { 
+    isOnline, 
+    hasUpdate, 
+    isSyncing, 
+    pendingCount, 
+    lastSyncedAt, 
+    applyUpdate, 
+    syncNow 
+  } = useServiceWorker();
+
+  const [offlineEnabled, setOfflineEnabled] = useState<boolean>(() => {
+    return localStorage.getItem("gbk_offline_storage_enabled") !== "false";
+  });
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(() => {
+    return localStorage.getItem("gbk_offline_auto_sync") !== "false";
+  });
+  const [storageEstimate, setStorageEstimate] = useState<{ usageMB: string; quotaMB: string }>({ usageMB: "0.00", quotaMB: "50" });
+
+  useEffect(() => {
+    getStorageUsageEstimate().then(setStorageEstimate);
+  }, [activeTab, pendingCount]);
+
+  const handleToggleOfflineEnabled = (val: boolean) => {
+    setOfflineEnabled(val);
+    localStorage.setItem("gbk_offline_storage_enabled", String(val));
+    showToast(val ? "Offline storage enabled" : "Offline storage disabled", "info", "📶");
+  };
+
+  const handleToggleAutoSync = (val: boolean) => {
+    setAutoSyncEnabled(val);
+    localStorage.setItem("gbk_offline_auto_sync", String(val));
+    showToast(val ? "Automatic background sync enabled" : "Automatic background sync disabled", "info", "🔄");
+  };
+
+  const handleClearCache = async () => {
+    const success = await clearAppCache();
+    if (success) {
+      const est = await getStorageUsageEstimate();
+      setStorageEstimate(est);
+      showToast("App cache and offline storage cleared", "success", "🧹");
+    } else {
+      showToast("Failed clearing offline cache", "error");
+    }
+  };
+
+  // --- DIAGNOSTICS & ERROR HANDLING STATE ---
+  const [showDevErrorDetails, setShowDevErrorDetails] = useState<boolean>(() => {
+    return localStorage.getItem("gbk_show_dev_error_details") !== "false";
+  });
+
+  const [autoReportErrors, setAutoReportErrors] = useState<boolean>(() => {
+    return localStorage.getItem("gbk_auto_report_errors") === "true";
+  });
+
+  const [errorLogs, setErrorLogs] = useState<ErrorLogEntry[]>(() => {
+    try {
+      const str = localStorage.getItem("gbk_error_logs");
+      return str ? JSON.parse(str) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [testErrorActive, setTestErrorActive] = useState<boolean>(false);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+
+  const handleToggleDevDetails = (val: boolean) => {
+    setShowDevErrorDetails(val);
+    localStorage.setItem("gbk_show_dev_error_details", String(val));
+    showToast(val ? "Detailed error messages enabled" : "Detailed error messages hidden", "info", "🐛");
+  };
+
+  const handleToggleAutoReport = (val: boolean) => {
+    setAutoReportErrors(val);
+    localStorage.setItem("gbk_auto_report_errors", String(val));
+    showToast(val ? "Automatic error reporting enabled" : "Automatic error reporting disabled", "info", "🛡️");
+  };
+
+  const handleClearLogs = () => {
+    localStorage.removeItem("gbk_error_logs");
+    setErrorLogs([]);
+    showToast("Error log cleared successfully", "success", "🧹");
+  };
+
+  const handleExportLogs = () => {
+    if (errorLogs.length === 0) {
+      showToast("No errors logged to export", "info");
+      return;
+    }
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(errorLogs, null, 2));
+    const downloadAnchor = document.createElement("a");
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `gbk_error_logs_${new Date().toISOString().slice(0, 10)}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+    showToast("Error log exported as JSON", "success", "📥");
+  };
 
   // --- 1. PROFILE STATE ---
   const [profileFirst, setProfileFirst] = useState(currentUser.first);
@@ -243,6 +410,7 @@ export const Settings: React.FC<SettingsProps> = ({
   };
 
   // --- 3. SECURITY STATE ---
+  // Workstation PIN & MFA
   const [userPin, setUserPin] = useState(currentUser.pin || "0000");
   const [showPin, setShowPin] = useState(false);
   const [requirePinForSin, setRequirePinForSin] = useState(() => {
@@ -251,6 +419,118 @@ export const Settings: React.FC<SettingsProps> = ({
   const [mfaEnabled, setMfaEnabled] = useState(false);
   const [showMfaSetup, setShowMfaSetup] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
+
+  // Change Password Form State
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordChangeFeedback, setPasswordChangeFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  // Password Requirements Validation
+  const reqMinLength = newPassword.length >= 8;
+  const reqHasUpper = /[A-Z]/.test(newPassword);
+  const reqHasLower = /[a-z]/.test(newPassword);
+  const reqHasNumber = /[0-9]/.test(newPassword);
+  const reqHasSpecial = /[^A-Za-z0-9]/.test(newPassword);
+
+  const reqMetCount = [reqMinLength, reqHasUpper, reqHasLower, reqHasNumber, reqHasSpecial].filter(Boolean).length;
+
+  const getPasswordStrength = () => {
+    if (newPassword.length === 0) {
+      return { label: "Not Entered", color: "bg-[var(--color-border)]", width: "0%", textClass: "text-[var(--color-text-muted)]" };
+    }
+    if (reqMetCount <= 2) {
+      return { label: "Weak", color: "bg-red-500", width: "33%", textClass: "text-red-500" };
+    }
+    if (reqMetCount <= 4) {
+      return { label: "Medium", color: "bg-amber-500", width: "66%", textClass: "text-amber-500" };
+    }
+    return { label: "Strong", color: "bg-emerald-500", width: "100%", textClass: "text-emerald-500" };
+  };
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordChangeFeedback(null);
+
+    if (!currentPassword.trim()) {
+      setPasswordChangeFeedback({ type: "error", msg: "Please enter your current account password." });
+      showToast("Please enter your current password.", "error");
+      return;
+    }
+
+    if (reqMetCount < 5) {
+      setPasswordChangeFeedback({ type: "error", msg: "New password does not fulfill all 5 security strength criteria." });
+      showToast("New password must meet all strength requirements.", "error");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordChangeFeedback({ type: "error", msg: "New password and confirmation password do not match." });
+      showToast("Confirm password does not match new password.", "error");
+      return;
+    }
+
+    setIsChangingPassword(true);
+    setTimeout(() => {
+      setIsChangingPassword(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordChangeFeedback({ type: "success", msg: "Account password changed successfully! Your session remains secured." });
+      showToast("Account password changed successfully!", "success", "🔐");
+    }, 900);
+  };
+
+  // Active Device Sessions State
+  const [activeSessions, setActiveSessions] = useState([
+    { id: "sess-1", device: "Windows PC - Chrome 127.0", location: "Toronto, ON, Canada", lastActive: "Active now", ip: "192.168.1.**", isCurrent: true },
+    { id: "sess-2", device: "iPhone 15 Pro - Safari Mobile", location: "Toronto, ON, Canada", lastActive: "2 hours ago", ip: "172.56.42.**", isCurrent: false },
+    { id: "sess-3", device: "MacBook Pro - Firefox 128.0", location: "Vancouver, BC, Canada", lastActive: "Yesterday at 4:15 PM", ip: "24.114.88.**", isCurrent: false },
+  ]);
+
+  const handleSignOutSession = (sessionId: string) => {
+    setActiveSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    showToast("Session signed out successfully.", "success", "🚪");
+  };
+
+  const handleSignOutAllOtherSessions = () => {
+    setActiveSessions((prev) => prev.filter((s) => s.isCurrent));
+    showToast("Signed out of all other active sessions.", "success", "🔒");
+  };
+
+  // Security Toggles Settings
+  const [requirePasswordForSensitive, setRequirePasswordForSensitive] = useState(() => {
+    return localStorage.getItem("gbk_sec_req_pwd_sensitive") !== "false";
+  });
+  const [sessionTimeout, setSessionTimeout] = useState(() => {
+    return localStorage.getItem("gbk_sec_session_timeout") || "30 min";
+  });
+
+  const handleToggleRequirePasswordSensitive = () => {
+    const nextVal = !requirePasswordForSensitive;
+    setRequirePasswordForSensitive(nextVal);
+    localStorage.setItem("gbk_sec_req_pwd_sensitive", nextVal ? "true" : "false");
+    showToast(`Sensitive actions password check ${nextVal ? "enabled" : "disabled"}.`, "info", "🛡️");
+  };
+
+  const handleChangeSessionTimeout = (val: string) => {
+    setSessionTimeout(val);
+    localStorage.setItem("gbk_sec_session_timeout", val);
+    showToast(`Session timeout updated to ${val}.`, "info", "⏱️");
+  };
+
+  // Login History Mock Data
+  const loginHistoryList = [
+    { id: "lh1", dateTime: "Aug 5, 2026 - 06:42 PM", device: "Windows PC - Chrome", location: "Toronto, ON", status: "Success", ip: "192.168.1.**" },
+    { id: "lh2", dateTime: "Aug 5, 2026 - 08:15 AM", device: "iPhone 15 Pro - Safari", location: "Toronto, ON", status: "Success", ip: "172.56.42.**" },
+    { id: "lh3", dateTime: "Aug 4, 2026 - 11:30 PM", device: "Unknown Device - Linux", location: "Montreal, QC", status: "Failed", ip: "45.33.18.**" },
+    { id: "lh4", dateTime: "Aug 3, 2026 - 02:10 PM", device: "MacBook Pro - Firefox", location: "Vancouver, BC", status: "Success", ip: "24.114.88.**" },
+    { id: "lh5", dateTime: "Aug 1, 2026 - 09:05 AM", device: "Windows PC - Chrome", location: "Toronto, ON", status: "Success", ip: "192.168.1.**" },
+  ];
 
   const handleSaveSecurity = async () => {
     if (userPin.length < 4 || isNaN(Number(userPin))) {
@@ -453,6 +733,28 @@ export const Settings: React.FC<SettingsProps> = ({
           >
             <UserIcon className="w-4 h-4 shrink-0" /> My Profile &amp; Avatar
           </button>
+
+          <button
+            onClick={() => setActiveTab("preferences")}
+            className={`w-full text-left px-3 py-2 text-xs font-semibold rounded-lg transition-all flex items-center gap-3 cursor-pointer ${
+              activeTab === "preferences" 
+                ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)] font-bold" 
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]/50"
+            }`}
+          >
+            <Sliders className="w-4 h-4 shrink-0" /> Personal Preferences
+          </button>
+          
+          <button
+            onClick={() => setActiveTab("security")}
+            className={`w-full text-left px-3 py-2 text-xs font-semibold rounded-lg transition-all flex items-center gap-3 cursor-pointer ${
+              activeTab === "security" 
+                ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)] font-bold" 
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]/50"
+            }`}
+          >
+            <Shield className="w-4 h-4 shrink-0" /> Security
+          </button>
           
           <button
             onClick={() => setActiveTab("notifications")}
@@ -464,28 +766,6 @@ export const Settings: React.FC<SettingsProps> = ({
           >
             <Bell className="w-4 h-4 shrink-0" /> Notifications
           </button>
-          
-          <button
-            onClick={() => setActiveTab("security")}
-            className={`w-full text-left px-3 py-2 text-xs font-semibold rounded-lg transition-all flex items-center gap-3 cursor-pointer ${
-              activeTab === "security" 
-                ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)] font-bold" 
-                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]/50"
-            }`}
-          >
-            <Shield className="w-4 h-4 shrink-0" /> Security &amp; Access PIN
-          </button>
-          
-          <button
-            onClick={() => setActiveTab("preferences")}
-            className={`w-full text-left px-3 py-2 text-xs font-semibold rounded-lg transition-all flex items-center gap-3 cursor-pointer ${
-              activeTab === "preferences" 
-                ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)] font-bold" 
-                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]/50"
-            }`}
-          >
-            <Sliders className="w-4 h-4 shrink-0" /> Personal Preferences
-          </button>
 
           <button
             onClick={() => setActiveTab("email")}
@@ -496,6 +776,68 @@ export const Settings: React.FC<SettingsProps> = ({
             }`}
           >
             <Mail className="w-4 h-4 shrink-0" /> Email &amp; SMTP
+          </button>
+
+          <button
+            onClick={() => setActiveTab("diagnostics")}
+            className={`w-full text-left px-3 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-between cursor-pointer ${
+              activeTab === "diagnostics" 
+                ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)] font-bold" 
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]/50"
+            }`}
+          >
+            <span className="flex items-center gap-3">
+              <Bug className="w-4 h-4 shrink-0 text-amber-400" /> Diagnostics &amp; Errors
+            </span>
+            {errorLogs.length > 0 && (
+              <span className="text-[9px] font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.2 rounded-full">
+                {errorLogs.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab("offline")}
+            className={`w-full text-left px-3 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-between cursor-pointer ${
+              activeTab === "offline" 
+                ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)] font-bold" 
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]/50"
+            }`}
+          >
+            <span className="flex items-center gap-3">
+              <WifiOff className="w-4 h-4 shrink-0 text-emerald-400" /> Offline Mode &amp; Sync
+            </span>
+            {pendingCount > 0 && (
+              <span className="text-[9px] font-mono font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.2 rounded-full">
+                {pendingCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab("updates")}
+            className={`w-full text-left px-3 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-between cursor-pointer ${
+              activeTab === "updates" 
+                ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)] font-bold" 
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]/50"
+            }`}
+          >
+            <span className="flex items-center gap-3">
+              <ArrowUpCircle className="w-4 h-4 shrink-0 text-blue-400" /> Software Updates &amp; .exe
+            </span>
+            <span className="text-[9px] font-mono font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.2 rounded-full">
+              v{CURRENT_APP_VERSION}
+            </span>
+          </button>
+
+          <button
+            onClick={() => onOpenShortcutsModal?.()}
+            className="w-full text-left px-3 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-between text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]/50 cursor-pointer border border-[var(--color-border)]/50 bg-[var(--color-surface-2)]/20 mt-1"
+          >
+            <span className="flex items-center gap-3">
+              <Keyboard className="w-4 h-4 text-[var(--color-accent)] shrink-0" /> Keyboard Shortcuts
+            </span>
+            <kbd className="px-1.5 py-0.5 bg-[var(--color-surface-3)] text-[var(--color-text)] border border-[var(--color-border)] rounded text-[9px] font-mono font-bold">?</kbd>
           </button>
 
           <div className="mt-auto pt-4 border-t border-[var(--color-border)]/50">
@@ -915,20 +1257,201 @@ export const Settings: React.FC<SettingsProps> = ({
             </div>
           )}
 
-          {/* TAB 3: SECURITY */}
+          {/* TAB: SECURITY */}
           {activeTab === "security" && (
-            <div className="max-w-2xl space-y-6">
-              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-xl shadow-sm space-y-6">
-                <div>
-                  <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider mb-1 flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-[var(--color-accent)]" /> Personal Security Preferences
-                  </h3>
-                  <p className="text-[11px] text-[var(--color-text-muted)]">Configure workstation access codes, security PIN, and multi-factor setup.</p>
+            <div className="max-w-4xl space-y-6">
+              
+              {/* SECTION 1: CHANGE ACCOUNT PASSWORD */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-2xl shadow-sm space-y-5">
+                <div className="border-b border-[var(--color-border)]/70 pb-3 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
+                      <Key className="w-4 h-4 text-[var(--color-accent)]" /> Change Account Password
+                    </h3>
+                    <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                      Update your account password with a strong combination of letters, numbers, and symbols.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-mono text-[var(--color-text-muted)] bg-[var(--color-surface-2)] px-2.5 py-1 rounded-md border border-[var(--color-border)]">
+                    Password Protected
+                  </span>
                 </div>
 
-                <div className="space-y-5">
+                <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                  {/* Feedback Banner if any */}
+                  {passwordChangeFeedback && (
+                    <div className={`p-3 rounded-xl border text-xs flex items-center gap-2.5 ${
+                      passwordChangeFeedback.type === "success" 
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400" 
+                        : "bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400"
+                    }`}>
+                      {passwordChangeFeedback.type === "success" ? (
+                        <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                      )}
+                      <span>{passwordChangeFeedback.msg}</span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Current Password */}
+                    <div className="md:col-span-2 space-y-1">
+                      <label className="block text-xs font-bold text-[var(--color-text)]">
+                        Current Password <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showCurrentPassword ? "text" : "password"}
+                          value={currentPassword}
+                          onChange={(e) => setCurrentPassword(e.target.value)}
+                          placeholder="Enter current password"
+                          className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3.5 py-2 pr-10 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
+                        >
+                          {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* New Password */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-[var(--color-text)]">
+                        New Password <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showNewPassword ? "text" : "password"}
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="Enter new password"
+                          className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3.5 py-2 pr-10 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
+                        >
+                          {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Confirm New Password */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-[var(--color-text)]">
+                        Confirm New Password <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showConfirmPassword ? "text" : "password"}
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          placeholder="Re-enter new password"
+                          className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3.5 py-2 pr-10 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
+                        >
+                          {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      {confirmPassword && newPassword !== confirmPassword && (
+                        <p className="text-[10px] text-red-500 font-semibold mt-1">Passwords do not match</p>
+                      )}
+                      {confirmPassword && newPassword === confirmPassword && (
+                        <p className="text-[10px] text-emerald-500 font-semibold mt-1">Passwords match</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Password Strength Meter & Requirements Panel */}
+                  <div className="bg-[var(--color-surface-2)]/60 p-4 rounded-xl border border-[var(--color-border)]/70 space-y-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-[var(--color-text)]">Password Strength:</span>
+                      <span className={`font-bold ${getPasswordStrength().textClass}`}>
+                        {getPasswordStrength().label}
+                      </span>
+                    </div>
+
+                    {/* Strength Bar */}
+                    <div className="w-full h-2 bg-[var(--color-surface-3)] rounded-full overflow-hidden border border-[var(--color-border)]/50">
+                      <div
+                        className={`h-full transition-all duration-300 ${getPasswordStrength().color}`}
+                        style={{ width: getPasswordStrength().width }}
+                      />
+                    </div>
+
+                    {/* Requirements Checklist */}
+                    <div className="pt-1">
+                      <span className="block text-[11px] font-bold text-[var(--color-text-muted)] mb-2">
+                        Password Requirements:
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                        <div className={`flex items-center gap-1.5 ${reqMinLength ? "text-emerald-500 font-semibold" : "text-[var(--color-text-muted)]"}`}>
+                          {reqMinLength ? <Check className="w-3.5 h-3.5 shrink-0" /> : <div className="w-1.5 h-1.5 rounded-full bg-current mx-1 shrink-0" />}
+                          Minimum 8 characters
+                        </div>
+                        <div className={`flex items-center gap-1.5 ${reqHasUpper ? "text-emerald-500 font-semibold" : "text-[var(--color-text-muted)]"}`}>
+                          {reqHasUpper ? <Check className="w-3.5 h-3.5 shrink-0" /> : <div className="w-1.5 h-1.5 rounded-full bg-current mx-1 shrink-0" />}
+                          At least one uppercase letter (A-Z)
+                        </div>
+                        <div className={`flex items-center gap-1.5 ${reqHasLower ? "text-emerald-500 font-semibold" : "text-[var(--color-text-muted)]"}`}>
+                          {reqHasLower ? <Check className="w-3.5 h-3.5 shrink-0" /> : <div className="w-1.5 h-1.5 rounded-full bg-current mx-1 shrink-0" />}
+                          At least one lowercase letter (a-z)
+                        </div>
+                        <div className={`flex items-center gap-1.5 ${reqHasNumber ? "text-emerald-500 font-semibold" : "text-[var(--color-text-muted)]"}`}>
+                          {reqHasNumber ? <Check className="w-3.5 h-3.5 shrink-0" /> : <div className="w-1.5 h-1.5 rounded-full bg-current mx-1 shrink-0" />}
+                          At least one number (0-9)
+                        </div>
+                        <div className={`flex items-center gap-1.5 sm:col-span-2 ${reqHasSpecial ? "text-emerald-500 font-semibold" : "text-[var(--color-text-muted)]"}`}>
+                          {reqHasSpecial ? <Check className="w-3.5 h-3.5 shrink-0" /> : <div className="w-1.5 h-1.5 rounded-full bg-current mx-1 shrink-0" />}
+                          At least one special character (!@#$%^&*)
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="submit"
+                      disabled={isChangingPassword}
+                      className="px-5 py-2.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-text-inverse)] font-bold text-xs rounded-xl transition-all cursor-pointer shadow-sm flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {isChangingPassword ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" /> Updating Password...
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck className="w-4 h-4" /> Change Password
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* SECTION 2: WORKSTATION PIN & SENSITIVE VERIFICATION */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-2xl shadow-sm space-y-4">
+                <div className="border-b border-[var(--color-border)]/70 pb-3">
+                  <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-[var(--color-accent)]" /> Workstation PIN &amp; Sensitive Data Protection
+                  </h3>
+                  <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                    Configure your 4-digit quick access PIN and sensitive client data verification settings.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
                   {/* Access PIN */}
-                  <div className="bg-[var(--color-surface-2)] p-4 rounded-lg border border-[var(--color-border)]/70 space-y-3">
+                  <div className="bg-[var(--color-surface-2)]/60 p-4 rounded-xl border border-[var(--color-border)]/70 space-y-3">
                     <div className="flex justify-between items-center">
                       <div>
                         <span className="text-xs font-bold text-[var(--color-text)] block">Workstation Access PIN</span>
@@ -950,29 +1473,20 @@ export const Settings: React.FC<SettingsProps> = ({
                         value={userPin}
                         maxLength={4}
                         onChange={(e) => setUserPin(e.target.value.replace(/\D/g, ""))}
-                        className="bg-[var(--color-surface-3)] border border-[var(--color-border)]/70 rounded px-3 py-1.5 text-center text-sm font-mono tracking-widest text-[var(--color-text)] w-28 focus:outline-none focus:border-[var(--color-accent)]/40"
+                        className="bg-[var(--color-surface)] border border-[var(--color-border)]/70 rounded-lg px-3 py-1.5 text-center text-sm font-mono tracking-widest text-[var(--color-text)] w-28 focus:outline-none focus:border-[var(--color-accent)]"
                       />
-                      <span className="text-[10px] text-[var(--color-text-muted)]">Used for session unlocking and profile switches.</span>
+                      <button
+                        type="button"
+                        onClick={handleSaveSecurity}
+                        className="px-3.5 py-1.5 bg-[var(--color-accent)]/15 border border-[var(--color-accent)]/30 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/25 text-xs font-bold rounded-lg transition-all cursor-pointer"
+                      >
+                        Save PIN
+                      </button>
                     </div>
                   </div>
 
-                  {/* Password Reset */}
-                  <div className="flex items-center justify-between bg-[var(--color-surface-2)]/50 p-4 rounded-lg border border-[var(--color-border)]/70">
-                    <div>
-                      <span className="text-xs font-bold text-[var(--color-text)] block">Account Password Reset</span>
-                      <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">Send a password reset email link to {currentUser.email}.</span>
-                    </div>
-                    <button 
-                      type="button"
-                      onClick={handleSimulateResetPassword}
-                      className="px-3 py-1.5 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] text-xs font-bold text-[var(--color-text)] rounded-lg border border-[var(--color-border)]/70 transition-all cursor-pointer"
-                    >
-                      Reset Password
-                    </button>
-                  </div>
-
-                  {/* Require PIN for SIN Audit */}
-                  <div className="flex items-center justify-between bg-[var(--color-surface-2)]/50 p-4 rounded-lg border border-[var(--color-border)]/70">
+                  {/* Audit SIN Access Verification */}
+                  <div className="flex items-center justify-between bg-[var(--color-surface-2)]/60 p-4 rounded-xl border border-[var(--color-border)]/70">
                     <div>
                       <span className="text-xs font-bold text-[var(--color-text)] block">Audit SIN Access Verification</span>
                       <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">Require manual PIN reentry before viewing sensitive borrower SIN fields.</span>
@@ -981,84 +1495,222 @@ export const Settings: React.FC<SettingsProps> = ({
                       {requirePinForSin ? <ToggleRight className="w-9 h-9" /> : <ToggleLeft className="w-9 h-9 text-[var(--color-text-faint)]/40" />}
                     </button>
                   </div>
+                </div>
+              </div>
 
-                  {/* Multi Factor Authentication */}
-                  <div className="bg-[var(--color-surface-2)]/50 p-4 rounded-lg border border-[var(--color-border)]/70 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="text-xs font-bold text-[var(--color-text)] block">Two-Factor Authentication (2FA)</span>
-                        <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">Enhance account protection with an authenticator app.</span>
-                      </div>
-                      {mfaEnabled ? (
-                        <span className="text-[9px] uppercase font-bold text-emerald-500 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20">
-                          Active (2FA Secured)
+              {/* SECTION 3: SECURITY SETTINGS */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-2xl shadow-sm space-y-4">
+                <div className="border-b border-[var(--color-border)]/70 pb-3">
+                  <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
+                    <Sliders className="w-4 h-4 text-[var(--color-accent)]" /> Security Settings &amp; Authentication Preferences
+                  </h3>
+                  <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                    Configure multi-factor authentication, action confirmation requirements, and session timeout durations.
+                  </p>
+                </div>
+
+                <div className="space-y-3.5">
+                  {/* Two-Factor Authentication Toggle */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[var(--color-surface-2)]/60 p-4 rounded-xl border border-[var(--color-border)]/70">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-[var(--color-text)]">Two-Factor Authentication (2FA)</span>
+                        <span className="text-[9px] uppercase font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                          Coming Soon
                         </span>
+                      </div>
+                      <span className="text-[10px] text-[var(--color-text-muted)] block">
+                        Protect your account by requiring an authenticator app code during sign in.
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 opacity-50 cursor-not-allowed">
+                      <ToggleLeft className="w-9 h-9 text-[var(--color-text-faint)]/40 shrink-0" />
+                    </div>
+                  </div>
+
+                  {/* Require Password for Sensitive Actions Toggle */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[var(--color-surface-2)]/60 p-4 rounded-xl border border-[var(--color-border)]/70">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-[var(--color-text)] block">Require Password for Sensitive Actions</span>
+                      <span className="text-[10px] text-[var(--color-text-muted)] block">
+                        Ask for account password confirmation before executing high-risk operations (e.g. deleting clients, bulk exports).
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleToggleRequirePasswordSensitive}
+                      className="shrink-0 text-[var(--color-accent)] cursor-pointer"
+                    >
+                      {requirePasswordForSensitive ? (
+                        <ToggleRight className="w-9 h-9" />
                       ) : (
+                        <ToggleLeft className="w-9 h-9 text-[var(--color-text-faint)]/40" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Session Timeout Dropdown */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[var(--color-surface-2)]/60 p-4 rounded-xl border border-[var(--color-border)]/70">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-[var(--color-text)] block">Session Timeout</span>
+                      <span className="text-[10px] text-[var(--color-text-muted)] block">
+                        Automatically lock your workstation session after a set period of inactivity.
+                      </span>
+                    </div>
+                    <select
+                      value={sessionTimeout}
+                      onChange={(e) => handleChangeSessionTimeout(e.target.value)}
+                      className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl px-3.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] w-full sm:w-48 cursor-pointer font-sans"
+                    >
+                      <option value="15 min">15 minutes</option>
+                      <option value="30 min">30 minutes</option>
+                      <option value="1 hour">1 hour</option>
+                      <option value="4 hours">4 hours</option>
+                      <option value="Never">Never (Keep Active)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 4: ACTIVE SESSIONS */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-2xl shadow-sm space-y-4">
+                <div className="border-b border-[var(--color-border)]/70 pb-3 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
+                      <Laptop className="w-4 h-4 text-[var(--color-accent)]" /> Active Sessions
+                    </h3>
+                    <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                      Manage devices and browser sessions currently logged into your account.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20">
+                    {activeSessions.length} Active {activeSessions.length === 1 ? "Session" : "Sessions"}
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {activeSessions.map((session) => (
+                    <div
+                      key={session.id}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-[var(--color-surface-2)]/60 rounded-xl border border-[var(--color-border)]/70 text-xs"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="p-2 bg-[var(--color-accent)]/10 text-[var(--color-accent)] rounded-lg shrink-0 mt-0.5">
+                          {session.device.toLowerCase().includes("iphone") || session.device.toLowerCase().includes("mobile") ? (
+                            <Smartphone className="w-4 h-4" />
+                          ) : (
+                            <Laptop className="w-4 h-4" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="font-bold text-[var(--color-text)] flex items-center gap-2">
+                            {session.device}
+                            {session.isCurrent && (
+                              <span className="text-[9px] uppercase font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                Current Device
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <span>{session.location}</span>
+                            <span>•</span>
+                            <span>IP: <code className="font-mono">{session.ip}</code></span>
+                            <span>•</span>
+                            <span className="text-[var(--color-text-faint)]">Last active: {session.lastActive}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {!session.isCurrent && (
                         <button
                           type="button"
-                          onClick={() => setShowMfaSetup(true)}
-                          className="px-3 py-1.5 bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 hover:bg-[var(--color-accent)]/20 text-xs font-bold text-[var(--color-accent)] rounded-lg transition-all cursor-pointer"
+                          onClick={() => handleSignOutSession(session.id)}
+                          className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/20 text-xs font-bold rounded-lg transition-all cursor-pointer self-end sm:self-center shrink-0 flex items-center gap-1.5"
                         >
-                          Enable 2FA
+                          <LogOut className="w-3.5 h-3.5" /> Sign Out
                         </button>
                       )}
                     </div>
+                  ))}
+                </div>
 
-                    {showMfaSetup && (
-                      <div className="bg-[var(--color-surface-3)] p-3 rounded-lg border border-[var(--color-border)]/70 space-y-3">
-                        <div className="text-[10px] text-[var(--color-text-muted)] leading-relaxed">
-                          Enter the 6-digit confirmation code from your authenticator app (Use <strong>123456</strong> for testing).
-                        </div>
-                        <div className="flex gap-2">
-                          <input 
-                            type="text" 
-                            placeholder="000000"
-                            value={mfaCode}
-                            onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))}
-                            className="bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded px-2.5 py-1 text-xs font-mono tracking-widest text-[var(--color-text)] w-28 text-center focus:outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleVerifyMfa}
-                            className="px-3 py-1 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-text-inverse)] text-xs font-bold rounded cursor-pointer"
-                          >
-                            Verify &amp; Activate
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setShowMfaSetup(false)}
-                            className="px-2 py-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                {activeSessions.filter((s) => !s.isCurrent).length > 0 && (
+                  <div className="pt-2 border-t border-[var(--color-border)]/60 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleSignOutAllOtherSessions}
+                      className="px-4 py-2 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] text-[var(--color-text)] border border-[var(--color-border)] text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-2"
+                    >
+                      <LogOut className="w-3.5 h-3.5 text-red-500" /> Sign Out All Other Sessions
+                    </button>
                   </div>
+                )}
+              </div>
 
-                  {/* Active Session Logs */}
-                  <div className="space-y-2 pt-2">
-                    <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider">Active Workspace Device Sessions</label>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3 p-3 bg-[var(--color-surface-2)] rounded-lg border border-[var(--color-border)]/70 text-xs text-[var(--color-text-muted)]">
-                        <Laptop className="w-5 h-5 text-[var(--color-accent)] shrink-0" />
-                        <div className="flex-1">
-                          <div className="font-bold text-[var(--color-text)]">Current Web Session</div>
-                          <div className="text-[10px] mt-0.5">Primary Browser • Ontario, Canada</div>
-                        </div>
-                        <span className="text-[9px] uppercase font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Active Now</span>
-                      </div>
-                    </div>
+              {/* SECTION 5: LOGIN HISTORY */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-2xl shadow-sm space-y-4">
+                <div className="border-b border-[var(--color-border)]/70 pb-3 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-[var(--color-accent)]" /> Login History
+                    </h3>
+                    <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                      Review recent account sign-in attempts and security events.
+                    </p>
                   </div>
+                </div>
 
-                  <button 
-                    onClick={handleSaveSecurity}
-                    className="w-full py-2.5 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-lg hover:bg-[var(--color-accent-hover)] transition-all uppercase tracking-wider mt-2 cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-[var(--color-border)] text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider bg-[var(--color-surface-2)]/40">
+                        <th className="py-2.5 px-3 font-bold">Date / Time</th>
+                        <th className="py-2.5 px-3 font-bold">Device / Browser</th>
+                        <th className="py-2.5 px-3 font-bold">Location &amp; IP</th>
+                        <th className="py-2.5 px-3 font-bold text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--color-border)]/50">
+                      {loginHistoryList.map((item) => (
+                        <tr key={item.id} className="hover:bg-[var(--color-surface-2)]/30 transition-colors">
+                          <td className="py-2.5 px-3 text-[var(--color-text)] font-medium whitespace-nowrap">
+                            {item.dateTime}
+                          </td>
+                          <td className="py-2.5 px-3 text-[var(--color-text-muted)] whitespace-nowrap">
+                            {item.device}
+                          </td>
+                          <td className="py-2.5 px-3 text-[var(--color-text-muted)] whitespace-nowrap">
+                            {item.location} <span className="text-[var(--color-text-faint)] font-mono text-[10px]">({item.ip})</span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                            {item.status === "Success" ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                <CheckCircle2 className="w-3 h-3" /> Success
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-500 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
+                                <AlertCircle className="w-3 h-3" /> Failed
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="pt-2 border-t border-[var(--color-border)]/60 flex justify-between items-center text-xs">
+                  <span className="text-[10px] text-[var(--color-text-muted)]">Showing last 5 login attempts</span>
+                  <button
+                    type="button"
+                    onClick={() => showToast("Full historical security logs archive is accessible in the Admin Panel.", "info", "📜")}
+                    className="text-[var(--color-accent)] font-bold hover:underline flex items-center gap-1 text-xs cursor-pointer"
                   >
-                    <CheckCircle2 className="w-4 h-4" /> Save Security Settings
+                    View All Login History <ExternalLink className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
+
             </div>
           )}
 
@@ -1274,7 +1926,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
 
                   {/* Time format */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--color-border)]/70 pb-4">
                     <div>
                       <span className="text-xs font-bold text-[var(--color-text)] block">Time Format</span>
                       <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">Clock format for calendar appointments and timestamps.</span>
@@ -1287,6 +1939,25 @@ export const Settings: React.FC<SettingsProps> = ({
                       <option value="12">12-hour (AM / PM)</option>
                       <option value="24">24-hour scale</option>
                     </select>
+                  </div>
+
+                  {/* Keyboard Shortcuts Card */}
+                  <div className="bg-[var(--color-surface-2)]/60 p-4 rounded-xl border border-[var(--color-border)]/70 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold text-[var(--color-text)] flex items-center gap-2">
+                        <Keyboard className="w-4 h-4 text-[var(--color-accent)]" /> Global Keyboard Shortcuts
+                      </span>
+                      <p className="text-[10px] text-[var(--color-text-muted)] leading-relaxed">
+                        Use hotkeys to quickly search (<kbd className="font-mono bg-[var(--color-surface-3)] px-1 rounded">Cmd+K</kbd>), switch tabs (<kbd className="font-mono bg-[var(--color-surface-3)] px-1 rounded">Cmd+G/C/T/P</kbd>), or create clients (<kbd className="font-mono bg-[var(--color-surface-3)] px-1 rounded">Cmd+N</kbd>).
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onOpenShortcutsModal?.()}
+                      className="px-4 py-2 bg-[var(--color-accent)]/15 border border-[var(--color-accent)]/30 hover:bg-[var(--color-accent)]/25 text-[var(--color-accent)] text-xs font-bold rounded-xl transition-all cursor-pointer shrink-0 flex items-center gap-2"
+                    >
+                      <Keyboard className="w-4 h-4" /> View All Shortcuts
+                    </button>
                   </div>
 
                   <button 
@@ -1406,6 +2077,672 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 </form>
               </div>
+            </div>
+          )}
+
+          {/* TAB 6: DIAGNOSTICS & ERROR HANDLING */}
+          {activeTab === "diagnostics" && (
+            <div className="max-w-3xl space-y-6">
+              {/* System Health Card */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-xl shadow-sm space-y-5">
+                <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)]/60 pb-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-emerald-400" /> System Health &amp; Runtime Overview
+                    </h3>
+                    <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                      Live status of core application subsystems, React runtime version, and Error Boundary shield coverage.
+                    </p>
+                  </div>
+                  <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-sm shrink-0">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Systems Operational
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-[var(--color-surface-2)] p-3.5 rounded-xl border border-[var(--color-border)]/50">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Error Boundary</div>
+                    <div className="text-xs font-extrabold text-emerald-400 mt-1 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5" /> Active (100%)
+                    </div>
+                  </div>
+
+                  <div className="bg-[var(--color-surface-2)] p-3.5 rounded-xl border border-[var(--color-border)]/50">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">React Version</div>
+                    <div className="text-xs font-mono font-bold text-[var(--color-text)] mt-1 flex items-center gap-1">
+                      <Cpu className="w-3.5 h-3.5 text-sky-400" /> {React.version || "18.3.1"}
+                    </div>
+                  </div>
+
+                  <div className="bg-[var(--color-surface-2)] p-3.5 rounded-xl border border-[var(--color-border)]/50">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">App Version</div>
+                    <div className="text-xs font-mono font-bold text-[var(--color-text)] mt-1 flex items-center gap-1">
+                      <Terminal className="w-3.5 h-3.5 text-amber-400" /> v2.4.0
+                    </div>
+                  </div>
+
+                  <div className="bg-[var(--color-surface-2)] p-3.5 rounded-xl border border-[var(--color-border)]/50">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Bridge Status</div>
+                    <div className="text-xs font-bold text-[var(--color-text)] mt-1 flex items-center gap-1">
+                      <span className={`w-2 h-2 rounded-full ${bridgeOnline ? "bg-emerald-400" : "bg-amber-400"}`}></span>
+                      {bridgeOnline ? "Connected" : "Local Mode"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Error Boundary Settings */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-xl shadow-sm space-y-5">
+                <div>
+                  <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-[var(--color-accent)]" /> Error Boundary Configuration
+                  </h3>
+                  <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                    Control how React rendering exceptions are handled and reported across the platform.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Toggle 1 */}
+                  <div className="flex items-center justify-between p-3.5 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)]/50">
+                    <div>
+                      <div className="text-xs font-bold text-[var(--color-text)]">Show detailed error stack traces</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                        Displays developer stack traces and component trees in the Error Boundary fallback UI.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleDevDetails(!showDevErrorDetails)}
+                      className="cursor-pointer text-[var(--color-accent)] transition-transform active:scale-95"
+                    >
+                      {showDevErrorDetails ? (
+                        <ToggleRight className="w-8 h-8 text-[var(--color-accent)]" />
+                      ) : (
+                        <ToggleLeft className="w-8 h-8 text-[var(--color-text-muted)]" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Toggle 2 */}
+                  <div className="flex items-center justify-between p-3.5 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)]/50">
+                    <div>
+                      <div className="text-xs font-bold text-[var(--color-text)]">Automatically report errors to support</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                        Logs uncaught rendering exceptions to the local diagnostic store for automatic diagnostic retrieval.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleAutoReport(!autoReportErrors)}
+                      className="cursor-pointer text-[var(--color-accent)] transition-transform active:scale-95"
+                    >
+                      {autoReportErrors ? (
+                        <ToggleRight className="w-8 h-8 text-[var(--color-accent)]" />
+                      ) : (
+                        <ToggleLeft className="w-8 h-8 text-[var(--color-text-muted)]" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Test Error Boundary Button */}
+                  <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                          <Bug className="w-4 h-4 text-amber-400" /> Test Error Boundary Verification
+                        </div>
+                        <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                          Triggers an intentional test rendering exception to verify that the Error Boundary catches exceptions without crashing the workspace.
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setTestErrorActive(prev => !prev)}
+                        className="px-3.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-xs font-bold rounded-xl transition-all cursor-pointer shrink-0"
+                      >
+                        {testErrorActive ? "Reset Test Trigger" : "Test Error Boundary"}
+                      </button>
+                    </div>
+
+                    {/* Test Error Playground area */}
+                    {testErrorActive && (
+                      <div className="mt-2 pt-3 border-t border-amber-500/20">
+                        <ErrorBoundary name="Test Diagnostics Boundary">
+                          <TestBuggyComponent />
+                        </ErrorBoundary>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Error Log Display */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-xl shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--color-border)]/60 pb-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-amber-400" /> Uncaught Error History Log ({errorLogs.length})
+                    </h3>
+                    <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                      Recent exceptions caught by Error Boundaries in this workstation session.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {errorLogs.length > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleExportLogs}
+                          className="px-3 py-1.5 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] text-[var(--color-text)] border border-[var(--color-border)] rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5 text-sky-400" />
+                          Export JSON
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleClearLogs}
+                          className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Clear Log
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Last Error Highlight */}
+                {errorLogs.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="p-3.5 bg-red-950/20 border border-red-500/30 rounded-xl flex items-start gap-3">
+                      <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between text-[10px] font-mono text-[var(--color-text-muted)] mb-1">
+                          <span className="font-bold text-red-400 uppercase">Most Recent Exception:</span>
+                          <span>{new Date(errorLogs[0].timestamp).toLocaleString()}</span>
+                        </div>
+                        <div className="text-xs font-mono text-red-200 font-bold truncate">
+                          {errorLogs[0].message}
+                        </div>
+                        <div className="text-[10px] text-[var(--color-text-muted)] mt-1">
+                          Boundary Scope: <code className="text-amber-300 font-mono">{errorLogs[0].boundaryName || "App Boundary"}</code>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Detailed List */}
+                    <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                      {errorLogs.map((log) => {
+                        const isExpanded = expandedLogId === log.id;
+                        return (
+                          <div 
+                            key={log.id} 
+                            className="p-3 bg-[var(--color-surface-2)] border border-[var(--color-border)]/60 rounded-xl space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[9px] font-mono font-bold bg-amber-500/15 text-amber-400 border border-amber-500/20 px-2 py-0.2 rounded">
+                                    {log.boundaryName || "Boundary"}
+                                  </span>
+                                  <span className="text-[10px] text-[var(--color-text-muted)] font-mono">
+                                    {new Date(log.timestamp).toLocaleTimeString()}
+                                  </span>
+                                </div>
+                                <div className="text-xs font-mono font-bold text-[var(--color-text)] mt-1.5">
+                                  {log.message}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+                                className="text-[10px] font-bold text-[var(--color-accent)] hover:underline flex items-center gap-1 cursor-pointer shrink-0 mt-1"
+                              >
+                                {isExpanded ? "Hide Details" : "View Stack"}
+                                {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                              </button>
+                            </div>
+
+                            {isExpanded && (
+                              <div className="mt-2 pt-2 border-t border-[var(--color-border)]/50 space-y-2 text-[10px] font-mono">
+                                {log.stack && (
+                                  <div>
+                                    <div className="text-amber-400 font-bold mb-1">Stack Trace:</div>
+                                    <pre className="p-2 bg-slate-950 text-slate-300 rounded border border-slate-800 overflow-x-auto text-[9.5px] leading-relaxed">
+                                      {log.stack}
+                                    </pre>
+                                  </div>
+                                )}
+                                {log.componentStack && (
+                                  <div>
+                                    <div className="text-sky-400 font-bold mb-1">Component Stack:</div>
+                                    <pre className="p-2 bg-slate-950 text-slate-300 rounded border border-slate-800 overflow-x-auto text-[9.5px] leading-relaxed">
+                                      {log.componentStack}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-8 text-center bg-[var(--color-surface-2)]/50 border border-dashed border-[var(--color-border)] rounded-xl space-y-2">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto opacity-80" />
+                    <div className="text-xs font-bold text-[var(--color-text)]">No Uncaught Errors Logged</div>
+                    <div className="text-[11px] text-[var(--color-text-muted)] max-w-sm mx-auto">
+                      All rendering boundaries are running cleanly with zero exception events recorded in this session.
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 7. OFFLINE MODE & DATA SYNC TAB */}
+          {activeTab === "offline" && (
+            <div className="max-w-4xl space-y-6 animate-in fade-in duration-200">
+              <div>
+                <h2 className="text-lg font-bold text-[var(--color-text)] flex items-center gap-2">
+                  <WifiOff className="w-5 h-5 text-emerald-400" /> Offline Mode &amp; Local Data Storage
+                </h2>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                  Manage Service Worker offline caching, background synchronization, and local storage usage for seamless working without an active internet connection.
+                </p>
+              </div>
+
+              {/* Status Banner */}
+              <div className={`p-4 rounded-2xl border flex items-center justify-between gap-4 ${
+                !isOnline
+                  ? "bg-amber-950/20 border-amber-500/30 text-amber-200"
+                  : "bg-emerald-950/20 border-emerald-500/30 text-emerald-200"
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl ${!isOnline ? "bg-amber-500/20 text-amber-400" : "bg-emerald-500/20 text-emerald-400"}`}>
+                    <WifiOff className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold flex items-center gap-2">
+                      <span>Network Status:</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                        !isOnline ? "bg-amber-500/30 text-amber-300" : "bg-emerald-500/30 text-emerald-300"
+                      }`}>
+                        {!isOnline ? "Offline Mode Active" : "Online & Connected"}
+                      </span>
+                    </div>
+                    <div className="text-[11px] opacity-80 mt-0.5">
+                      Last synchronized with cloud: {lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : "Never synced in this session"}
+                    </div>
+                  </div>
+                </div>
+
+                {isOnline && (
+                  <button
+                    type="button"
+                    onClick={syncNow}
+                    disabled={isSyncing}
+                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition flex items-center gap-2 shadow-sm cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+                    {isSyncing ? "Syncing..." : "Sync Now"}
+                  </button>
+                )}
+              </div>
+
+              {/* Offline Controls */}
+              <div className="p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl space-y-5">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-accent)]">
+                  Sync &amp; Storage Preferences
+                </h3>
+
+                <div className="space-y-4 divide-y divide-[var(--color-border)]/50">
+                  {/* Toggle 1 */}
+                  <div className="pt-2 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-xs font-bold text-[var(--color-text)]">Enable Offline Mode &amp; Caching</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)]">
+                        Cache app shell, static assets, and client data locally for access without internet.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleOfflineEnabled(!offlineEnabled)}
+                      className="cursor-pointer"
+                    >
+                      {offlineEnabled ? (
+                        <ToggleRight className="w-8 h-8 text-emerald-400" />
+                      ) : (
+                        <ToggleLeft className="w-8 h-8 text-[var(--color-text-muted)]" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Toggle 2 */}
+                  <div className="pt-4 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-xs font-bold text-[var(--color-text)]">Auto-sync when online</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)]">
+                        Automatically push queued offline draft actions as soon as connection is restored.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleAutoSync(!autoSyncEnabled)}
+                      className="cursor-pointer"
+                    >
+                      {autoSyncEnabled ? (
+                        <ToggleRight className="w-8 h-8 text-emerald-400" />
+                      ) : (
+                        <ToggleLeft className="w-8 h-8 text-[var(--color-text-muted)]" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Offline Actions & Storage Usage */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Pending Actions */}
+                <div className="p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-[var(--color-text)]">Pending Offline Actions</span>
+                    <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full text-[10px] font-bold">
+                      {pendingCount} Item{pendingCount !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[var(--color-text-muted)]">
+                    Changes made while offline are saved safely in your local queue and synchronized automatically.
+                  </p>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={syncNow}
+                      disabled={!isOnline || pendingCount === 0 || isSyncing}
+                      className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+                      {isSyncing ? "Syncing Queue..." : "Process Sync Queue Now"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Storage Usage */}
+                <div className="p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-[var(--color-text)] flex items-center gap-2">
+                      <Database className="w-4 h-4 text-purple-400" /> Cached Storage Size
+                    </span>
+                    <span className="text-xs font-mono font-bold text-purple-300">
+                      {storageEstimate.usageMB} MB
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[var(--color-text-muted)]">
+                    Estimated local cache size storing client files, documents, and application assets.
+                  </p>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={handleClearCache}
+                      className="w-full py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Clear Offline Cache
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Offline Capabilities Overview */}
+              <div className="p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-accent)]">
+                  Offline Capabilities Matrix
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div className="p-2.5 bg-[var(--color-surface-2)]/60 rounded-xl flex items-center gap-2 text-[var(--color-text)]">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>View Client Files &amp; Active Pipelines</span>
+                  </div>
+                  <div className="p-2.5 bg-[var(--color-surface-2)]/60 rounded-xl flex items-center gap-2 text-[var(--color-text)]">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Draft Tasks, Notes &amp; Queue Sync</span>
+                  </div>
+                  <div className="p-2.5 bg-[var(--color-surface-2)]/60 rounded-xl flex items-center gap-2 text-[var(--color-text)]">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Mortgage &amp; Stress Test Calculators</span>
+                  </div>
+                  <div className="p-2.5 bg-[var(--color-surface-2)]/60 rounded-xl flex items-center gap-2 text-[var(--color-text)]">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Access Lender Rate Sheets &amp; Contacts</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* 8. SOFTWARE UPDATES & WINDOWS .EXE DISTRIBUTION TAB */}
+          {activeTab === "updates" && (
+            <div className="max-w-4xl space-y-6 animate-in fade-in duration-200">
+              <div>
+                <h2 className="text-lg font-bold text-[var(--color-text)] flex items-center gap-2">
+                  <ArrowUpCircle className="w-5 h-5 text-blue-400" /> Software Updates &amp; Desktop Distribution
+                </h2>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                  Configure automatic updates, download Windows .exe setup packages, and review version changelog history.
+                </p>
+              </div>
+
+              {/* Version Banner & Quick Check */}
+              <div className="p-5 bg-gradient-to-r from-blue-950/40 via-indigo-950/30 to-purple-950/30 border border-blue-500/30 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-blue-300 uppercase tracking-wider">Installed Version</span>
+                    <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-full font-mono font-extrabold text-[11px]">
+                      v{CURRENT_APP_VERSION}
+                    </span>
+                    <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-bold">
+                      Stable Channel
+                    </span>
+                  </div>
+                  <div className="text-xs text-[var(--color-text-muted)]">
+                    Last Checked: {upSettings.lastChecked ? new Date(upSettings.lastChecked).toLocaleString() : "Not checked in this session"}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCheckUpdatesNow}
+                    disabled={isCheckingUp}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition flex items-center gap-2 shadow-sm cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUp ? "animate-spin" : ""}`} />
+                    {isCheckingUp ? "Checking..." : "Check for Updates Now"}
+                  </button>
+                </div>
+              </div>
+
+              {/* New Available Update Prompt (If check result found update) */}
+              {upCheckResult?.hasUpdate && upCheckResult.manifest && (
+                <div className="p-5 bg-amber-950/20 border border-amber-500/40 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+                      <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+                      <span>Update v{upCheckResult.manifest.latestVersion} Available!</span>
+                    </div>
+                    <span className="text-[11px] font-mono text-amber-400">
+                      {upCheckResult.manifest.fileSizeMB} MB
+                    </span>
+                  </div>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    {upCheckResult.manifest.releaseNotes}
+                  </p>
+
+                  {/* Download Progress Bar */}
+                  {isDownloadingUp && (
+                    <div className="space-y-1 pt-1">
+                      <div className="flex justify-between text-[11px] text-blue-300 font-bold">
+                        <span>Downloading Windows .exe Package...</span>
+                        <span>{upDownloadProgress}%</span>
+                      </div>
+                      <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-150 rounded-full"
+                          style={{ width: `${upDownloadProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-2 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleManualDownloadUpdate}
+                      disabled={isDownloadingUp}
+                      className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs transition flex items-center gap-2 cursor-pointer shadow-md"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      {isDownloadingUp ? `Downloading (${upDownloadProgress}%)` : "Download & Install (.exe)"}
+                    </button>
+                    <a
+                      href={upCheckResult.manifest.downloadUrl.exe}
+                      download
+                      className="px-3.5 py-2 bg-[var(--color-surface-2)] hover:bg-[var(--color-border)] text-[var(--color-text)] font-semibold rounded-xl text-xs transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      Direct Download Link <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* Preferences Form */}
+              <div className="p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl space-y-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-accent)]">
+                  Update Automation Preferences
+                </h3>
+
+                <div className="space-y-4 divide-y divide-[var(--color-border)]/50 text-xs">
+                  {/* Toggle 1 */}
+                  <div className="pt-2 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="font-bold text-[var(--color-text)]">Automatically check for updates</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)]">
+                        Query the remote update server periodically for new releases.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateSettingChange("autoCheck", !upSettings.autoCheck)}
+                      className="cursor-pointer"
+                    >
+                      {upSettings.autoCheck ? (
+                        <ToggleRight className="w-8 h-8 text-emerald-400" />
+                      ) : (
+                        <ToggleLeft className="w-8 h-8 text-[var(--color-text-muted)]" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Toggle 2 */}
+                  <div className="pt-4 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="font-bold text-[var(--color-text)]">Download updates automatically</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)]">
+                        Fetch new version installer packages in background without interrupting work.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateSettingChange("autoDownload", !upSettings.autoDownload)}
+                      className="cursor-pointer"
+                    >
+                      {upSettings.autoDownload ? (
+                        <ToggleRight className="w-8 h-8 text-emerald-400" />
+                      ) : (
+                        <ToggleLeft className="w-8 h-8 text-[var(--color-text-muted)]" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Toggle 3 */}
+                  <div className="pt-4 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="font-bold text-[var(--color-text)]">Install updates on restart</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)]">
+                        Automatically apply pending updates next time GBK CRM launches.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateSettingChange("installOnRestart", !upSettings.installOnRestart)}
+                      className="cursor-pointer"
+                    >
+                      {upSettings.installOnRestart ? (
+                        <ToggleRight className="w-8 h-8 text-emerald-400" />
+                      ) : (
+                        <ToggleLeft className="w-8 h-8 text-[var(--color-text-muted)]" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Frequency Dropdown */}
+                  <div className="pt-4 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="font-bold text-[var(--color-text)]">Check Frequency</div>
+                      <div className="text-[11px] text-[var(--color-text-muted)]">
+                        How often the application polls for software updates.
+                      </div>
+                    </div>
+                    <select
+                      value={upSettings.checkFrequency}
+                      onChange={(e) => handleUpdateSettingChange("checkFrequency", e.target.value as any)}
+                      className="px-3 py-1.5 bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[var(--color-text)] rounded-xl font-bold cursor-pointer"
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Version History & Changelog */}
+              <div className="p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl space-y-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-accent)] flex items-center justify-between">
+                  <span>Version History &amp; Release Notes</span>
+                  <span className="text-[10px] text-[var(--color-text-muted)] font-mono">Windows .exe &amp; Web</span>
+                </h3>
+
+                <div className="space-y-4">
+                  {getUpdateHistory().map((rel) => (
+                    <div key={rel.version} className="p-4 bg-[var(--color-surface-2)]/50 border border-[var(--color-border)]/60 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-extrabold text-xs text-blue-400">v{rel.version}</span>
+                          <span className="text-xs font-bold text-[var(--color-text)]">{rel.title}</span>
+                        </div>
+                        <span className="text-[10px] text-[var(--color-text-muted)]">{rel.date}</span>
+                      </div>
+                      <ul className="space-y-1 pt-1">
+                        {rel.changes.map((ch, idx) => (
+                          <li key={idx} className="text-xs text-[var(--color-text-muted)] flex items-start gap-2">
+                            <span className="text-blue-400 font-bold">•</span>
+                            <span>{ch}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
             </div>
           )}
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, memo } from "react";
 import { 
   motion, AnimatePresence 
 } from "motion/react";
@@ -10,6 +10,7 @@ import {
   TrendingUp, Compass, ArrowLeftRight, CheckSquare2, FileText, Bell, Link2, Info
 } from "lucide-react";
 import { Task, Client, Event } from "../types";
+import { useDebounce } from "../hooks/useDebounce";
 
 // Extended Task typing to support rich operational characteristics
 export interface ExtendedTask extends Task {
@@ -103,7 +104,7 @@ export const CHECKLIST_TEMPLATES = [
   }
 ];
 
-export const TasksView: React.FC<TasksViewProps> = ({
+export const TasksView: React.FC<TasksViewProps> = memo(({
   tasks,
   setTasks,
   clients,
@@ -120,6 +121,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [activeFilter, setActiveFilter] = useState<string>("all"); // all, today, upcoming, overdue, done, or category values
   const [selectedClientFilter, setSelectedClientFilter] = useState<string>(""); // specific client file tie
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const debouncedSearchQuery = useDebounce(searchQuery, 250);
   const [sortBy, setSortBy] = useState<"dueDate" | "priority" | "status">("dueDate");
   const [viewLayout, setViewLayout] = useState<"list" | "board" | "checklist">("list"); // Visual mode toggle
 
@@ -2017,4 +2019,6 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
     </div>
   );
-};
+});
+
+TasksView.displayName = "TasksView";

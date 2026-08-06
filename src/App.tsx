@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { 
   Users, Layers, Calendar, CheckSquare, MessageSquare, 
   BrainCircuit, Calculator, ShieldAlert, Mail, BarChart3, Heart, 
   ShieldCheck, FileText, Key, LogOut, Lock, Search, ChevronDown, Settings as SettingsIcon, 
   Trash2, Copy, Send, Plus, CheckCircle2, AlertTriangle, 
   Clock, Award, Globe, FileSpreadsheet, Share2, Sparkles, Filter, 
-  MailOpen, RefreshCw, Phone, MessageCircle, HardDrive, Sun, Moon
+  MailOpen, RefreshCw, Phone, MessageCircle, HardDrive, Sun, Moon, Keyboard, Menu
 } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { encryptValue, decryptValue } from "./lib/cryptoUtils";
@@ -16,25 +16,32 @@ import {
 } from "./data";
 import { Client, Lender, User, Task, Event, Email, EmailTemplate, Partner, Post } from "./types";
 import { safeJsonParse } from "./lib/json";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Sidebar } from "./components/Sidebar";
 import { Avatar } from "./components/Avatar";
-import { Dashboard } from "./components/Dashboard";
-import { ClientsList } from "./components/ClientsList";
-import { Calculators } from "./components/Calculators";
-import { AIAssistantCenter } from "./components/AIAssistantCenter";
-import { ApplicationIntake } from "./components/ApplicationIntake";
-import { Messages } from "./components/Messages";
-import { EmailView } from "./components/EmailView";
-import { LenderSheets } from "./components/LenderSheets";
-import { CalendarView } from "./components/CalendarView";
-import { TasksView } from "./components/TasksView";
-import { Partners } from "./components/Partners";
-import { Reports } from "./components/Reports";
-import { Retention } from "./components/Retention";
-import { Compliance } from "./components/Compliance";
-import { AdminPanel } from "./components/AdminPanel";
-import { FileReadiness } from "./components/FileReadiness";
-import { Settings } from "./components/Settings";
+import { LoadingFallback } from "./components/LoadingFallback";
+
+// ✦ Performance Optimization: Route-level Code Splitting via React.lazy ✦
+const Dashboard = lazy(() => import("./components/Dashboard").then(m => ({ default: m.Dashboard })));
+const ClientsList = lazy(() => import("./components/ClientsList").then(m => ({ default: m.ClientsList })));
+const Calculators = lazy(() => import("./components/Calculators").then(m => ({ default: m.Calculators })));
+const AIAssistantCenter = lazy(() => import("./components/AIAssistantCenter").then(m => ({ default: m.AIAssistantCenter })));
+const ApplicationIntake = lazy(() => import("./components/ApplicationIntake").then(m => ({ default: m.ApplicationIntake })));
+const Messages = lazy(() => import("./components/Messages").then(m => ({ default: m.Messages })));
+const EmailView = lazy(() => import("./components/EmailView").then(m => ({ default: m.EmailView })));
+const LenderSheets = lazy(() => import("./components/LenderSheets").then(m => ({ default: m.LenderSheets })));
+const CalendarView = lazy(() => import("./components/CalendarView").then(m => ({ default: m.CalendarView })));
+const TasksView = lazy(() => import("./components/TasksView").then(m => ({ default: m.TasksView })));
+const Partners = lazy(() => import("./components/Partners").then(m => ({ default: m.Partners })));
+const Reports = lazy(() => import("./components/Reports").then(m => ({ default: m.Reports })));
+const Retention = lazy(() => import("./components/Retention").then(m => ({ default: m.Retention })));
+const Compliance = lazy(() => import("./components/Compliance").then(m => ({ default: m.Compliance })));
+const AdminPanel = lazy(() => import("./components/AdminPanel").then(m => ({ default: m.AdminPanel })));
+const FileReadiness = lazy(() => import("./components/FileReadiness").then(m => ({ default: m.FileReadiness })));
+const Settings = lazy(() => import("./components/Settings").then(m => ({ default: m.Settings })));
+
+import { KeyboardShortcutsModal } from "./components/KeyboardShortcutsModal";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { ZDrivePanel } from "./components/ZDrivePanel";
 import { logActivityEvent } from "./lib/activityEngine";
 import { useClients } from "./hooks/useClients";
@@ -46,6 +53,8 @@ import { useCalculators } from "./hooks/useCalculators";
 import { fd, pn, cPmt, pToAmt } from "./lib/formatters";
 import { ClientDetailPanel } from "./components/ClientDetailPanel";
 import { checkBridgeHealth, getBridgeVersion } from "./lib/bridgeService";
+import { OfflineIndicator } from "./components/OfflineIndicator";
+import { UpdateNotification } from "./components/UpdateNotification";
 
 export default function App() {
   const shouldReduceMotion = useReducedMotion();
@@ -225,6 +234,8 @@ export default function App() {
   const [zDriveOpen, setZDriveOpen] = useState<boolean>(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState<boolean>(false);
   const [headerProfileOpen, setHeaderProfileOpen] = useState<boolean>(false);
+  const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
 
   const [calendarLaunchIntent, setCalendarLaunchIntent] = useState<{
     clientId?: string;
@@ -492,6 +503,34 @@ export default function App() {
   } = useCalculators({ clients, onUpdateClient: handleUpdateClient, showToast });
 
   const calcSelectedClient = clients.find(c => c.id === calcClientId) ?? null;
+
+  // Global Keyboard Shortcuts Controller
+  useKeyboardShortcuts({
+    onFocusSearch: () => {
+      const searchInput = document.getElementById("global-search-input") as HTMLInputElement;
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.select();
+      } else {
+        setActiveTab("clients");
+      }
+    },
+    onNavigate: (tab) => {
+      setActiveTab(tab);
+    },
+    onNewClient: () => {
+      openApplicationIntake();
+    },
+    onSaveForm: () => {
+      showToast("Form progress saved!", "success", "💾");
+    },
+    onToggleShortcutsModal: () => {
+      setIsShortcutsModalOpen(prev => !prev);
+    },
+    onCloseModal: () => {
+      setIsShortcutsModalOpen(false);
+    }
+  });
 
   // Local storage writing side-effects
   useEffect(() => { localStorage.setItem("gbk_lenders", JSON.stringify(lenders)); }, [lenders]);
@@ -822,6 +861,10 @@ export default function App() {
         onLockApp={() => setAppLocked(true)}
         isOwner={isOwner()}
         onOpenProfileManager={() => setProfileModalOpen(true)}
+        onOpenShortcutsModal={() => setIsShortcutsModalOpen(true)}
+        onOpenHelp={() => handleTabChange("settings")}
+        isMobileOpen={isMobileSidebarOpen}
+        setIsMobileOpen={setIsMobileSidebarOpen}
       />
 
       {/* Main Workspace */}
@@ -847,11 +890,22 @@ export default function App() {
             borderBottom: "1px solid var(--color-divider)"
           }}
         >
-          <div
-            className="text-sm font-semibold tracking-tight bg-clip-text text-transparent"
-            style={{ backgroundImage: TAB_TITLE_GRADIENTS[activeTab] || "linear-gradient(90deg, var(--color-text), var(--color-text-muted))" }}
-          >
-            {TAB_LABELS[activeTab] || activeTab} Section
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsMobileSidebarOpen(prev => !prev)}
+              className="md:hidden p-2 rounded-xl text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors cursor-pointer border border-[var(--color-border)]/50"
+              title="Toggle Mobile Navigation Menu"
+              aria-label="Toggle Mobile Navigation Menu"
+            >
+              <Menu className="w-4.5 h-4.5 text-[var(--color-accent)]" />
+            </button>
+
+            <div
+              className="text-sm font-semibold tracking-tight bg-clip-text text-transparent"
+              style={{ backgroundImage: TAB_TITLE_GRADIENTS[activeTab] || "linear-gradient(90deg, var(--color-text), var(--color-text-muted))" }}
+            >
+              {TAB_LABELS[activeTab] || activeTab} Section
+            </div>
           </div>
           <div className="flex items-center gap-3">
             {/* Quick search input */}
@@ -952,6 +1006,15 @@ export default function App() {
               <Plus className="w-3.5 h-3.5 stroke-[3]" /> New Client
             </button>
 
+            {/* Keyboard Shortcuts Trigger Icon */}
+            <button
+              onClick={() => setIsShortcutsModalOpen(true)}
+              className="p-1.5 rounded-full hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)] transition-all cursor-pointer text-[var(--color-text-muted)] shrink-0"
+              title="Keyboard Shortcuts (Press ? or Cmd+/)"
+            >
+              <Keyboard className="w-4 h-4 text-[var(--color-accent)]" />
+            </button>
+
             {/* Theme Toggle Button */}
             <button
               onClick={() => setTheme(prev => prev === "dark" ? "light" : "dark")}
@@ -1049,6 +1112,18 @@ export default function App() {
                       <span>Sync Credentials</span>
                     </button>
 
+                    <button
+                      onClick={() => {
+                        setIsShortcutsModalOpen(true);
+                        setHeaderProfileOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] rounded-lg transition-all text-left cursor-pointer"
+                    >
+                      <Keyboard className="w-4 h-4 text-[var(--color-accent)]" />
+                      <span className="flex-1">Keyboard Shortcuts</span>
+                      <kbd className="text-[9px] font-mono bg-[var(--color-surface-3)] px-1 py-0.5 rounded border border-[var(--color-border)] text-[var(--color-text-muted)]">?</kbd>
+                    </button>
+
                     <div className="border-t border-[var(--color-divider)] my-1.5" />
 
                     <button
@@ -1129,7 +1204,8 @@ export default function App() {
               transition={{ duration: 0.16, ease: "easeOut" }}
               className="h-full w-full"
             >
-              {activeTab === "dashboard" && (
+              <Suspense fallback={<LoadingFallback />}>
+                {activeTab === "dashboard" && (
             <Dashboard 
               clients={clients}
               tasks={tasks}
@@ -1474,17 +1550,21 @@ export default function App() {
           )}
 
           {activeTab === "settings" && (
-            <Settings 
-              currentUser={currentUser}
-              setCurrentUser={setCurrentUser}
-              userRoster={userRoster}
-              setUserRoster={setUserRoster}
-              showToast={showToast}
-              onLockApp={() => setAppLocked(true)}
-              clients={clients}
-              bridgeOnline={bridgeOnline}
-            />
+            <ErrorBoundary name="Settings & Diagnostics">
+              <Settings 
+                currentUser={currentUser}
+                setCurrentUser={setCurrentUser}
+                userRoster={userRoster}
+                setUserRoster={setUserRoster}
+                showToast={showToast}
+                onLockApp={() => setAppLocked(true)}
+                onOpenShortcutsModal={() => setIsShortcutsModalOpen(true)}
+                clients={clients}
+                bridgeOnline={bridgeOnline}
+              />
+            </ErrorBoundary>
           )}
+              </Suspense>
             </motion.div>
           </AnimatePresence>
         </main>
@@ -2280,6 +2360,19 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Keyboard Shortcuts Reference Modal */}
+      <KeyboardShortcutsModal 
+        isOpen={isShortcutsModalOpen} 
+        onClose={() => setIsShortcutsModalOpen(false)} 
+        onNavigate={(tab) => setActiveTab(tab)}
+      />
+
+      {/* Global Real-Time Offline Mode & Data Sync Indicator */}
+      <OfflineIndicator />
+
+      {/* Auto-Update Notification Modal for Windows .exe and Web */}
+      <UpdateNotification />
 
     </div>
   );

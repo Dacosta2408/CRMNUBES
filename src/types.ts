@@ -268,3 +268,18 @@ export interface DocStatus {
   notes?: string;
   receivedAt?: string | null;
 }
+
+export type PlatformType = 'mac' | 'windows' | 'linux';
+
+export type ShortcutCategory = 'Navigation' | 'Actions' | 'Application';
+
+export interface Shortcut {
+  id: string;
+  keys: string[]; // e.g. ["Ctrl", "K"] or ["Cmd", "K"]
+  macKeys?: string[]; // e.g. ["⌘", "K"]
+  winKeys?: string[]; // e.g. ["Ctrl", "K"]
+  description: string;
+  category: ShortcutCategory;
+  actionName?: string;
+}
+

@@ -2,11 +2,21 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 export default defineConfig(() => {
   return {
     base: "/",
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(), 
+      tailwindcss(),
+      visualizer({
+        filename: 'dist/stats.html',
+        open: false,
+        gzipSize: true,
+        brotliSize: true,
+      })
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -34,6 +44,9 @@ export default defineConfig(() => {
               }
               if (id.includes('lucide-react')) {
                 return 'vendor-lucide';
+              }
+              if (id.includes('jspdf') || id.includes('jspdf-autotable')) {
+                return 'vendor-pdf';
               }
               return 'vendor-others';
             }

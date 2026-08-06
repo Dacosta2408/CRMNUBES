@@ -73,6 +73,31 @@ async function startServer() {
   // PostgreSQL API foundation routes
   app.use("/api", crmRouter);
 
+  // Auto-Update Manifest API endpoint
+  app.get("/api/version", (req, res) => {
+    res.json({
+      latestVersion: "1.2.0",
+      minRequiredVersion: "1.0.0",
+      releaseDate: "2026-08-05",
+      releaseNotes: "Major performance upgrade, offline sync queue, and Windows desktop .exe distribution support.",
+      changelog: [
+        "Added offline mode with Service Worker caching and local data queue",
+        "Integrated Windows .exe auto-updater framework",
+        "Optimized Virtual Scroll for large client lists and pipeline cards",
+        "Enhanced OSFI mortgage stress test calculation algorithms",
+        "Added Z Drive Bridge network retry logic and health check monitoring"
+      ],
+      downloadUrl: {
+        exe: "/downloads/GBK-CRM-Setup-1.2.0.exe",
+        msi: "/downloads/GBK-CRM-Setup-1.2.0.msi",
+        web: "/"
+      },
+      fileSizeMB: 68.4,
+      hash: "a3f89012bce7812d44901efc99001122aaff987112001e3b",
+      isMandatory: false
+    });
+  });
+
   // Helper to get GoogleGenAI client or throw friendly error
   function getGeminiClient() {
     const key = process.env.GEMINI_API_KEY;

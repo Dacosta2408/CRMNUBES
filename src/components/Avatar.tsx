@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, memo } from "react";
 
 export interface AvatarProps {
   src?: string | null;
@@ -13,7 +13,7 @@ export interface AvatarProps {
   onClick?: (e: React.MouseEvent<HTMLDivElement | HTMLImageElement>) => void;
 }
 
-export const Avatar: React.FC<AvatarProps> = ({
+export const Avatar: React.FC<AvatarProps> = memo(({
   src,
   alt = "User Avatar",
   name,
@@ -97,6 +97,8 @@ export const Avatar: React.FC<AvatarProps> = ({
       <img
         src={src}
         alt={alt || name || "Avatar"}
+        loading="lazy"
+        decoding="async"
         onError={() => setImgError(true)}
         referrerPolicy="no-referrer"
         style={styleObj}
@@ -120,4 +122,6 @@ export const Avatar: React.FC<AvatarProps> = ({
       {initials}
     </div>
   );
-};
+});
+
+Avatar.displayName = "Avatar";
