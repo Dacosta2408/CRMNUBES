@@ -11,6 +11,7 @@ import { User as UserType, Client, Task, ModulePermissions, PermissionLevel, Onb
 import { Avatar } from "../Avatar";
 import { generateRosterPDF, exportRosterCSV } from "../../lib/rosterPdfGenerator";
 import { DEFAULT_CLEARANCE_LEVELS, DEFAULT_MODULE_KEYS, ROLE_PRESETS } from "../../lib/clearanceMatrixDefaults";
+import { dispatchUserEvent } from "../../lib/userUtils";
 import { UserActivityTimeline } from "./UserActivityTimeline";
 import { UserComparisonModal } from "./UserComparisonModal";
 import { UserOffboardingModal } from "./UserOffboardingModal";
@@ -307,10 +308,15 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       brokerage: editBrokerage,
       status: editStatus as any,
       clearanceLevel: editClearance,
-      specialPermissions: editSpecialPerms
+      specialPermissions: editSpecialPerms,
+      updatedAt: new Date().toISOString()
     };
 
     setUserRoster(prev => prev.map(u => u.id === editingUser.id ? updatedUser : u));
+    dispatchUserEvent("user.updated", { user: updatedUser, userId: updatedUser.id });
+    if (updatedUser.status !== editingUser.status) {
+      dispatchUserEvent("user.statusChanged", { user: updatedUser, userId: updatedUser.id, status: updatedUser.status });
+    }
     logActivity("Updated User Profile", `Updated permissions and role for ${editingUser.first} ${editingUser.last}`);
     showToast(`Updated profile settings for ${editingUser.first} ${editingUser.last}.`, "success");
     setEditingUser(null);
@@ -361,6 +367,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       return;
     }
 
+    const timestamp = new Date().toISOString();
     const newUser: UserType = {
       id: `usr_${Date.now()}`,
       first: wizFirst,
@@ -370,12 +377,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       role: wizRole,
       brokerage: wizBrokerage || "GBK Financial",
       licenseNumber: wizLicense,
-      status: "pending",
+      status: "active",
       clearanceLevel: wizClearance,
-      created: new Date().toISOString().split("T")[0],
-      createdAt: new Date().toISOString(),
+      created: timestamp.split("T")[0],
+      createdAt: timestamp,
+      updatedAt: timestamp,
       lastLogin: "Never",
-      lastActive: "Pending Onboarding",
+      lastActive: "Just Onboarded",
       reportingTo: wizReportingTo,
       onboardingCompleted: false,
       onboardingTasks: wizChecklist,
@@ -389,6 +397,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
     };
 
     setUserRoster(prev => [newUser, ...prev]);
+    dispatchUserEvent("user.created", { user: newUser, userId: newUser.id });
     setCreatedUser(newUser);
     logActivity("Onboarded New Staff Member", `Created account for ${newUser.first} ${newUser.last} (${newUser.email}) - Clearance Level ${newUser.clearanceLevel}`);
     showToast(`Created staff account for ${newUser.first} ${newUser.last}!`, "success");

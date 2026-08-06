@@ -3,49 +3,48 @@ import {
   Send, FileText, Bookmark, Users, HelpCircle, Search, 
   X, Pin, Plus, AlertCircle, CheckCircle, Check, ArrowRight, 
   Trash2, Bell, Tag, Link2, Paperclip, Phone, MoreHorizontal,
-  ChevronRight, Sparkles, Smile, ShieldAlert, BadgeInfo, Calendar, UserPlus, Eye, Upload
+  ChevronRight, Sparkles, Smile, ShieldAlert, BadgeInfo, Calendar, Eye, Upload,
+  Pencil, BookmarkCheck, ExternalLink, RefreshCw, MessageSquare, Star, Wifi, WifiOff, Clock, Filter, Download, Archive
 } from "lucide-react";
-import { Client, Task } from "../types";
+import { Client, Task, Message, SavedMessage, MessageAction, MessagePermission, ChannelInfo, User } from "../types";
 import { Avatar } from "./Avatar";
 import { DEFAULT_USERS } from "../data";
 import { getNotesForClient, saveNotesForClient, logActivityEvent, FileNote } from "../lib/activityEngine";
-
-interface Message {
-  id: string;
-  senderId: string;
-  author: string;
-  initials: string;
-  role: string;
-  senderChatColor?: string;
-  text: string;
-  time: string;
-  date: string;
-  clientTag?: string;
-  clientId?: string;
-  priority?: "urgent" | "blocked" | "lender_pending" | "client_pending" | "compliance" | "normal";
-  pinned?: boolean;
-  attachments?: { name: string; size: string; type: string }[];
-  mentions?: string[];
-  readBy?: string[];
-  reactions?: Record<string, string[]>;
-}
+import { getUserFullName, getUserPhotoUrl } from "../lib/userUtils";
+import { 
+  canAccessMessages, 
+  canAccessChannel, 
+  canSendMessage, 
+  canEditMessage, 
+  canDeleteMessage, 
+  canSaveMessage 
+} from "../lib/permissions";
+import { 
+  getAccessibleChannels,
+  getMessages,
+  sendMessage,
+  updateMessage,
+  softDeleteMessage,
+  saveMessage,
+  unsaveMessage,
+  markChannelRead,
+  searchMessages,
+  updateMessageApi, 
+  softDeleteMessageApi, 
+  saveMessageApi, 
+  unsaveMessageApi, 
+  getSavedMessagesApi,
+  getActiveUsers,
+  getActiveUsersApi,
+  getAccessibleChannelsApi 
+} from "../lib/api";
 
 interface MessagesProps {
   messages: Record<string, any[]>;
   setMessages: React.Dispatch<React.SetStateAction<Record<string, any[]>>>;
   clients: Client[];
   setClients?: React.Dispatch<React.SetStateAction<Client[]>>;
-  currentUser: {
-    id?: string;
-    first: string;
-    last: string;
-    role?: string;
-    avatar?: string;
-    photo?: string;
-    displayName?: string;
-    jobTitle?: string;
-    [key: string]: any;
-  };
+  currentUser: User;
   activeChannel: string;
   setActiveChannel: (ch: string) => void;
   linkedChatClientId: string | null;
@@ -54,8 +53,8 @@ interface MessagesProps {
   tasks?: Task[];
   setTasks?: React.Dispatch<React.SetStateAction<Task[]>>;
   showToast?: (msg: string, type?: "success" | "error" | "info" | "warning", icon?: string) => void;
-  userRoster?: any[];
-  setUserRoster?: React.Dispatch<React.SetStateAction<any[]>>;
+  userRoster?: User[];
+  setUserRoster?: React.Dispatch<React.SetStateAction<User[]>>;
 }
 
 // Deprecated hard-coded TEAM_ROSTER fallback for backwards compatibility
@@ -81,11 +80,11 @@ export const ESCALATION_FLAGS = {
 
 export const ESCALATION_GRADIENTS: Record<string, string> = {
   normal: "",
-  urgent: "linear-gradient(135deg, #FF416C 0%, #FFB347 100%)",       // Sunset Vibes
-  blocked: "linear-gradient(135deg, #FF00CC 0%, #3333FF 100%)",      // Neon Dream
-  lender_pending: "linear-gradient(135deg, #00FFFF 0%, #0077FF 100%)", // Arctic Glacier
-  client_pending: "linear-gradient(135deg, #FF8800 0%, #FCEE21 100%)", // Citrus Burst
-  compliance: "linear-gradient(135deg, #56AB2F 0%, #A8E063 100%)"    // Nature Fresh
+  urgent: "linear-gradient(135deg, #FF416C 0%, #FFB347 100%)",
+  blocked: "linear-gradient(135deg, #FF00CC 0%, #3333FF 100%)",
+  lender_pending: "linear-gradient(135deg, #00FFFF 0%, #0077FF 100%)",
+  client_pending: "linear-gradient(135deg, #FF8800 0%, #FCEE21 100%)",
+  compliance: "linear-gradient(135deg, #56AB2F 0%, #A8E063 100%)"
 };
 
 const chatColorGradients: Record<string, string> = {
@@ -100,6 +99,34 @@ const chatColorGradients: Record<string, string> = {
   lavender: "linear-gradient(135deg, #8360C3 0%, #FF8FBF 100%)",
 };
 const DEFAULT_CHAT_GRADIENT = chatColorGradients.ocean;
+
+// ==========================================
+// Reusable Clearance Matrix Permission Helpers
+// ==========================================
+
+export function canViewAttachment(attachment: any, message: any, currentUser: any): boolean {
+  if (!attachment) return false;
+  return canAccessChannel(currentUser, null);
+}
+
+// Utility: Format Date Separators
+function getFormattedDateSeparator(dateStr?: string, timestampStr?: string): string {
+  try {
+    const target = timestampStr ? new Date(timestampStr) : new Date();
+    if (isNaN(target.getTime())) return dateStr || "Today";
+    
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    if (target.toDateString() === today.toDateString()) return "Today";
+    if (target.toDateString() === yesterday.toDateString()) return "Yesterday";
+
+    return target.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  } catch {
+    return dateStr || "Today";
+  }
+}
 
 export const Messages: React.FC<MessagesProps> = ({
   messages,
@@ -118,30 +145,158 @@ export const Messages: React.FC<MessagesProps> = ({
   userRoster,
   setUserRoster
 }) => {
+  const currentUserId = currentUser?.id || "staff_me";
+
   const authorInitials = useMemo(() => {
     return ((currentUser?.first?.[0] || "") + (currentUser?.last?.[0] || "")).toUpperCase() || "ME";
   }, [currentUser]);
 
-  // Input composer & searching controls
+  // Network & Connection State (Req 5)
+  const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'offline'>('connected');
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setConnectionState('connected');
+      if (showToast) showToast("Connection restored 🟢", "success", "📶");
+    };
+    const handleOffline = () => {
+      setConnectionState('offline');
+      if (showToast) showToast("Connection offline 🔴 Unsent drafts saved locally.", "warning", "⚠️");
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [showToast]);
+
+  // Per-User Read Tracking State (Req 1)
+  const [userReadState, setUserReadState] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem(`gbk_read_state_${currentUserId}`);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error("Error reading read state:", e);
+    }
+    return {};
+  });
+
+  // Save read state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(`gbk_read_state_${currentUserId}`, JSON.stringify(userReadState));
+    } catch (e) {
+      console.error("Error saving read state:", e);
+    }
+  }, [userReadState, currentUserId]);
+
+  // Favorite Channels State (Req 7)
+  const [favoriteChannels, setFavoriteChannels] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`gbk_favorite_channels_${currentUserId}`);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error("Error reading favorite channels:", e);
+    }
+    return ["dm_wayne"];
+  });
+
+  const toggleFavoriteChannel = (channelId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setFavoriteChannels(prev => {
+      const next = prev.includes(channelId) ? prev.filter(id => id !== channelId) : [...prev, channelId];
+      localStorage.setItem(`gbk_favorite_channels_${currentUserId}`, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  // Draft Preservation Per Channel (Req 4)
+  const [channelDrafts, setChannelDrafts] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem(`gbk_channel_drafts_${currentUserId}`);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error("Error loading channel drafts:", e);
+    }
+    return {};
+  });
+
   const [msgInputText, setMsgInputText] = useState("");
+
+  // Restore & save draft when changing active channel
+  const prevChannelRef = useRef<string>(activeChannel);
+  useEffect(() => {
+    const prevCh = prevChannelRef.current;
+    if (prevCh && prevCh !== activeChannel) {
+      // Save draft for previous channel
+      setChannelDrafts(prev => {
+        const updated = { ...prev, [prevCh]: msgInputText };
+        localStorage.setItem(`gbk_channel_drafts_${currentUserId}`, JSON.stringify(updated));
+        return updated;
+      });
+    }
+    // Restore draft for new channel
+    setMsgInputText(channelDrafts[activeChannel] || "");
+    prevChannelRef.current = activeChannel;
+  }, [activeChannel, currentUserId]);
+
+  // Search & Advanced Filters (Req 2)
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchSender, setSearchSender] = useState("");
+  const [searchStartDate, setSearchStartDate] = useState("");
+  const [searchEndDate, setSearchEndDate] = useState("");
+  const [hasAttachmentsFilter, setHasAttachmentsFilter] = useState(false);
+  const [savedOnlyFilter, setSavedOnlyFilter] = useState(false);
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+
   const [selectedEscalationFilter, setSelectedEscalationFilter] = useState<string>("all");
   const [selectedClientSearch, setSelectedClientSearch] = useState<string>("");
-  const [showClientLinkDropdown, setShowClientLinkDropdown] = useState(false);
-  const [clientDropdownSearch, setClientDropdownSearch] = useState("");
   const [msgPriority, setMsgPriority] = useState<"urgent" | "blocked" | "lender_pending" | "client_pending" | "compliance" | "normal">("normal");
 
   // Document drafts attached to composer from user's computer
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachedFiles, setAttachedFiles] = useState<{ name: string; size: string; type: string }[]>([]);
-  const [showAttachPresets, setShowAttachPresets] = useState(false);
 
-  // Unread Trackers simulated dynamically in state
-  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>(() => {
-    return {
-      "dm_wayne": 1
-    };
+  // Action Menu, Edit & Delete States
+  const [activeMenuMsgId, setActiveMenuMsgId] = useState<string | null>(null);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState<string>("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [confirmDeleteMsgId, setConfirmDeleteMsgId] = useState<string | null>(null);
+  const [isDeletingMsg, setIsDeletingMsg] = useState(false);
+
+  // Thread Panel & Replies State (Req 3)
+  const [activeThreadParentMsg, setActiveThreadParentMsg] = useState<Message | null>(null);
+  const [threadReplyInput, setThreadReplyInput] = useState("");
+
+  // Pagination State Per Channel (Req 8)
+  const [visibleMessageCount, setVisibleMessageCount] = useState<Record<string, number>>({});
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+
+  // Message Delivery States (Req 4 & 5)
+  const [sendingMessageIds, setSendingMessageIds] = useState<Set<string>>(new Set());
+  const [failedMessageIds, setFailedMessageIds] = useState<Set<string>>(new Set());
+
+  // Personal Bookmarked Saved Messages state (per-user)
+  const [savedMessages, setSavedMessages] = useState<SavedMessage[]>(() => {
+    try {
+      const local = localStorage.getItem(`gbk_saved_messages_${currentUserId}`);
+      if (local) return JSON.parse(local);
+    } catch (e) {
+      console.error("Failed to parse saved messages from localStorage:", e);
+    }
+    return [];
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`gbk_saved_messages_${currentUserId}`, JSON.stringify(savedMessages));
+    } catch (e) {
+      console.error("Failed to store saved messages in localStorage:", e);
+    }
+  }, [savedMessages, currentUserId]);
 
   // Task conversion wizard sidebar modal
   const [isTaskWizardOpen, setIsTaskWizardOpen] = useState(false);
@@ -159,152 +314,161 @@ export const Messages: React.FC<MessagesProps> = ({
   const [showPinsPanel, setShowPinsPanel] = useState(false);
   const [typingUser, setTypingUser] = useState<string | null>(null);
 
-  // Derive Chat Roster directly from real user accounts (userRoster + currentUser)
-  const chatRoster = useMemo(() => {
-    const rosterList = (userRoster && userRoster.length > 0) ? userRoster : DEFAULT_USERS;
-    
-    // Combine and ensure currentUser is synchronized and included
-    let combined = [...rosterList];
-    if (currentUser) {
-      const curIdx = combined.findIndex(u => 
-        (currentUser.id && u.id === currentUser.id) || 
-        (currentUser.email && u.email && u.email.toLowerCase() === currentUser.email.toLowerCase())
-      );
-      if (curIdx >= 0) {
-        combined[curIdx] = { ...combined[curIdx], ...currentUser };
-      } else {
-        combined.unshift(currentUser);
+  // Close message action menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setActiveMenuMsgId(null);
+    window.addEventListener("click", handleClickOutside);
+    return () => window.removeEventListener("click", handleClickOutside);
+  }, []);
+
+  // Audit channel access event
+  useEffect(() => {
+    if (activeChannel && activeChannel !== "saved-messages") {
+      try {
+        logActivityEvent({
+          timestamp: new Date().toISOString(),
+          eventType: "channel_accessed",
+          action: "channel.accessed",
+          user: `${currentUser.first} ${currentUser.last}`,
+          description: `Accessed team channel / chat thread: ${activeChannel}`
+        });
+      } catch (e) {
+        // silent
       }
     }
+  }, [activeChannel, currentUser]);
 
-    return combined.map(u => {
-      const first = u.first || "";
-      const last = u.last || "";
-      const fullName = u.displayName || `${first} ${last}`.trim() || u.name || "User";
-      const photo = u.photo || u.avatar || null;
-      const userRole = u.jobTitle || u.role || "Mortgage Broker";
-      
-      // Determine status, statusLabel, and color indicator
-      let status = u.status || "online";
-      let statusLabel = u.statusLabel;
-      let color = u.color;
+  const [isRefreshingTeam, setIsRefreshingTeam] = useState(false);
 
-      if (!statusLabel || !color) {
-        if (u.id === 'u_david' || u.id === 'dm_david' || fullName.includes("David Acosta")) {
-          status = "online";
-          statusLabel = "Active 🟢";
-          color = "bg-emerald-500";
-        } else if (u.id === 'u_waynem' || u.id === 'dm_wayne' || fullName.includes("Wayne MacLeod")) {
-          status = "busy";
-          statusLabel = "In Lender Call 📞";
-          color = "bg-red-400";
-        } else if (u.id === 'u_jeffb' || u.id === 'dm_jeff' || fullName.includes("Jeff Brown")) {
-          status = "online";
-          statusLabel = "Processing paystubs 🟢";
-          color = "bg-emerald-500";
-        } else if (u.id === 'u_timb' || u.id === 'dm_tim' || fullName.includes("Tim Brown")) {
-          status = "offline";
-          statusLabel = "Offline ⚪";
-          color = "bg-slate-500";
-        } else if (u.id === 'u_jameyb' || u.id === 'dm_jamey' || fullName.includes("Jamey Brown")) {
-          status = "away";
-          statusLabel = "Reviewing files 🟡";
-          color = "bg-amber-500";
-        } else if (u.id === 'u_matthewb' || u.id === 'dm_matt' || fullName.includes("Matt Brown")) {
-          status = "online";
-          statusLabel = "Processing BFS file 🟢";
-          color = "bg-emerald-500";
-        } else if (u.id === 'u_jasonm' || u.id === 'dm_jason' || fullName.includes("Jason Myszkowski")) {
-          status = "away";
-          statusLabel = "On-site visit 🟡";
-          color = "bg-amber-500";
-        } else {
-          if (status === 'inactive' || status === 'offline') {
-            status = "offline";
-            statusLabel = "Offline ⚪";
-            color = "bg-slate-500";
-          } else if (status === 'busy') {
-            statusLabel = "Busy 🔴";
-            color = "bg-red-400";
-          } else if (status === 'away') {
-            statusLabel = "Away 🟡";
-            color = "bg-amber-500";
-          } else {
-            status = "online";
-            statusLabel = "Active 🟢";
-            color = "bg-emerald-500";
-          }
-        }
+  // Refresh Team Roster from shared API / backend source
+  const refreshTeamRoster = async () => {
+    if (isRefreshingTeam) return;
+    setIsRefreshingTeam(true);
+    try {
+      const activeUsers = await getActiveUsers();
+      if (Array.isArray(activeUsers) && activeUsers.length > 0 && setUserRoster) {
+        setUserRoster(prev => {
+          // Merge activeUsers into prev by stable ID
+          const map = new Map<string, User>();
+          prev.forEach(u => map.set(u.id, u));
+          activeUsers.forEach(u => map.set(u.id, u));
+          return Array.from(map.values());
+        });
       }
-
-      return {
-        id: u.id,
-        name: fullName,
-        first: first,
-        last: last,
-        role: userRole,
-        status: status,
-        statusLabel: statusLabel,
-        color: color,
-        chatColor: (u as any).chatColor || color,
-        avatar: photo,
-        email: u.email
-      };
-    });
-  }, [userRoster, currentUser]);
-
-  const [addMemberOpen, setAddMemberOpen] = useState(false);
-  const [newMemberName, setNewMemberName] = useState("");
-  const [newMemberRole, setNewMemberRole] = useState("Mortgage Broker");
-  const [newMemberStatusLabel, setNewMemberStatusLabel] = useState("Active 🟢");
-
-  const handleAddMember = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMemberName.trim()) return;
-
-    const nameParts = newMemberName.trim().split(" ");
-    const first = nameParts[0] || "";
-    const last = nameParts.slice(1).join(" ") || "";
-    const newId = `u_${Date.now()}`;
-    const statusColor = 
-      newMemberStatusLabel.includes("🟢") || newMemberStatusLabel.toLowerCase().includes("online") || newMemberStatusLabel.toLowerCase().includes("active") ? "bg-emerald-500" :
-      newMemberStatusLabel.includes("🔴") || newMemberStatusLabel.toLowerCase().includes("busy") || newMemberStatusLabel.toLowerCase().includes("call") ? "bg-red-400" :
-      newMemberStatusLabel.includes("🟡") || newMemberStatusLabel.toLowerCase().includes("away") || newMemberStatusLabel.toLowerCase().includes("site") ? "bg-amber-500" : "bg-slate-500";
-
-    const newUserObj: any = {
-      id: newId,
-      first,
-      last,
-      displayName: newMemberName.trim(),
-      email: `${first.toLowerCase()}@gbkfinancial.ca`,
-      role: newMemberRole.trim() || "Broker",
-      jobTitle: newMemberRole.trim() || "Mortgage Broker",
-      status: "active",
-      statusLabel: newMemberStatusLabel.trim() || "Active 🟢",
-      color: statusColor,
-      photo: null,
-      created: new Date().toISOString()
-    };
-
-    if (setUserRoster) {
-      setUserRoster(prev => {
-        const updated = [...prev, newUserObj];
-        localStorage.setItem("gbk_roster", JSON.stringify(updated));
-        return updated;
-      });
-    }
-
-    setNewMemberName("");
-    setNewMemberRole("Mortgage Broker");
-    setNewMemberStatusLabel("Active 🟢");
-    setAddMemberOpen(false);
-    setActiveChannel(newId);
-    if (showToast) {
-      showToast(`${newUserObj.displayName} added to user roster & Team Channels`, "success", "👤");
+    } catch (err) {
+      console.warn("Error refreshing team roster:", err);
+    } finally {
+      setIsRefreshingTeam(false);
     }
   };
 
+  // Real-Time Event & Focus Listeners
   useEffect(() => {
+    // Refresh on component mount
+    refreshTeamRoster();
+
+    // Refresh on window focus
+    const handleFocus = () => {
+      refreshTeamRoster();
+    };
+    window.addEventListener("focus", handleFocus);
+
+    // Listen to real-time user events
+    const handleUserChangeEvent = () => {
+      refreshTeamRoster();
+    };
+
+    window.addEventListener("user.created", handleUserChangeEvent);
+    window.addEventListener("user.updated", handleUserChangeEvent);
+    window.addEventListener("user.profilePhotoUpdated", handleUserChangeEvent);
+    window.addEventListener("user.statusChanged", handleUserChangeEvent);
+    window.addEventListener("user.permissionsChanged", handleUserChangeEvent);
+    window.addEventListener("user.changed", handleUserChangeEvent);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("user.created", handleUserChangeEvent);
+      window.removeEventListener("user.updated", handleUserChangeEvent);
+      window.removeEventListener("user.profilePhotoUpdated", handleUserChangeEvent);
+      window.removeEventListener("user.statusChanged", handleUserChangeEvent);
+      window.removeEventListener("user.permissionsChanged", handleUserChangeEvent);
+      window.removeEventListener("user.changed", handleUserChangeEvent);
+    };
+  }, []);
+
+  // Derive Chat Roster cleanly from central user source by stable user.id
+  const chatRoster = useMemo(() => {
+    const rawList = (userRoster && userRoster.length > 0) ? userRoster : DEFAULT_USERS;
+    
+    // De-duplicate by stable user.id
+    const userMap = new Map<string, User>();
+    rawList.forEach(u => {
+      if (u && u.id) {
+        userMap.set(u.id, u);
+      }
+    });
+
+    if (currentUser && currentUser.id) {
+      const existing = userMap.get(currentUser.id);
+      userMap.set(currentUser.id, { ...existing, ...currentUser });
+    }
+
+    const uniqueUsers = Array.from(userMap.values());
+
+    return uniqueUsers
+      .filter(u => {
+        if (!u) return false;
+        const st = (u.status || "").toLowerCase();
+        // Exclude inactive, disabled, or deleted users from active team directory
+        if (st === 'inactive' || st === 'disabled' || st === 'deleted') return false;
+        return canAccessMessages(u);
+      })
+      .map(u => {
+        const fullName = getUserFullName(u);
+        const photo = getUserPhotoUrl(u);
+        const userRole = u.jobTitle || u.role || "Mortgage Specialist";
+        
+        const rawStatus = (u.status || "active").toLowerCase();
+        let status = "online";
+        let statusLabel = "Active 🟢";
+        let color = "bg-emerald-500";
+
+        if (rawStatus === 'busy') {
+          status = "busy";
+          statusLabel = "Busy 🔴";
+          color = "bg-red-400";
+        } else if (rawStatus === 'away') {
+          status = "away";
+          statusLabel = "Away 🟡";
+          color = "bg-amber-500";
+        } else if (rawStatus === 'offline') {
+          status = "offline";
+          statusLabel = "Offline ⚪";
+          color = "bg-slate-500";
+        }
+
+        return {
+          id: u.id,
+          name: fullName,
+          first: u.first || "",
+          last: u.last || "",
+          role: userRole,
+          status: status,
+          statusLabel: statusLabel,
+          color: color,
+          chatColor: (u as any).chatColor || color,
+          avatar: photo,
+          email: u.email,
+          rawUser: u
+        };
+      });
+  }, [userRoster, currentUser]);
+
+  useEffect(() => {
+    if (activeChannel === "saved-messages") {
+      setTypingUser(null);
+      return;
+    }
     const dm = chatRoster.find(t => t.id === activeChannel);
     if (!dm) { setTypingUser(null); return; }
     const delay = setTimeout(() => {
@@ -314,17 +478,69 @@ export const Messages: React.FC<MessagesProps> = ({
     return () => clearTimeout(delay);
   }, [activeChannel, chatRoster]);
 
-  // Sync out unread counter when user opens a channel
+  // Mark channel read when opened (Req 1)
   useEffect(() => {
-    if (unreadCounts[activeChannel]) {
-      setUnreadCounts(prev => ({
-        ...prev,
-        [activeChannel]: 0
-      }));
+    if (activeChannel && activeChannel !== "saved-messages") {
+      handleMarkChannelRead(activeChannel);
     }
-  }, [activeChannel, unreadCounts]);
+  }, [activeChannel]);
+
+  const handleMarkChannelRead = (channelId: string) => {
+    const nowIso = new Date().toISOString();
+    setUserReadState(prev => ({
+      ...prev,
+      [channelId]: nowIso
+    }));
+    markChannelRead(channelId, currentUserId).catch(() => {});
+  };
+
+  const handleMarkAllChannelsRead = () => {
+    const nowIso = new Date().toISOString();
+    const updated: Record<string, string> = {};
+    chatRoster.forEach(tm => {
+      updated[tm.id] = nowIso;
+    });
+    setUserReadState(updated);
+    if (showToast) showToast("All channels marked as read", "success", "✓");
+  };
+
+  // Compute Unread Counts per channel (Req 1)
+  const unreadCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    chatRoster.forEach(tm => {
+      const channelMsgs = messages[tm.id] || [];
+      const lastRead = userReadState[tm.id];
+      if (!lastRead) {
+        // Default seed unread count for demo if never opened
+        counts[tm.id] = tm.id === "dm_wayne" ? 1 : 0;
+      } else {
+        const lastReadTime = new Date(lastRead).getTime();
+        const unread = channelMsgs.filter((m: any) => {
+          const msgTime = m.createdAt ? new Date(m.createdAt).getTime() : 0;
+          return msgTime > lastReadTime && m.senderId !== currentUserId;
+        });
+        counts[tm.id] = unread.length;
+      }
+    });
+    return counts;
+  }, [chatRoster, messages, userReadState, currentUserId]);
 
   const currentChannelDetails = useMemo(() => {
+    if (activeChannel === "saved-messages") {
+      return {
+        name: "Saved Messages",
+        role: "Personal Bookmarks",
+        status: "active",
+        statusLabel: `${savedMessages.length} saved`,
+        color: "bg-amber-400",
+        chatColor: "amber",
+        privacy: "personal-bookmarks",
+        isChannel: false,
+        icon: "🔖",
+        avatar: null
+      };
+    }
+
     const dm = chatRoster.find(t => 
       t.id === activeChannel || 
       (t.id === 'u_waynem' && activeChannel === 'dm_wayne') || 
@@ -350,10 +566,12 @@ export const Messages: React.FC<MessagesProps> = ({
       };
     }
     return { name: "Direct Message", role: "Team Member", status: "offline", statusLabel: "Offline", color: "bg-slate-500", privacy: "direct-message", isChannel: false, icon: "👤", avatar: null };
-  }, [activeChannel, chatRoster]);
+  }, [activeChannel, chatRoster, savedMessages]);
 
-  // Sanitize message objects to match full operational model
+  // Sanitize raw channel messages
   const rawChannelMessages = useMemo(() => {
+    if (activeChannel === "saved-messages") return [];
+
     let list = messages[activeChannel];
     if (!list) {
       if (activeChannel === 'u_waynem') list = messages['dm_wayne'];
@@ -370,242 +588,461 @@ export const Messages: React.FC<MessagesProps> = ({
     return finalMsgList.map((m: any, idx) => ({
       id: m.id || `m_seeded_${activeChannel}_${idx}`,
       senderId: m.senderId || "staff_other",
+      authorId: m.authorId || m.senderId || "staff_other",
       author: m.author || "Teammate",
       initials: m.initials || m.author?.slice(0, 2).toUpperCase() || "TM",
       role: m.role || (m.author === "Tim Brown" ? "Broker Principal" : m.author === "Wayne MacLeod" ? "BDM" : m.author === "Jeff Brown" ? "Assistant" : "Mortgage Agent"),
       senderChatColor: m.senderChatColor || chatRoster.find(u => u.id === m.senderId || u.name === m.author)?.chatColor,
-      text: m.text || "",
+      text: m.text || m.content || "",
+      content: m.content || m.text || "",
       time: m.time || "10:00 AM",
       date: m.date || "Today",
+      createdAt: m.createdAt || new Date().toISOString(),
+      editedAt: m.editedAt || undefined,
+      deletedAt: m.deletedAt || undefined,
+      deletedBy: m.deletedBy || undefined,
+      replyToId: m.replyToId || undefined,
+      replies: m.replies || [],
+      replyCount: m.replies?.length || m.replyCount || 0,
       clientTag: m.clientTag || undefined,
       clientId: m.clientId || (m.clientTag ? clients.find(c => m.clientTag.includes(c.last))?.id : undefined),
       priority: m.priority || "normal",
       pinned: m.pinned || false,
+      status: m.status || (failedMessageIds.has(m.id) ? 'failed' : sendingMessageIds.has(m.id) ? 'sending' : 'sent'),
       attachments: m.attachments || [],
       mentions: m.mentions || [],
       readBy: m.readBy || ["TB", "WM", "JM"],
       reactions: m.reactions || {}
     }));
-  }, [messages, activeChannel, clients, chatRoster]);
+  }, [messages, activeChannel, clients, chatRoster, sendingMessageIds, failedMessageIds]);
 
-  // Dynamic filter lists
+  // Search Filtered Messages across channels or within current channel (Req 2)
   const filteredMessages = useMemo(() => {
     return rawChannelMessages.filter(m => {
+      // Content Search
       const textMatches = searchQuery === "" || m.text.toLowerCase().includes(searchQuery.toLowerCase()) || m.author.toLowerCase().includes(searchQuery.toLowerCase());
+      // Sender Filter
+      const senderMatches = !searchSender || m.author.toLowerCase().includes(searchSender.toLowerCase());
+      // Priority Filter
       const priorityMatches = selectedEscalationFilter === "all" || m.priority === selectedEscalationFilter;
+      // Client Filter
       const clientMatches = selectedClientSearch === "" || m.clientId === selectedClientSearch;
-      return textMatches && priorityMatches && clientMatches;
-    });
-  }, [rawChannelMessages, searchQuery, selectedEscalationFilter, selectedClientSearch]);
-
-  const pinnedChannelMessages = useMemo(() => {
-    return rawChannelMessages.filter(m => m.pinned);
-  }, [rawChannelMessages]);
-
-  // Helper template string inserts
-  const handleInsertTemplate = (type: string) => {
-    const templates: Record<string, { body: string; priority: any }> = {
-      "follow-up": {
-        body: "Checking in on the outstanding documents. I have sent an automated reminder to the borrower to secure their signed commitment summary and updated paystubs.",
-        priority: "client_pending"
-      },
-      "lender-update": {
-        body: "🏦 TD came back on the submission! Turnaround details: CONDITIONAL COMMITMENT issued. Turnaround under active review at funding desk.",
-        priority: "lender_pending"
-      },
-      "doc-checklist": {
-        body: "Missing Checklist Audited: Paystubs and tax NOA are verified. We are awaiting 90-day bank history records for matching validation before direct dispatch.",
-        priority: "client_pending"
-      },
-      "blocked-file": {
-        body: "🛑 FILE BLOCKED: Underwriting reported appraisal shortfall. Appraisal came in at $40K below purchase valuation. Need to re-evaluate capital source options with the team.",
-        priority: "blocked"
-      },
-      "compliance-pass": {
-        body: "⚖️ Compliance checks are completely clear. All anti-money-laundering audits, broker disclosures, and client IDs align with standards. This file is cleared for pre-funding release.",
-        priority: "compliance"
-      },
-      "closing-funded": {
-        body: "💰 TRANSACTION FUNDED! Confirmation package has flown to solicitor list, commission schedules are drawn, and first post-close follow-up sequence is queued in retention loop.",
-        priority: "normal"
+      // Attachments Filter
+      const attachmentMatches = !hasAttachmentsFilter || (m.attachments && m.attachments.length > 0);
+      // Saved Filter
+      const isSaved = savedMessages.some(sm => sm.messageId === m.id);
+      const savedMatches = !savedOnlyFilter || isSaved;
+      // Date Range Filter
+      let dateMatches = true;
+      if (searchStartDate) {
+        const msgTime = new Date(m.createdAt).getTime();
+        const startTime = new Date(searchStartDate).getTime();
+        if (msgTime < startTime) dateMatches = false;
       }
-    };
-
-    const target = templates[type];
-    if (target) {
-      setMsgInputText(target.body);
-      setMsgPriority(target.priority);
-      if (showToast) {
-        showToast(`Template inserted: ${type.replace("-", " ")}`, "success", "📋");
+      if (searchEndDate) {
+        const msgTime = new Date(m.createdAt).getTime();
+        const endTime = new Date(searchEndDate).getTime() + 86400000;
+        if (msgTime > endTime) dateMatches = false;
       }
-    }
-  };
 
-  // File Size Format Helper
-  const formatFileSize = (bytes: number): string => {
-    if (!bytes || bytes === 0) return '0 KB';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  };
-
-  // Real File Selection Handler
-  const handleRealFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    const selectedFiles = Array.from(e.target.files);
-
-    const newAttachments = selectedFiles.map((file: File) => ({
-      name: file.name,
-      size: formatFileSize(file.size),
-      type: file.type || "application/pdf"
-    }));
-
-    setAttachedFiles(prev => {
-      const existingNames = new Set(prev.map(f => f.name));
-      const filtered = newAttachments.filter(f => !existingNames.has(f.name));
-      return [...prev, ...filtered];
+      return textMatches && senderMatches && priorityMatches && clientMatches && attachmentMatches && savedMatches && dateMatches;
     });
+  }, [rawChannelMessages, searchQuery, searchSender, selectedEscalationFilter, selectedClientSearch, hasAttachmentsFilter, savedOnlyFilter, searchStartDate, searchEndDate, savedMessages]);
 
-    if (showToast) {
-      showToast(`${selectedFiles.length} file(s) attached from computer`, "success", "📎");
-    }
+  // Pagination Slice (Req 8)
+  const channelLimit = visibleMessageCount[activeChannel] || 25;
+  const paginatedMessages = useMemo(() => {
+    if (filteredMessages.length <= channelLimit) return filteredMessages;
+    return filteredMessages.slice(filteredMessages.length - channelLimit);
+  }, [filteredMessages, channelLimit]);
 
-    setShowAttachPresets(false);
-    if (e.target) {
-      e.target.value = "";
-    }
-  };
+  const hasMoreOlderMessages = filteredMessages.length > paginatedMessages.length;
 
-  // Primary messaging dispatch
-  const handleSendMessage = () => {
-    if (!msgInputText.trim() && attachedFiles.length === 0) return;
-
-    const authorName = currentUser.first + " " + currentUser.last;
-    const authorInitials = (currentUser.first[0] + currentUser.last[0]).toUpperCase();
-    const now = new Date();
-
-    const selectedClient = clients.find(c => c.id === linkedChatClientId);
-
-    const newMsg: Message = {
-      id: "m_user_" + Date.now(),
-      senderId: "staff_me",
-      author: authorName,
-      initials: authorInitials,
-      role: "Mortgage Broker (Owner)",
-      text: msgInputText.trim(),
-      time: now.toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" }),
-      date: "Today",
-      priority: msgPriority,
-      clientTag: selectedClient ? `${selectedClient.last} File` : undefined,
-      clientId: linkedChatClientId || undefined,
-      attachments: attachedFiles,
-      pinned: false,
-      mentions: msgInputText.includes("@") ? extractMentions(msgInputText) : [],
-      readBy: [authorInitials]
-    };
-
-    // Update parent state
-    setMessages(prev => {
-      const updated = {
+  const handleLoadOlderMessages = () => {
+    setIsLoadingOlder(true);
+    setTimeout(() => {
+      setVisibleMessageCount(prev => ({
         ...prev,
-        [activeChannel]: [...(prev[activeChannel] || []), newMsg]
-      };
-      // Keep localStorage current
-      localStorage.setItem("gbk_messages", JSON.stringify(updated));
-      return updated;
-    });
+        [activeChannel]: (prev[activeChannel] || 25) + 25
+      }));
+      setIsLoadingOlder(false);
+    }, 400);
+  };
 
-    // If message is linked to a client, automatically append note to that client's file
-    const targetClientId = linkedChatClientId;
-    if (targetClientId && setClients) {
-      const matchedClient = clients.find(c => c.id === targetClientId);
-      if (matchedClient) {
-        const formattedDate = now.toLocaleDateString("en-CA");
-        const formattedTime = now.toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" });
-        const formattedDateTime = `${formattedDate} ${formattedTime}`;
-        const noteEntry = `[Team Channel - ${formattedDateTime} by ${authorName}]: ${newMsg.text}`;
+  // Grouping & Date Separators (Req 6)
+  const groupedMessageBlocks = useMemo(() => {
+    const blocks: Array<{
+      type: 'date_separator' | 'message_group';
+      id: string;
+      dateLabel?: string;
+      messages?: any[];
+      isGroupedHeader?: boolean;
+    }> = [];
 
-        setClients(prev => {
-          const updatedClients = prev.map(c => {
-            if (c.id === targetClientId) {
-              const currentNotes = c.notes || c.retentionNotes || "";
-              const updatedNotes = currentNotes ? `${currentNotes}\n${noteEntry}` : noteEntry;
-              return {
-                ...c,
-                notes: updatedNotes,
-                retentionNotes: updatedNotes,
-                appData: {
-                  ...(c.appData || {}),
-                  internalNotes: c.appData?.internalNotes ? `${c.appData.internalNotes}\n${noteEntry}` : noteEntry
-                },
-                updatedAt: now.toISOString()
-              };
-            }
-            return c;
-          });
-          localStorage.setItem("gbk_clients", JSON.stringify(updatedClients));
-          return updatedClients;
+    let currentDateStr = "";
+
+    paginatedMessages.forEach((msg, idx) => {
+      const dateLabel = getFormattedDateSeparator(msg.date, msg.createdAt);
+      if (dateLabel !== currentDateStr) {
+        currentDateStr = dateLabel;
+        blocks.push({
+          type: 'date_separator',
+          id: `date_sep_${idx}_${dateLabel}`,
+          dateLabel
         });
+      }
 
-        // Sync with activity engine file notes & timeline
-        try {
-          const existingFileNotes = getNotesForClient(matchedClient);
-          const newFileNote: FileNote = {
-            id: `note_tc_${Date.now()}`,
-            clientId: targetClientId,
-            author: authorName,
-            timestamp: now.toISOString(),
-            type: 'internal',
-            content: noteEntry
-          };
-          saveNotesForClient(targetClientId, [newFileNote, ...existingFileNotes]);
-          logActivityEvent({
-            clientId: targetClientId,
-            clientName: `${matchedClient.first} ${matchedClient.last}`,
-            eventType: "note_added",
-            user: authorName,
-            timestamp: now.toISOString(),
-            description: `Team Channel message automatically appended as note to client dossier.`
-          });
-        } catch (e) {
-          console.error("Failed to sync activityEngine note:", e);
+      const prevBlock = blocks[blocks.length - 1];
+      if (
+        prevBlock &&
+        prevBlock.type === 'message_group' &&
+        prevBlock.messages &&
+        prevBlock.messages.length > 0
+      ) {
+        const lastMsg = prevBlock.messages[prevBlock.messages.length - 1];
+        const isSameAuthor = lastMsg.senderId === msg.senderId || lastMsg.author === msg.author;
+        const timeDiff = Math.abs(new Date(msg.createdAt).getTime() - new Date(lastMsg.createdAt).getTime());
+        const isWithin5Mins = timeDiff < 300000; // 5 minutes
+
+        if (isSameAuthor && isWithin5Mins && !msg.priority && msg.priority === 'normal') {
+          prevBlock.messages.push(msg);
+          return;
         }
       }
+
+      blocks.push({
+        type: 'message_group',
+        id: `msg_group_${msg.id}`,
+        messages: [msg]
+      });
+    });
+
+    return blocks;
+  }, [paginatedMessages]);
+
+  const pinnedChannelMessages = useMemo(() => {
+    return rawChannelMessages.filter(m => m.pinned && !m.deletedAt);
+  }, [rawChannelMessages]);
+
+  // Saved Messages view items
+  const savedMessageItems = useMemo(() => {
+    if (activeChannel !== "saved-messages") return [];
+    const result: { savedItem: SavedMessage; message: any; channelName: string; channelId: string }[] = [];
+
+    savedMessages.forEach(sm => {
+      let foundMsg: any = null;
+      let foundChannelKey = sm.channelId;
+
+      for (const key in messages) {
+        const match = (messages[key] || []).find((m: any) => m.id === sm.messageId);
+        if (match) {
+          foundMsg = match;
+          foundChannelKey = key;
+          break;
+        }
+      }
+
+      if (foundMsg) {
+        const rosterMatch = chatRoster.find(r => r.id === foundChannelKey);
+        const channelName = rosterMatch ? rosterMatch.name : foundChannelKey;
+        result.push({
+          savedItem: sm,
+          message: {
+            ...foundMsg,
+            text: foundMsg.text || foundMsg.content || ""
+          },
+          channelName,
+          channelId: foundChannelKey
+        });
+      }
+    });
+
+    return result;
+  }, [activeChannel, savedMessages, messages, chatRoster]);
+
+  // Send Message with Composer & Network Retry (Req 4)
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (activeChannel === "saved-messages") return;
+
+    const trimmed = msgInputText.trim();
+    if (!trimmed && attachedFiles.length === 0) return;
+
+    if (!canSendMessage(null, currentUser)) {
+      if (showToast) showToast("Your account permission is read-only for team messages.", "error", "🔒");
+      return;
     }
 
-    // Reset composer state
+    const tempMsgId = `m_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+    
+    // Duplicate Protection
+    if (sendingMessageIds.has(tempMsgId)) return;
+
+    let clientTag: string | undefined = undefined;
+    let clientId: string | undefined = undefined;
+
+    if (selectedClientSearch || linkedChatClientId) {
+      const targetId = selectedClientSearch || linkedChatClientId;
+      const linkedClient = clients.find(c => c.id === targetId);
+      if (linkedClient) {
+        clientTag = `[Client: ${linkedClient.first} ${linkedClient.last}]`;
+        clientId = linkedClient.id;
+      }
+    }
+
+    const now = new Date();
+    const formattedTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const newMsg: Message = {
+      id: tempMsgId,
+      channelId: activeChannel,
+      senderId: currentUserId,
+      authorId: currentUserId,
+      author: currentUser.displayName || `${currentUser.first} ${currentUser.last}`.trim() || "You",
+      initials: authorInitials,
+      role: currentUser.jobTitle || currentUser.role || "Mortgage Broker",
+      text: trimmed,
+      content: trimmed,
+      time: formattedTime,
+      date: "Today",
+      createdAt: now.toISOString(),
+      priority: msgPriority,
+      pinned: false,
+      status: connectionState === 'offline' ? 'failed' : 'sending',
+      attachments: attachedFiles.map(f => ({ name: f.name, size: f.size, type: f.type, url: "#" })),
+      mentions: [],
+      clientTag,
+      clientId,
+      readBy: [authorInitials],
+      reactions: {},
+      replies: [],
+      replyCount: 0
+    };
+
+    // Append to local state immediately
+    setMessages(prev => {
+      const currentList = prev[activeChannel] || [];
+      const updatedList = [...currentList, newMsg];
+      const updatedObj = { ...prev, [activeChannel]: updatedList };
+      localStorage.setItem("gbk_messages", JSON.stringify(updatedObj));
+      return updatedObj;
+    });
+
+    // Clear composer inputs & channel draft
     setMsgInputText("");
     setAttachedFiles([]);
     setMsgPriority("normal");
-    setLinkedChatClientId(null);
-    if (showToast) {
-      showToast("Ops update successfully dispatched to team!", "success", "📤");
+    setChannelDrafts(prev => {
+      const updated = { ...prev, [activeChannel]: "" };
+      localStorage.setItem(`gbk_channel_drafts_${currentUserId}`, JSON.stringify(updated));
+      return updated;
+    });
+
+    setSendingMessageIds(prev => new Set(prev).add(tempMsgId));
+
+    // Audit Event
+    logActivityEvent({
+      timestamp: now.toISOString(),
+      eventType: "message_created",
+      action: "message.created",
+      user: `${currentUser.first} ${currentUser.last}`,
+      description: `Sent message in ${currentChannelDetails.name}: "${trimmed.slice(0, 50)}"`
+    });
+
+    // Call Backend API
+    if (connectionState !== 'offline') {
+      try {
+        const res = await sendMessage(activeChannel, newMsg);
+        setSendingMessageIds(prev => {
+          const next = new Set(prev);
+          next.delete(tempMsgId);
+          return next;
+        });
+
+        // Update message status to sent
+        setMessages(prev => {
+          const currentList = prev[activeChannel] || [];
+          const updatedList = currentList.map((m: any) => m.id === tempMsgId ? { ...m, status: 'sent' } : m);
+          return { ...prev, [activeChannel]: updatedList };
+        });
+      } catch {
+        setSendingMessageIds(prev => {
+          const next = new Set(prev);
+          next.delete(tempMsgId);
+          return next;
+        });
+        setFailedMessageIds(prev => new Set(prev).add(tempMsgId));
+        setMessages(prev => {
+          const currentList = prev[activeChannel] || [];
+          const updatedList = currentList.map((m: any) => m.id === tempMsgId ? { ...m, status: 'failed' } : m);
+          return { ...prev, [activeChannel]: updatedList };
+        });
+      }
+    } else {
+      setSendingMessageIds(prev => {
+        const next = new Set(prev);
+        next.delete(tempMsgId);
+        return next;
+      });
+      setFailedMessageIds(prev => new Set(prev).add(tempMsgId));
     }
   };
 
-  // Extract simple @ prefixes
-  const extractMentions = (text: string) => {
-    const list: string[] = [];
-    const words = text.split(" ");
-    words.forEach(w => {
-      if (w.startsWith("@") && w.length > 2) {
-        list.push(w.slice(1));
-      }
+  // Retry Failed Message (Req 4 & 5)
+  const handleRetryMessage = async (msg: any) => {
+    setFailedMessageIds(prev => {
+      const next = new Set(prev);
+      next.delete(msg.id);
+      return next;
     });
-    return list;
+    setSendingMessageIds(prev => new Set(prev).add(msg.id));
+
+    setMessages(prev => {
+      const list = prev[activeChannel] || [];
+      const updated = list.map((m: any) => m.id === msg.id ? { ...m, status: 'sending' } : m);
+      return { ...prev, [activeChannel]: updated };
+    });
+
+    try {
+      await sendMessage(activeChannel, msg);
+      setSendingMessageIds(prev => {
+        const next = new Set(prev);
+        next.delete(msg.id);
+        return next;
+      });
+      setMessages(prev => {
+        const list = prev[activeChannel] || [];
+        const updated = list.map((m: any) => m.id === msg.id ? { ...m, status: 'sent' } : m);
+        return { ...prev, [activeChannel]: updated };
+      });
+      if (showToast) showToast("Message resent successfully", "success", "✓");
+    } catch {
+      setSendingMessageIds(prev => {
+        const next = new Set(prev);
+        next.delete(msg.id);
+        return next;
+      });
+      setFailedMessageIds(prev => new Set(prev).add(msg.id));
+      setMessages(prev => {
+        const list = prev[activeChannel] || [];
+        const updated = list.map((m: any) => m.id === msg.id ? { ...m, status: 'failed' } : m);
+        return { ...prev, [activeChannel]: updated };
+      });
+      if (showToast) showToast("Failed to send message", "error", "⚠️");
+    }
   };
 
-  // Pin / Unpin on click toggle
+  // Thread Reply Send Handler (Req 3)
+  const handleSendThreadReply = () => {
+    if (!activeThreadParentMsg || !threadReplyInput.trim()) return;
+
+    const trimmed = threadReplyInput.trim();
+    const now = new Date();
+    const formattedTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const replyObj: Message = {
+      id: `reply_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      channelId: activeChannel,
+      senderId: currentUserId,
+      authorId: currentUserId,
+      author: currentUser.displayName || `${currentUser.first} ${currentUser.last}`.trim() || "You",
+      initials: authorInitials,
+      role: currentUser.jobTitle || currentUser.role || "Mortgage Broker",
+      text: trimmed,
+      content: trimmed,
+      time: formattedTime,
+      date: "Today",
+      createdAt: now.toISOString(),
+      replyToId: activeThreadParentMsg.id,
+      status: 'sent'
+    };
+
+    setMessages(prev => {
+      const channelMsgs = prev[activeChannel] || [];
+      const updatedMsgs = channelMsgs.map((m: any) => {
+        if (m.id === activeThreadParentMsg.id) {
+          const existingReplies = m.replies || [];
+          return {
+            ...m,
+            replies: [...existingReplies, replyObj],
+            replyCount: existingReplies.length + 1
+          };
+        }
+        return m;
+      });
+
+      const updatedObj = { ...prev, [activeChannel]: updatedMsgs };
+      localStorage.setItem("gbk_messages", JSON.stringify(updatedObj));
+      return updatedObj;
+    });
+
+    // Update parent message state in activeThreadParentMsg
+    setActiveThreadParentMsg(prev => {
+      if (!prev) return null;
+      const existingReplies = prev.replies || [];
+      return {
+        ...prev,
+        replies: [...existingReplies, replyObj],
+        replyCount: existingReplies.length + 1
+      };
+    });
+
+    setThreadReplyInput("");
+
+    logActivityEvent({
+      timestamp: now.toISOString(),
+      eventType: "message_created",
+      action: "message.reply_created",
+      user: `${currentUser.first} ${currentUser.last}`,
+      description: `Replied in thread on message in ${currentChannelDetails.name}`
+    });
+  };
+
+  // Toggle bookmark saved message (Req 11 Audit)
+  const handleToggleSaveMessage = async (msg: Message, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const isSaved = savedMessages.some(sm => sm.messageId === msg.id);
+
+    if (isSaved) {
+      setSavedMessages(prev => prev.filter(sm => sm.messageId !== msg.id));
+      unsaveMessage(msg.id, currentUserId).catch(() => {});
+      logActivityEvent({
+        timestamp: new Date().toISOString(),
+        eventType: "message_unsaved",
+        action: "message.unsaved",
+        user: `${currentUser.first} ${currentUser.last}`,
+        description: `Unsaved message: "${msg.text.slice(0, 40)}"`
+      });
+      if (showToast) showToast("Removed from Saved Messages", "info", "🔖");
+    } else {
+      const newSaved: SavedMessage = {
+        id: `saved_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        messageId: msg.id,
+        channelId: activeChannel,
+        userId: currentUserId,
+        savedAt: new Date().toISOString()
+      };
+      setSavedMessages(prev => [newSaved, ...prev]);
+      saveMessage(msg.id, currentUserId, activeChannel).catch(() => {});
+      logActivityEvent({
+        timestamp: new Date().toISOString(),
+        eventType: "message_saved",
+        action: "message.saved",
+        user: `${currentUser.first} ${currentUser.last}`,
+        description: `Saved message from ${msg.author}: "${msg.text.slice(0, 40)}"`
+      });
+      if (showToast) showToast("Saved to Bookmarks", "success", "🔖");
+    }
+  };
+
+  // Toggle Pinned status
   const handleTogglePinMessage = (msgId: string) => {
     setMessages(prev => {
-      const activeList = prev[activeChannel] || [];
-      const updatedList = activeList.map((m: any) => {
+      const list = prev[activeChannel] || [];
+      const updatedList = list.map((m: any) => {
         if (m.id === msgId) {
           const nextPinned = !m.pinned;
-          if (showToast) {
-            showToast(nextPinned ? "Message pinned to channel banner." : "Message removed from pin boards.", "info", "📌");
-          }
+          if (showToast) showToast(nextPinned ? "Message pinned to top" : "Message unpinned", "info", "📌");
           return { ...m, pinned: nextPinned };
         }
         return m;
@@ -616,22 +1053,130 @@ export const Messages: React.FC<MessagesProps> = ({
     });
   };
 
-  // Delete message safely
-  const handleDeleteMessage = (msgId: string) => {
+  // Inline Message Editing (Req 11 Audit)
+  const handleStartEditing = (msg: Message, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!canEditMessage(msg, currentUser)) {
+      if (showToast) showToast("You can only edit your own messages.", "error", "🔒");
+      return;
+    }
+    setEditingMsgId(msg.id);
+    setEditContent(msg.text || msg.content || "");
+    setActiveMenuMsgId(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingMsgId || !editContent.trim()) return;
+    setIsSavingEdit(true);
+
+    const nowIso = new Date().toISOString();
+
     setMessages(prev => {
-      const activeList = prev[activeChannel] || [];
-      const updatedList = activeList.filter((m: any) => m.id !== msgId);
+      const list = prev[activeChannel] || [];
+      const updatedList = list.map((m: any) => {
+        if (m.id === editingMsgId) {
+          return {
+            ...m,
+            text: editContent.trim(),
+            content: editContent.trim(),
+            editedAt: nowIso
+          };
+        }
+        return m;
+      });
       const updatedObj = { ...prev, [activeChannel]: updatedList };
       localStorage.setItem("gbk_messages", JSON.stringify(updatedObj));
       return updatedObj;
     });
+
+    updateMessage(editingMsgId, editContent.trim()).catch(() => {});
+
+    logActivityEvent({
+      timestamp: nowIso,
+      eventType: "message_edited",
+      action: "message.edited",
+      user: `${currentUser.first} ${currentUser.last}`,
+      description: `Edited message content in channel ${activeChannel}`
+    });
+
+    setIsSavingEdit(false);
+    setEditingMsgId(null);
+    setEditContent("");
+    if (showToast) showToast("Message updated", "success", "✏️");
   };
 
-  // Toggle emoji reaction
+  // Soft Delete Message (Req 11 Audit)
+  const handleConfirmSoftDelete = async (msgId: string) => {
+    setIsDeletingMsg(true);
+    const nowIso = new Date().toISOString();
+
+    setMessages(prev => {
+      const list = prev[activeChannel] || [];
+      const updatedList = list.map((m: any) => {
+        if (m.id === msgId) {
+          return {
+            ...m,
+            text: "[This message was deleted]",
+            content: "[This message was deleted]",
+            deletedAt: nowIso,
+            deletedBy: currentUserId
+          };
+        }
+        return m;
+      });
+      const updatedObj = { ...prev, [activeChannel]: updatedList };
+      localStorage.setItem("gbk_messages", JSON.stringify(updatedObj));
+      return updatedObj;
+    });
+
+    softDeleteMessage(msgId, currentUserId).catch(() => {});
+
+    logActivityEvent({
+      timestamp: nowIso,
+      eventType: "message_deleted",
+      action: "message.deleted",
+      user: `${currentUser.first} ${currentUser.last}`,
+      description: `Deleted message in channel ${activeChannel}`
+    });
+
+    setIsDeletingMsg(false);
+    setConfirmDeleteMsgId(null);
+    setActiveMenuMsgId(null);
+    if (showToast) showToast("Message deleted", "info", "🗑️");
+  };
+
+  // Attachment Download Audit (Req 11)
+  const handleDownloadAttachment = (att: any, msg: any) => {
+    logActivityEvent({
+      timestamp: new Date().toISOString(),
+      eventType: "message_attachment_downloaded",
+      action: "message.attachment_downloaded",
+      user: `${currentUser.first} ${currentUser.last}`,
+      description: `Downloaded attachment "${att.name}" from message in ${activeChannel}`
+    });
+    if (showToast) showToast(`Downloading ${att.name}`, "info", "📎");
+  };
+
+  // Handle local desktop file selection
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const newAttached = Array.from(files).map(f => ({
+      name: f.name,
+      size: `${(f.size / 1024).toFixed(0)} KB`,
+      type: f.type || "Document"
+    }));
+
+    setAttachedFiles(prev => [...prev, ...newAttached]);
+    if (showToast) showToast(`Attached ${newAttached.length} file(s)`, "info", "📎");
+  };
+
+  // Toggle Message Reaction Emoji
   const handleToggleReaction = (msgId: string, emoji: string) => {
     setMessages(prev => {
-      const activeList = prev[activeChannel] || [];
-      const updatedList = activeList.map((m: any) => {
+      const list = prev[activeChannel] || [];
+      const updatedList = list.map((m: any) => {
         if (m.id === msgId) {
           const reactions = { ...(m.reactions || {}) };
           const currentReactors = reactions[emoji] || [];
@@ -656,9 +1201,8 @@ export const Messages: React.FC<MessagesProps> = ({
     });
   };
 
-  // Convert Message into a structured Task Wizard Workflow
+  // Task Conversion Wizard
   const handleOpenTaskWizard = (msg: Message) => {
-    // Guess best Category based on message content or priority
     let category = "Client Follow-up";
     if (msg.priority === "blocked" || msg.priority === "urgent") {
       category = "Underwriting Review";
@@ -670,10 +1214,9 @@ export const Messages: React.FC<MessagesProps> = ({
       category = "Compliance";
     }
 
-    // Default assignee selection
-    let assigned = "Jeff Brown"; // assistant defaults
-    if (msg.author !== "You" && msg.author !== (currentUser.first + " " + currentUser.last)) {
-      assigned = msg.author; // assign back to writer
+    let assigned = "Jeff Brown";
+    if (msg.author !== "You" && msg.author !== (`${currentUser.first} ${currentUser.last}`)) {
+      assigned = msg.author;
     }
 
     setWizardDraftTask({
@@ -682,7 +1225,7 @@ export const Messages: React.FC<MessagesProps> = ({
       priority: msg.priority === "urgent" || msg.priority === "blocked" ? "high" : "medium",
       category,
       clientId: msg.clientId || "",
-      dueDate: "2026-06-25", // few days ahead
+      dueDate: "2026-08-15",
       assignedTo: assigned
     });
 
@@ -714,15 +1257,14 @@ export const Messages: React.FC<MessagesProps> = ({
       notes: wizardDraftTask.notes,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      createdBy: currentUser.first + " " + currentUser.last,
+      createdBy: `${currentUser.first} ${currentUser.last}`,
       subtasks: [],
       calendarSync: true,
       auditLogs: [
-        { timestamp: new Date().toISOString(), action: `Task generated via Internal Message escalation thread`, user: currentUser.first + " " + currentUser.last }
+        { timestamp: new Date().toISOString(), action: `Task generated via Internal Message escalation thread`, user: `${currentUser.first} ${currentUser.last}` }
       ]
     };
 
-    // Write to State
     setTasks(prev => {
       const updated = [newSystemTask, ...prev];
       localStorage.setItem("gbk_tasks", JSON.stringify(updated));
@@ -737,111 +1279,184 @@ export const Messages: React.FC<MessagesProps> = ({
     setWizardDraftTask(null);
   };
 
-  // Dropdown list generation of clients matched with searches
-  const filteredDropdownClients = useMemo(() => {
-    return clients.filter(c => {
-      const terms = clientDropdownSearch.toLowerCase();
-      return terms === "" || 
-        c.first.toLowerCase().includes(terms) || 
-        c.last.toLowerCase().includes(terms) ||
-        (c.lender || "").toLowerCase().includes(terms);
-    });
-  }, [clients, clientDropdownSearch]);
+  const handleJumpToChannel = (targetChannelId: string, targetMsgId: string) => {
+    setActiveChannel(targetChannelId);
+    setTimeout(() => {
+      const el = document.getElementById(`msg_${targetMsgId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-amber-400");
+        setTimeout(() => el.classList.remove("ring-2", "ring-amber-400"), 2500);
+      }
+    }, 200);
+  };
+
+  // Text Highlighting Helper (Req 2)
+  const renderHighlightedText = (text: string, query: string) => {
+    if (!query.trim()) return text;
+    const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+    return parts.map((part, i) => 
+      part.toLowerCase() === query.toLowerCase() ? (
+        <mark key={i} className="bg-amber-400/30 text-amber-200 font-bold px-0.5 rounded">{part}</mark>
+      ) : part
+    );
+  };
 
   return (
-    <div className="flex bg-[var(--color-bg)] border border-[var(--color-border)]/70 rounded-2xl overflow-hidden shadow-2xl h-full min-h-0 divide-x divide-[var(--color-border)]/70 select-none text-left" id="team-messaging-core">
+    <div className="flex bg-[var(--color-bg)] border border-[var(--color-border)]/70 rounded-2xl overflow-hidden shadow-2xl h-full min-h-0 divide-x divide-[var(--color-border)]/70 select-none text-left relative" id="team-messaging-core">
       
+      {/* Hidden File Input */}
+      <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" />
+
       {/* ============================================================== */}
-      {/* BAR 1: LEFT NAVIGATION INDEX FOR CHANNELS & MEMBERS (WIDTH 56) */}
+      {/* BAR 1: LEFT NAVIGATION INDEX FOR CHANNELS & MEMBERS (WIDTH 60) */}
       {/* ============================================================== */}
-      <div className="w-56 shrink-0 flex flex-col h-full bg-[var(--color-surface)]/45 select-none min-h-0">
+      <div className="w-60 shrink-0 flex flex-col h-full bg-[var(--color-surface)]/45 select-none min-h-0">
         
-        {/* Workspace Brand Summary */}
+        {/* Workspace Brand & Connection Status (Req 5) */}
         <div className="p-3.5 border-b border-[var(--color-border)] bg-[var(--color-panel)]/50 flex items-center justify-between shrink-0">
           <div className="min-w-0">
             <h4 className="text-xs font-black text-[var(--color-text)] truncate uppercase tracking-wider flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span className={`h-2 w-2 rounded-full shrink-0 ${
+                connectionState === 'connected' ? 'bg-emerald-500 animate-pulse' :
+                connectionState === 'reconnecting' ? 'bg-amber-500 animate-ping' : 'bg-rose-500'
+              }`} />
               Team Hub
             </h4>
           </div>
-          <Sparkles className="w-3.5 h-3.5 text-[var(--color-accent)] opacity-80" />
+          
+          {/* Connection Pill & Mark All Read */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleMarkAllChannelsRead}
+              className="text-[9.5px] font-bold text-[var(--color-text-muted)] hover:text-[var(--color-accent)] px-1.5 py-0.5 rounded bg-[var(--color-surface-2)] border border-[var(--color-border)]/60 transition-all"
+              title="Mark all channels as read"
+            >
+              Read All
+            </button>
+            <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-full border ${
+              connectionState === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+              connectionState === 'reconnecting' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+              'bg-rose-500/10 text-rose-400 border-rose-500/20'
+            }`}>
+              {connectionState}
+            </span>
+          </div>
         </div>
 
         {/* Categories, Channels & Colleagues Segment */}
-        <div className="flex-1 overflow-y-auto p-2.5 space-y-5">
+        <div className="flex-1 overflow-y-auto p-2.5 space-y-4">
           
-          {/* Section B: Direct Colleagues Roster */}
+          {/* Section A: Personal Bookmarks / Saved Messages */}
+          <div>
+            <div className="px-1.5 text-[9.5px] font-extrabold text-[var(--color-text-faint)] uppercase tracking-widest mb-1.5 flex items-center justify-between">
+              <span>Personal</span>
+            </div>
+
+            <button
+              onClick={() => setActiveChannel("saved-messages")}
+              className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition-all ${
+                activeChannel === "saved-messages" 
+                  ? "bg-amber-500/10 border border-amber-500/25 text-amber-400" 
+                  : "border border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+              }`}
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                  <Bookmark className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-[var(--color-text)] font-extrabold">Saved Messages</div>
+                  <div className="text-[8.5px] text-amber-400/80 font-semibold">Bookmarks</div>
+                </div>
+              </span>
+
+              {savedMessages.length > 0 && (
+                <span className="font-mono text-[9px] px-1.5 py-0.5 rounded-full font-black bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  {savedMessages.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Section B: Favorite Channels (Req 7) */}
+          {favoriteChannels.length > 0 && (
+            <div>
+              <div className="px-1.5 text-[9.5px] font-extrabold text-[var(--color-text-faint)] uppercase tracking-widest mb-1.5 flex items-center justify-between">
+                <span className="flex items-center gap-1 text-amber-400">
+                  <Star className="w-3 h-3 fill-amber-400" /> Favorites
+                </span>
+              </div>
+
+              <div className="space-y-0.5">
+                {chatRoster.filter(tm => favoriteChannels.includes(tm.id)).map(tm => {
+                  const isActive = activeChannel === tm.id;
+                  const countBadge = unreadCounts[tm.id] || 0;
+                  const isUnread = countBadge > 0;
+
+                  return (
+                    <button
+                      key={`fav_${tm.id}`}
+                      onClick={() => setActiveChannel(tm.id)}
+                      className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition-all ${
+                        isActive 
+                          ? "bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/15 text-[var(--color-accent)]" 
+                          : "border border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="relative flex-shrink-0">
+                          <Avatar src={tm.avatar} name={tm.name} size="sm" />
+                          <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-[var(--color-bg)] ${tm.color}`} />
+                        </span>
+                        <div className="min-w-0">
+                          <div className={`truncate ${isUnread ? 'font-black text-[var(--color-text)]' : 'text-[var(--color-text)] opacity-90'}`}>
+                            {tm.name}
+                          </div>
+                          <div className="text-[8.5px] text-[var(--color-text-faint)] truncate font-semibold">{tm.role}</div>
+                        </div>
+                      </span>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={(e) => toggleFavoriteChannel(tm.id, e)}
+                          className="text-amber-400 hover:text-amber-300 p-0.5"
+                          title="Remove from favorites"
+                        >
+                          <Star className="w-3 h-3 fill-amber-400" />
+                        </button>
+                        {countBadge > 0 && (
+                          <span className="font-mono text-[9px] px-1.5 py-0.5 rounded-full font-black bg-[var(--color-accent)] text-black">
+                            {countBadge}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Section C: All Channels & Direct Colleagues (Req 1 & 7) */}
           <div>
             <div className="px-1.5 text-[9.5px] font-extrabold text-[var(--color-text-faint)] uppercase tracking-widest mb-1.5 flex items-center justify-between">
               <span>Team Channels</span>
-              <UserPlus 
-                className={`w-3.5 h-3.5 cursor-pointer transition-colors ${addMemberOpen ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-faint)] hover:text-[var(--color-text)]'}`}
-                onClick={() => setAddMemberOpen(!addMemberOpen)} 
-              />
+              <span className="text-[8.5px] font-semibold text-[var(--color-text-faint)] opacity-70">Central Roster</span>
             </div>
-
-            {addMemberOpen && (
-              <form onSubmit={handleAddMember} className="m-1 p-2 bg-[var(--color-panel)]/50 border border-[var(--color-border)] rounded-xl space-y-1.5 animate-fade-in text-[10px] mb-3">
-                <div className="font-extrabold text-[var(--color-accent)] text-[8.5px] uppercase tracking-widest mb-0.5">Add to Chat</div>
-                
-                <div>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Full Name"
-                    value={newMemberName}
-                    onChange={e => setNewMemberName(e.target.value)}
-                    className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-1.5 py-0.5 text-[10px] text-[var(--color-text)] focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <input
-                    type="text"
-                    placeholder="Role (e.g. Underwriter)"
-                    value={newMemberRole}
-                    onChange={e => setNewMemberRole(e.target.value)}
-                    className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-1.5 py-0.5 text-[10px] text-[var(--color-text)] focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <input
-                    type="text"
-                    placeholder="Status (e.g. Active 🟢)"
-                    value={newMemberStatusLabel}
-                    onChange={e => setNewMemberStatusLabel(e.target.value)}
-                    className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-1.5 py-0.5 text-[10px] text-[var(--color-text)] focus:outline-none"
-                  />
-                </div>
-
-                <div className="flex items-center gap-1 pt-1">
-                  <button
-                    type="submit"
-                    className="flex-1 bg-[var(--color-accent)] text-black font-black text-[9px] uppercase tracking-wider py-0.5 rounded hover:opacity-90 transition-opacity"
-                  >
-                    Add
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAddMemberOpen(false)}
-                    className="flex-1 bg-[var(--color-surface-2)] border border-[var(--color-border)]/50 text-[var(--color-text-muted)] font-bold text-[9px] uppercase tracking-wider py-0.5 rounded transition-all"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            )}
 
             <div className="space-y-0.5 animate-fade-in">
               {chatRoster.map(tm => {
                 const isActive = activeChannel === tm.id;
                 const countBadge = unreadCounts[tm.id] || 0;
+                const isUnread = countBadge > 0;
+                const isFav = favoriteChannels.includes(tm.id);
+
                 return (
                   <button
                     key={tm.id}
                     onClick={() => setActiveChannel(tm.id)}
-                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition-all ${
+                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition-all group ${
                       isActive 
                         ? "bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/15 text-[var(--color-accent)]" 
                         : "border border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
@@ -864,30 +1479,44 @@ export const Messages: React.FC<MessagesProps> = ({
                         <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-[var(--color-bg)] ${tm.color}`} />
                       </span>
                       <div className="min-w-0">
-                        <div className="truncate text-[var(--color-text)] opacity-90">{tm.name}</div>
+                        <div className={`truncate ${isUnread ? 'font-black text-[var(--color-text)]' : 'text-[var(--color-text)] opacity-90'}`}>
+                          {tm.name}
+                        </div>
                         <div className="text-[8.5px] text-[var(--color-text-faint)] truncate font-semibold">{tm.role}</div>
                         {(() => {
                            const lastMsgArr = messages[tm.id] || [];
                            const lastMsg = lastMsgArr[lastMsgArr.length - 1];
                            return lastMsg ? (
-                             <div className="text-[8px] text-[var(--color-text-faint)] truncate max-w-[110px] mt-0.5 font-normal italic">{lastMsg.text}</div>
+                             <div className="text-[8px] text-[var(--color-text-faint)] truncate max-w-[110px] mt-0.5 font-normal italic">
+                              {lastMsg.deletedAt ? "[Deleted]" : (lastMsg.text || lastMsg.content)}
+                             </div>
                            ) : null;
                         })()}
                       </div>
                     </span>
 
-                    {countBadge > 0 && (
-                      <span 
-                        className="font-mono text-[9px] px-1.5 py-0.5 rounded-full font-black"
-                        style={{
-                          background: `${chatColorGradients[tm.chatColor ?? ""] ?? DEFAULT_CHAT_GRADIENT}`,
-                          color: "white",
-                          boxShadow: "0 0 8px rgba(0,0,0,0.3)"
-                        }}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={(e) => toggleFavoriteChannel(tm.id, e)}
+                        className={`p-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${isFav ? 'text-amber-400 opacity-100' : 'text-[var(--color-text-faint)] hover:text-amber-400'}`}
+                        title={isFav ? "Unfavorite channel" : "Favorite channel"}
                       >
-                        {countBadge}
-                      </span>
-                    )}
+                        <Star className={`w-3 h-3 ${isFav ? 'fill-amber-400' : ''}`} />
+                      </button>
+
+                      {countBadge > 0 && (
+                        <span 
+                          className="font-mono text-[9px] px-1.5 py-0.5 rounded-full font-black"
+                          style={{
+                            background: `${chatColorGradients[tm.chatColor ?? ""] ?? DEFAULT_CHAT_GRADIENT}`,
+                            color: "white",
+                            boxShadow: "0 0 8px rgba(0,0,0,0.3)"
+                          }}
+                        >
+                          {countBadge}
+                        </span>
+                      )}
+                    </div>
                   </button>
                 );
               })}
@@ -902,14 +1531,14 @@ export const Messages: React.FC<MessagesProps> = ({
             <div
               className="rounded-full p-[2px]"
               style={{
-                background: chatColorGradients[currentUser?.chatColor ?? ""] ?? DEFAULT_CHAT_GRADIENT
+                background: chatColorGradients[(currentUser as any)?.chatColor ?? ""] ?? DEFAULT_CHAT_GRADIENT
               }}
             >
               <Avatar
-                src={currentUser.photo || currentUser.avatar}
+                src={getUserPhotoUrl(currentUser) || (currentUser as any)?.avatar}
                 first={currentUser.first}
                 last={currentUser.last}
-                name={currentUser.displayName}
+                name={currentUser.displayName || getUserFullName(currentUser)}
                 size="sm"
               />
             </div>
@@ -964,86 +1593,173 @@ export const Messages: React.FC<MessagesProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            
-            {/* Thread Search queries */}
-            <div className="relative w-full sm:w-40">
-              <input
-                type="text"
-                placeholder="Search thread..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl pl-3 pr-7 py-1.5 text-xs text-[var(--color-text)] placeholder-[var(--color-text-faint)] w-full focus:outline-none"
-              />
-              {searchQuery ? (
-                <button onClick={() => setSearchQuery("")} className="absolute right-2 top-2 text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
-                  <X className="w-3 h-3" />
-                </button>
-              ) : (
-                <Search className="absolute right-2.5 top-2 text-[var(--color-text-faint)] w-3 h-3" />
-              )}
-            </div>
+          {activeChannel !== "saved-messages" && (
+            <div className="flex flex-wrap items-center gap-2">
+              
+              {/* Thread Search queries */}
+              <div className="relative w-full sm:w-40">
+                <input
+                  type="text"
+                  placeholder="Search thread..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl pl-3 pr-7 py-1.5 text-xs text-[var(--color-text)] placeholder-[var(--color-text-faint)] w-full focus:outline-none"
+                />
+                {searchQuery ? (
+                  <button onClick={() => setSearchQuery("")} className="absolute right-2 top-2 text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
+                    <X className="w-3 h-3" />
+                  </button>
+                ) : (
+                  <Search className="absolute right-2.5 top-2 text-[var(--color-text-faint)] w-3 h-3" />
+                )}
+              </div>
 
-            {/* Escalation filter SELECTOR dropdown */}
-            <select
-              value={selectedEscalationFilter}
-              onChange={(e) => setSelectedEscalationFilter(e.target.value)}
-              className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl px-2.5 py-1.5 text-[10.5px] text-[var(--color-text-muted)] focus:outline-none font-bold shrink-0"
-            >
-              <option value="all">🏷️ All Flags</option>
-              <option value="normal">🟢 Normal Updates</option>
-              <option value="urgent">🌋 Urgent Escalations</option>
-              <option value="blocked">🛑 Deal Blocked</option>
-              <option value="lender_pending">🏦 Lender Pending</option>
-              <option value="client_pending">📝 Client Pending</option>
-              <option value="compliance">⚖️ Compliance Audit</option>
-            </select>
-
-            {/* Quick client linking filter */}
-            <select
-              value={selectedClientSearch || linkedChatClientId || ""}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSelectedClientSearch(val);
-                if (setLinkedChatClientId) {
-                  setLinkedChatClientId(val || null);
-                }
-              }}
-              className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl px-2.5 py-1.5 text-[10.5px] text-[var(--color-text-muted)] focus:outline-none font-bold shrink-0 max-w-[190px] sm:max-w-[210px] truncate"
-              title="Link to Client / Filter messages by deal file"
-            >
-              <option value="">📎 All Clients</option>
-              {clients.map(c => {
-                const tagDetail = c.stage || c.status || c.lender || "Active";
-                return (
-                  <option key={c.id} value={c.id}>
-                    {c.first} {c.last} ({tagDetail})
-                  </option>
-                );
-              })}
-            </select>
-
-            {/* Toggle pins panel button */}
-            {pinnedChannelMessages.length > 0 && (
+              {/* Advanced Search Toggle (Req 2) */}
               <button
-                onClick={() => setShowPinsPanel(!showPinsPanel)}
-                className={`p-1.5 rounded-xl border flex items-center justify-center gap-1 text-[10.5px] font-black transition-all ${
-                  showPinsPanel 
-                    ? "bg-[var(--color-accent)] text-black border-[var(--color-accent)]" 
-                    : "bg-[var(--color-panel)] border-[var(--color-border)]/70 text-[var(--color-accent)] hover:bg-[var(--color-surface-2)]"
+                onClick={() => setShowAdvancedSearch(!showAdvancedSearch)}
+                className={`p-1.5 rounded-xl border flex items-center justify-center gap-1 text-[10.5px] font-bold transition-all ${
+                  showAdvancedSearch || searchSender || hasAttachmentsFilter || savedOnlyFilter || searchStartDate
+                    ? "bg-[var(--color-accent)]/20 border-[var(--color-accent)] text-[var(--color-accent)]"
+                    : "bg-[var(--color-panel)] border-[var(--color-border)]/70 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)]"
                 }`}
+                title="Advanced Filters"
               >
-                <Pin className="w-3 h-3" />
-                <span>Pins ({pinnedChannelMessages.length})</span>
+                <Filter className="w-3 h-3" />
+                <span>Filters</span>
               </button>
-            )}
 
-          </div>
+              {/* Escalation filter SELECTOR dropdown */}
+              <select
+                value={selectedEscalationFilter}
+                onChange={(e) => setSelectedEscalationFilter(e.target.value)}
+                className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl px-2.5 py-1.5 text-[10.5px] text-[var(--color-text-muted)] focus:outline-none font-bold shrink-0"
+              >
+                <option value="all">🏷️ All Flags</option>
+                <option value="normal">🟢 Normal Updates</option>
+                <option value="urgent">🌋 Urgent Escalations</option>
+                <option value="blocked">🛑 Deal Blocked</option>
+                <option value="lender_pending">🏦 Lender Pending</option>
+                <option value="client_pending">📝 Client Pending</option>
+                <option value="compliance">⚖️ Compliance Audit</option>
+              </select>
+
+              {/* Quick client linking filter */}
+              <select
+                value={selectedClientSearch || linkedChatClientId || ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedClientSearch(val);
+                  if (setLinkedChatClientId) {
+                    setLinkedChatClientId(val || null);
+                  }
+                }}
+                className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl px-2.5 py-1.5 text-[10.5px] text-[var(--color-text-muted)] focus:outline-none font-bold shrink-0 max-w-[190px] sm:max-w-[210px] truncate"
+                title="Link to Client / Filter messages by deal file"
+              >
+                <option value="">📎 All Clients</option>
+                {clients.map(c => {
+                  const tagDetail = c.stage || c.status || c.lender || "Active";
+                  return (
+                    <option key={c.id} value={c.id}>
+                      {c.first} {c.last} ({tagDetail})
+                    </option>
+                  );
+                })}
+              </select>
+
+              {/* Toggle pins panel button */}
+              {pinnedChannelMessages.length > 0 && (
+                <button
+                  onClick={() => setShowPinsPanel(!showPinsPanel)}
+                  className={`p-1.5 rounded-xl border flex items-center justify-center gap-1 text-[10.5px] font-black transition-all ${
+                    showPinsPanel 
+                      ? "bg-[var(--color-accent)] text-black border-[var(--color-accent)]" 
+                      : "bg-[var(--color-panel)] border-[var(--color-border)]/70 text-[var(--color-accent)] hover:bg-[var(--color-surface-2)]"
+                  }`}
+                >
+                  <Pin className="w-3 h-3" />
+                  <span>Pins ({pinnedChannelMessages.length})</span>
+                </button>
+              )}
+
+            </div>
+          )}
 
         </div>
 
+        {/* ADVANCED SEARCH FILTERS DRAWER (Req 2) */}
+        {showAdvancedSearch && activeChannel !== "saved-messages" && (
+          <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-3 flex flex-wrap items-center gap-3 text-xs animate-slide-down">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold text-[var(--color-text-muted)]">Sender:</span>
+              <input
+                type="text"
+                placeholder="Sender name..."
+                value={searchSender}
+                onChange={(e) => setSearchSender(e.target.value)}
+                className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] w-28 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold text-[var(--color-text-muted)]">From:</span>
+              <input
+                type="date"
+                value={searchStartDate}
+                onChange={(e) => setSearchStartDate(e.target.value)}
+                className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold text-[var(--color-text-muted)]">To:</span>
+              <input
+                type="date"
+                value={searchEndDate}
+                onChange={(e) => setSearchEndDate(e.target.value)}
+                className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none"
+              />
+            </div>
+
+            <label className="flex items-center gap-1.5 cursor-pointer text-[10.5px] font-bold text-[var(--color-text-muted)]">
+              <input
+                type="checkbox"
+                checked={hasAttachmentsFilter}
+                onChange={(e) => setHasAttachmentsFilter(e.target.checked)}
+                className="rounded border-[var(--color-border)] text-[var(--color-accent)] focus:ring-0"
+              />
+              <span>📎 With Attachments</span>
+            </label>
+
+            <label className="flex items-center gap-1.5 cursor-pointer text-[10.5px] font-bold text-[var(--color-text-muted)]">
+              <input
+                type="checkbox"
+                checked={savedOnlyFilter}
+                onChange={(e) => setSavedOnlyFilter(e.target.checked)}
+                className="rounded border-[var(--color-border)] text-amber-400 focus:ring-0"
+              />
+              <span>🔖 Bookmarked Only</span>
+            </label>
+
+            {(searchSender || searchStartDate || searchEndDate || hasAttachmentsFilter || savedOnlyFilter) && (
+              <button
+                onClick={() => {
+                  setSearchSender("");
+                  setSearchStartDate("");
+                  setSearchEndDate("");
+                  setHasAttachmentsFilter(false);
+                  setSavedOnlyFilter(false);
+                }}
+                className="text-[10px] font-extrabold text-rose-400 hover:underline ml-auto"
+              >
+                Reset Filters
+              </button>
+            )}
+          </div>
+        )}
+
         {/* HIGH-VISIBILITY PINNED MESSAGE COMPONENT DRAWER */}
-        {pinnedChannelMessages.length > 0 && showPinsPanel && (
+        {activeChannel !== "saved-messages" && pinnedChannelMessages.length > 0 && showPinsPanel && (
           <div className="bg-[var(--color-surface-2)] border-b border-[var(--color-accent)]/20 p-3 flex flex-col gap-2 select-none animate-slide-down">
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-[var(--color-accent)] font-black uppercase tracking-widest flex items-center gap-1.5">
@@ -1076,742 +1792,611 @@ export const Messages: React.FC<MessagesProps> = ({
           </div>
         )}
 
-        {/* Message Thread Canvas List Stream */}
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-[var(--color-bg)]">
-          {filteredMessages.length > 0 ? (
-            filteredMessages.map((msg, index) => {
-              const isCurrentUserVal = msg.senderId === "staff_me" || msg.author.includes(currentUser.first);
-              const priorityUI = ESCALATION_FLAGS[msg.priority || "normal"];
+        {/* ============================================================== */}
+        {/* SAVED MESSAGES VIEW MODE */}
+        {/* ============================================================== */}
+        {activeChannel === "saved-messages" ? (
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-[var(--color-bg)]">
+            {savedMessageItems.length > 0 ? (
+              savedMessageItems.map(({ savedItem, message: msg, channelName, channelId }) => {
+                const isCurrentUserVal = msg.senderId === currentUserId || (currentUser.first && msg.author?.includes(currentUser.first));
+                const priorityUI = ESCALATION_FLAGS[msg.priority || "normal"];
 
-              // highlight if is current user name being tagged e.g., @David
-              const isMentioned = msg.text.includes(`@${currentUser.first}`) || msg.text.includes("@brokers") || msg.mentions?.some(m => m.toLowerCase().includes(currentUser.first.toLowerCase()));
-
-              return (
-                <React.Fragment key={msg.id}>
-                  {index > 0 && filteredMessages[index - 1].date !== msg.date && (
-                    <div className="flex items-center gap-3 my-2 select-none w-full col-span-full">
-                      <div className="flex-1 h-px bg-[var(--color-border)]/40" />
-                      <span className="text-[9px] font-black uppercase tracking-widest text-[var(--color-text-faint)] px-2">{msg.date}</span>
-                      <div className="flex-1 h-px bg-[var(--color-border)]/40" />
-                    </div>
-                  )}
-                  <div 
-                    className={`flex gap-3 max-w-[85%] group select-none transition-all ${
-                      isCurrentUserVal ? "self-end flex-row-reverse" : "self-start"
-                    }`}
-                    id={`msg_${msg.id}`}
-                  >
-                    {/* Sender Symbol / Avatar */}
-                    <div className="relative shrink-0">
-                      <div 
-                        className="w-8 h-8 rounded-full font-bold flex items-center justify-center text-[11px] text-white shadow-md select-none"
-                        style={{
-                          background: chatColorGradients[msg.senderChatColor ?? ""] ?? DEFAULT_CHAT_GRADIENT,
-                          boxShadow: "0 0 10px rgba(0,0,0,0.25)"
-                        }}
-                      >
-                        {msg.initials}
+                return (
+                  <div key={savedItem.id} className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-4 flex flex-col gap-3 shadow-md text-left">
+                    <div className="flex items-center justify-between border-b border-[var(--color-border)]/60 pb-2">
+                      <div className="flex items-center gap-2 text-xs font-bold text-[var(--color-text)]">
+                        <Bookmark className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />
+                        <span>Saved from: <b className="text-[var(--color-accent)]">{channelName}</b></span>
                       </div>
-                      {msg.priority !== "normal" && (
-                        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-500 border border-[var(--color-bg)] flex items-center justify-center font-black text-[7px] text-white">
-                          !
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Message details box */}
-                    <div className="min-w-0">
-                      
-                      {/* Metadata Header line */}
-                      <div className={`flex items-center gap-2 mb-1 text-[10px] ${isCurrentUserVal ? "justify-end" : ""}`}>
-                        <span className="font-extrabold text-[var(--color-text-muted)]">{msg.author}</span>
-                        <span className="px-1.5 py-0.2 bg-[var(--color-surface-2)] text-[var(--color-text-faint)] rounded-md scale-95 font-semibold text-[8px] tracking-wider uppercase border border-[var(--color-border)]/50">
-                          {msg.role}
-                        </span>
-                        <span className="text-[var(--color-text-faint)] font-semibold">{msg.time}</span>
-                      </div>
-
-                      {/* Content Speech block with gradient borders for mentions */}
-                      <div 
-                        className={`p-3 rounded-2xl text-[11.5px] leading-relaxed relative ${
-                          isMentioned 
-                            ? "bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/40 rounded-tl-none ring-1 ring-[var(--color-accent)]/50 shadow-[0_0_15px_rgba(181,166,66,0.1)]"
-                            : isCurrentUserVal 
-                              ? "text-[var(--color-text)] rounded-tr-none" 
-                              : "text-[var(--color-text)] rounded-tl-none shadow-md"
-                        }`}
-                        style={!isMentioned ? {
-                          background: "var(--color-surface)",
-                          border: `1px solid ${(chatColorGradients[msg.senderChatColor ?? ""] ? "transparent" : "var(--color-border)")}`,
-                          borderImage: chatColorGradients[msg.senderChatColor ?? ""] 
-                            ? `${chatColorGradients[msg.senderChatColor ?? ""]} 1` 
-                            : undefined,
-                        } : undefined}
-                      >
-                        
-                        {/* Priority Warning Header */}
-                        {msg.priority && msg.priority !== "normal" && (
-                          <div 
-                            className="text-[9px] font-black uppercase tracking-widest mb-1.5 flex items-center gap-1 px-2 py-1 rounded-lg w-fit"
-                            style={{
-                              background: `${ESCALATION_GRADIENTS[msg.priority]}22`,
-                              color: "white",
-                              border: `1px solid ${ESCALATION_GRADIENTS[msg.priority] ? "rgba(255,255,255,0.15)" : "transparent"}`
-                            }}
-                          >
-                            <span style={{
-                              background: ESCALATION_GRADIENTS[msg.priority],
-                              WebkitBackgroundClip: "text",
-                              WebkitTextFillColor: "transparent",
-                              backgroundClip: "text"
-                            }}>{priorityUI.label}</span>
-                          </div>
-                        )}
-
-                        {/* Actual Narrative text */}
-                        <p className="whitespace-pre-wrap selection:bg-[var(--color-accent)]/40 selection:text-white">{msg.text}</p>
-
-                        {/* Active emoji reactions inside message bubble */}
-                        {msg.reactions && Object.keys(msg.reactions).some(emoji => {
-                          const reactors = (msg.reactions?.[emoji] || []) as string[];
-                          return reactors.length > 0;
-                        }) && (
-                          <div className="flex flex-wrap gap-1 mt-2.5">
-                            {Object.entries(msg.reactions).map(([emoji, reactorsVal]) => {
-                              const reactors = (reactorsVal || []) as string[];
-                              if (reactors.length === 0) return null;
-                              const hasReacted = reactors.includes(authorInitials);
-                              return (
-                                <button
-                                  key={emoji}
-                                  onClick={() => handleToggleReaction(msg.id, emoji)}
-                                  className={`text-[10px] px-1.5 py-0.5 rounded-lg border transition-all flex items-center gap-1 ${
-                                    hasReacted 
-                                      ? "bg-[var(--color-accent)]/20 border-[var(--color-accent)]/40 text-[var(--color-accent)]" 
-                                      : "bg-[var(--color-panel)] border-[var(--color-border)]/50 text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
-                                  }`}
-                                  title={`Reacted by: ${reactors.join(", ")}`}
-                                >
-                                  <span>{emoji}</span>
-                                  <span className="font-black text-[9px]">{reactors.length}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Render mock document links attached */}
-                        {msg.attachments && msg.attachments.length > 0 && (
-                          <div className="mt-3 space-y-1 pt-2.5 border-t border-[var(--color-border)]/50">
-                            <div className="text-[8.5px] uppercase font-black tracking-widest text-[var(--color-accent)] mb-1.5">Attached Deal Documents</div>
-                            {msg.attachments.map((at, of) => (
-                              <div key={of} className="flex items-center justify-between p-1.5 bg-[var(--color-surface-2)] border border-[var(--color-border)]/60 rounded-xl text-left">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <FileText className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                                  <div className="min-w-0">
-                                    <div className="text-[10px] text-[var(--color-text)] font-bold truncate">{at.name}</div>
-                                    <div className="text-[8.5px] text-[var(--color-text-faint)]">{at.size} · PDF</div>
-                                  </div>
-                                </div>
-                                <Eye className="w-3.5 h-3.5 text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer opacity-50 hover:opacity-100 transition-opacity" />
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Tied Client File Action Bar tag */}
-                        {msg.clientTag && (
-                          <div className="mt-2.5 pt-2 border-t border-[var(--color-border)]/50 flex items-center justify-between">
-                            <button 
-                              onClick={() => {
-                                if (msg.clientId) onOpenClient(msg.clientId);
-                              }}
-                              className="px-2 py-1 text-[9.5px] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] rounded-lg font-black text-[var(--color-accent)] flex items-center gap-1.5 transition-colors border border-[var(--color-accent)]/10"
-                            >
-                              <Link2 className="w-3 h-3 text-[var(--color-accent)]" /> 
-                              <span>File Active: {msg.clientTag}</span>
-                            </button>
-                          </div>
-                        )}
-
-                      </div>
-
-                      {/* Operational Action Controls on hover layer */}
-                      <div className={`flex items-center gap-2.5 mt-1 opacity-50 hover:opacity-100 transition-opacity justify-end ${
-                        isCurrentUserVal ? "flex-row-reverse" : "flex-row"
-                      }`}>
-                        {["👍", "✅", "🚨"].map(emoji => {
-                          const reactors = msg.reactions?.[emoji] || [];
-                          const hasReacted = reactors.includes(authorInitials);
-                          return (
-                            <button 
-                              key={emoji} 
-                              onClick={() => handleToggleReaction(msg.id, emoji)}
-                              className={`text-[10px] px-1.5 py-0.5 rounded-lg border transition-all flex items-center gap-1 ${
-                                hasReacted 
-                                  ? "bg-[var(--color-accent)]/20 border-[var(--color-accent)]/40 text-[var(--color-accent)]" 
-                                  : "bg-[var(--color-panel)] border-[var(--color-border)]/50 text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
-                              }`}
-                            >
-                              <span>{emoji}</span> 
-                              {reactors.length > 0 && <span className="font-black">{reactors.length}</span>}
-                            </button>
-                          );
-                        })}
-
-                        {/* Convert to task is very important */}
-                        {setTasks && (
-                          <button
-                            onClick={() => handleOpenTaskWizard(msg)}
-                            className="text-[9.5px] bg-[var(--color-accent)]/10 hover:bg-[var(--color-accent)] hover:text-black border border-[var(--color-accent)]/20 px-2 py-0.5 rounded-md text-[var(--color-accent)] font-black transition-all flex items-center gap-1"
-                            title="Generate a CRM Task from this discussion comment"
-                          >
-                            ⚡ Convert to Task
-                          </button>
-                        )}
-
+                      <div className="flex items-center gap-2">
                         <button
-                          onClick={() => handleTogglePinMessage(msg.id)}
-                          className={`text-[9px] font-bold uppercase transition-colors hover:text-[var(--color-accent)] ${msg.pinned ? "text-[var(--color-accent)]" : "text-[var(--color-text-faint)]"}`}
+                          onClick={() => handleJumpToChannel(channelId, msg.id)}
+                          className="text-[10px] font-extrabold text-[var(--color-accent)] hover:underline flex items-center gap-1"
                         >
-                          {msg.pinned ? "Unpin 📌" : "Pin 📌"}
+                          Jump to Thread <ExternalLink className="w-3 h-3" />
                         </button>
-
-                        {isCurrentUserVal && (
-                          <button
-                            onClick={() => handleDeleteMessage(msg.id)}
-                            className="text-[9px] text-[var(--color-text-faint)] hover:text-rose-500 font-bold uppercase transition-colors"
-                          >
-                            Delete
-                          </button>
-                        )}
+                        <button
+                          onClick={(e) => handleToggleSaveMessage(msg, e)}
+                          className="text-[10px] font-bold text-rose-400 hover:underline"
+                        >
+                          Remove
+                        </button>
                       </div>
+                    </div>
 
-                      {isCurrentUserVal && msg.readBy && msg.readBy.length > 1 && (
-                        <div className="text-[8.5px] text-[var(--color-text-faint)] text-right mt-0.5 font-semibold">
-                          Read by {msg.readBy.filter(r => r !== authorInitials).join(", ")}
+                    <div className="flex items-start gap-3">
+                      <Avatar src={msg.authorAvatar} name={msg.author} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 text-xs font-bold text-[var(--color-text)]">
+                          <span>{msg.author}</span>
+                          <span className="text-[10px] font-normal text-[var(--color-text-faint)]">{msg.time} · {msg.date}</span>
                         </div>
-                      )}
-
+                        <p className="text-xs text-[var(--color-text)]/90 mt-1 whitespace-pre-wrap">{msg.text}</p>
+                      </div>
                     </div>
                   </div>
-                </React.Fragment>
-              );
-            })
-          ) : (
-            <div className="my-auto text-center p-12">
-              <Users className="w-10 h-10 mx-auto mb-2" style={{ color: "rgba(0, 198, 255, 0.25)" }} />
-              <div className="text-xs font-black text-[var(--color-text-faint)] uppercase tracking-widest">No matching comments</div>
-              <p className="text-[10.5px] text-[var(--color-text-faint)] mt-1 max-w-xs mx-auto">
-                No pipeline updates found matching criteria inside channel. Discard constraints to review full thread history.
-              </p>
-            </div>
-          )}
-        </div>
-
-        {typingUser && (
-          <div className="px-4 pb-1 text-[9.5px] text-[var(--color-text-faint)] italic font-semibold animate-pulse select-none">
-            {typingUser} is typing...
+                );
+              })
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-[var(--color-text-faint)]">
+                <Bookmark className="w-12 h-12 mb-3 text-amber-400/40" />
+                <h4 className="text-sm font-bold text-[var(--color-text)] mb-1">No Saved Messages</h4>
+                <p className="text-xs max-w-sm">Bookmark important team messages, client updates, or lender instructions to access them quickly here.</p>
+              </div>
+            )}
           </div>
-        )}
-
-        {/* Composer Entry Area & Templates */}
-        <div className="p-4 border-t border-[var(--color-border)]/65 shrink-0 bg-[var(--color-surface)]/65">
-          
-          {/* Active Preset Files or Links Indicators */}
-          {(linkedChatClientId || attachedFiles.length > 0) && (
-            <div className="mb-3 flex flex-wrap items-center gap-2">
+        ) : (
+          /* ============================================================== */
+          /* STANDARD CHAT THREAD VIEW MODE WITH GROUPING & SEPARATORS (Req 6 & 8) */
+          /* ============================================================== */
+          <div className="flex-1 flex flex-col min-h-0 bg-[var(--color-bg)] relative">
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
               
-              {/* Linked client block */}
-              {linkedChatClientId && (
-                <div 
-                  className="px-3 py-1.5 rounded-xl text-xs flex items-center gap-2 select-none"
-                  style={{
-                    background: "rgba(86, 171, 47, 0.12)",
-                    border: "1px solid rgba(86, 171, 47, 0.35)",
-                    color: "#A8E063"
-                  }}
-                >
-                  <Link2 className="w-3.5 h-3.5 text-[#A8E063]" />
-                  <span>Linked deal tie: <b>{clients.find(x => x.id === linkedChatClientId)?.first} {clients.find(x => x.id === linkedChatClientId)?.last}</b></span>
-                  <button onClick={() => setLinkedChatClientId(null)} className="text-[#A8E063] hover:text-white font-bold ml-1.5 cursor-pointer">✕</button>
+              {/* Load Older Messages Pagination Header (Req 8) */}
+              {hasMoreOlderMessages && (
+                <div className="flex justify-center py-2">
+                  <button
+                    onClick={handleLoadOlderMessages}
+                    disabled={isLoadingOlder}
+                    className="px-3 py-1.5 rounded-full bg-[var(--color-surface-2)] border border-[var(--color-border)] text-xs font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-all flex items-center gap-2"
+                  >
+                    {isLoadingOlder ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-[var(--color-accent)]" />
+                    ) : (
+                      <Clock className="w-3.5 h-3.5" />
+                    )}
+                    <span>Load older messages</span>
+                  </button>
                 </div>
               )}
 
-              {/* Attachments listing */}
-              {attachedFiles.map((fi, idx) => (
-                <div 
-                  key={idx} 
-                  className="px-2.5 py-1.5 rounded-xl text-[10.5px] flex items-center gap-2"
-                  style={{
-                    background: "rgba(0, 198, 255, 0.12)",
-                    border: "1px solid rgba(0, 198, 255, 0.30)",
-                    color: "#00C6FF"
-                  }}
-                >
-                  <Paperclip className="w-3.5 h-3.5 text-[#00C6FF]" />
-                  <span className="font-bold truncate max-w-[120px]">{fi.name}</span>
-                  <button 
-                    onClick={() => setAttachedFiles(p => p.filter((_, o) => o !== idx))} 
-                    className="text-[#00C6FF] hover:text-white font-bold ml-1 cursor-pointer"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-
-            </div>
-          )}
-
-          {/* Composer Main Input Box Layout */}
-          <div className="flex gap-2.5 items-end">
-            
-            {/* Input wrap */}
-            <div className="flex-grow flex flex-col bg-[var(--color-panel)] border border-[var(--color-border)] rounded-2xl px-3 py-2 text-left">
-              
-              {/* Top Selector tags */}
-              <div className="flex items-center justify-between border-b border-[var(--color-border)]/60 pb-2 mb-2 select-none">
-                
-                {/* Level Priority / Urgency marker select */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9.5px] text-[var(--color-text-faint)] font-black uppercase tracking-wider">Escalation Tag:</span>
-                  <select
-                    value={msgPriority}
-                    onChange={(e) => setMsgPriority(e.target.value as any)}
-                    className="bg-transparent border-none text-[10px] text-[var(--color-accent)] font-black focus:outline-none cursor-pointer outline-none"
-                  >
-                    <option value="normal">🟢 Normal Alert</option>
-                    <option value="urgent">🚨 Urgent Escalation</option>
-                    <option value="blocked">🛑 Deal Blocked</option>
-                    <option value="lender_pending">🏦 Lender Pending</option>
-                    <option value="client_pending">📝 Client Pending</option>
-                    <option value="compliance">⚖️ Compliance Audit</option>
-                  </select>
-                </div>
-
-                {/* Live Client dropdown links selection */}
-                <div className="relative select-none">
-                  <button 
-                    onClick={() => setShowClientLinkDropdown(!showClientLinkDropdown)}
-                    className="text-[9.5px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] flex items-center gap-1 font-bold"
-                  >
-                    <Link2 className="w-3 h-3 text-[var(--color-accent)]" /> 
-                    {linkedChatClientId ? "Linked ☑" : "Link Client File"}
-                  </button>
-
-                  {showClientLinkDropdown && (
-                    <div className="absolute bottom-full right-0 mb-3 bg-[var(--color-surface-2)] border border-[var(--color-border)]/80 rounded-2xl p-2.5 max-h-56 overflow-y-auto w-60 z-30 shadow-2xl">
-                      <div className="text-[9.5px] uppercase font-black text-[var(--color-text-faint)] mb-2">Deal Portfolios</div>
-                      <input
-                        type="text"
-                        placeholder="Search borrowers..."
-                        value={clientDropdownSearch}
-                        onChange={(e) => setClientDropdownSearch(e.target.value)}
-                        className="bg-[var(--color-bg)] border border-[var(--color-border)]/70 rounded-lg px-2 py-1 text-[10.5px] text-[var(--color-text)] w-full mb-2 focus:outline-none placeholder-[var(--color-text-faint)]/60"
-                      />
-                      <div className="space-y-0.5">
-                        <button
-                          onClick={() => {
-                            setLinkedChatClientId(null);
-                            setSelectedClientSearch("");
-                            setShowClientLinkDropdown(false);
-                          }}
-                          className="w-full text-left p-1.5 hover:bg-[var(--color-surface-3)] text-[10.5px] text-[var(--color-text-faint)] rounded font-semibold italic"
-                        >
-                          -- Clear linked files --
-                        </button>
-                        {filteredDropdownClients.map(c => (
-                          <div 
-                            key={c.id} 
-                            onClick={() => {
-                              setLinkedChatClientId(c.id);
-                              setSelectedClientSearch(c.id);
-                              setShowClientLinkDropdown(false);
-                            }}
-                            className="p-1.5 hover:bg-[var(--color-surface-3)] text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] rounded-lg cursor-pointer truncate font-bold flex items-center justify-between"
-                          >
-                            <span>{c.first} {c.last}</span>
-                            <span className="text-[8.5px] bg-[var(--color-accent)]/10 text-[var(--color-accent)] px-1 rounded font-mono scale-90">{c.lender || "Prime"}</span>
-                          </div>
-                        ))}
+              {/* Message Blocks (Date Separators + Grouped Messages) (Req 6) */}
+              {groupedMessageBlocks.length > 0 ? (
+                groupedMessageBlocks.map(block => {
+                  if (block.type === 'date_separator') {
+                    return (
+                      <div key={block.id} className="flex items-center my-4 select-none">
+                        <div className="flex-1 border-t border-[var(--color-border)]/60" />
+                        <span className="px-3 text-[10px] font-black uppercase tracking-wider text-[var(--color-text-faint)] bg-[var(--color-surface)] border border-[var(--color-border)]/60 rounded-full py-0.5 shadow-sm">
+                          {block.dateLabel}
+                        </span>
+                        <div className="flex-1 border-t border-[var(--color-border)]/60" />
                       </div>
-                    </div>
-                  )}
-                </div>
-
-              </div>
-
-              {/* Textarea Narrative */}
-              <textarea 
-                value={msgInputText}
-                onChange={(e) => setMsgInputText(e.target.value)}
-                placeholder={`Message in ${currentChannelDetails.name}... (Standard @mentions supported)`}
-                rows={2}
-                className="bg-transparent border-none text-xs text-[var(--color-text)] focus:outline-none w-full outline-none resize-none py-1 h-11"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
+                    );
                   }
-                }}
-              />
 
-            </div>
+                  const msgs = block.messages || [];
+                  const firstMsg = msgs[0];
+                  if (!firstMsg) return null;
 
-            {/* Submit Arrow button */}
-            <button 
-              onClick={handleSendMessage}
-              className="p-3.5 rounded-2xl transition-all flex items-center justify-center shrink-0 h-10 w-10 disabled:opacity-40 hover:brightness-110 cursor-pointer"
-              style={{
-                background: "linear-gradient(135deg, #00C6FF 0%, #0072FF 100%)",
-                boxShadow: "0 0 16px rgba(0, 114, 255, 0.35)"
-              }}
-              disabled={!msgInputText.trim() && attachedFiles.length === 0}
-            >
-              <Send className="w-4 h-4 text-white" />
-            </button>
-          </div>
+                  const isCurrentUserAuthor = firstMsg.senderId === currentUserId || (currentUser.first && firstMsg.author?.includes(currentUser.first));
+                  const escalationUI = ESCALATION_FLAGS[firstMsg.priority || "normal"];
 
-          {/* Quick Operational templates & mock file preset selector lines */}
-          <div className="flex flex-wrap items-center justify-between gap-3 mt-3 select-none border-t border-[var(--color-border)]/60 pt-3">
-            
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[9px] text-[var(--color-accent)] font-black uppercase tracking-widest mr-1.5">Insert Template:</span>
-              <button 
-                onClick={() => handleInsertTemplate("follow-up")}
-                className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:brightness-110 cursor-pointer"
-                style={{
-                  background: "linear-gradient(135deg, #00FFFF 0%, #0077FF 100%)",
-                  color: "white",
-                  border: "1px solid rgba(0,255,255,0.3)"
-                }}
-              >
-                📋 Client Follow-Up
-              </button>
-              <button 
-                onClick={() => handleInsertTemplate("lender-update")}
-                className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:brightness-110 cursor-pointer"
-                style={{
-                  background: "linear-gradient(135deg, #00C6FF 0%, #0072FF 100%)",
-                  color: "white",
-                  border: "1px solid rgba(0,198,255,0.3)"
-                }}
-              >
-                🏦 Lender Notice
-              </button>
-              <button 
-                onClick={() => handleInsertTemplate("doc-checklist")}
-                className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:brightness-110 cursor-pointer"
-                style={{
-                  background: "linear-gradient(135deg, #FF8800 0%, #FCEE21 100%)",
-                  color: "#1a1200",
-                  border: "1px solid rgba(255,136,0,0.3)"
-                }}
-              >
-                📝 Docs Collector
-              </button>
-              <button 
-                onClick={() => handleInsertTemplate("blocked-file")}
-                className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:brightness-110 cursor-pointer"
-                style={{
-                  background: "linear-gradient(135deg, #FF00CC 0%, #3333FF 100%)",
-                  color: "white",
-                  border: "1px solid rgba(255,0,204,0.3)"
-                }}
-              >
-                🛑 Deal Blocked
-              </button>
-              <button 
-                onClick={() => handleInsertTemplate("compliance-pass")}
-                className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:brightness-110 cursor-pointer"
-                style={{
-                  background: "linear-gradient(135deg, #56AB2F 0%, #A8E063 100%)",
-                  color: "white",
-                  border: "1px solid rgba(86,171,47,0.3)"
-                }}
-              >
-                ⚖️ Audit Pass
-              </button>
-              <button 
-                onClick={() => handleInsertTemplate("closing-funded")}
-                className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:brightness-110 cursor-pointer"
-                style={{
-                  background: "linear-gradient(135deg, #FF416C 0%, #FFB347 100%)",
-                  color: "white",
-                  border: "1px solid rgba(255,65,108,0.3)"
-                }}
-              >
-                💰 Deal Funded
-              </button>
-            </div>
+                  return (
+                    <div key={block.id} className="space-y-1">
+                      {msgs.map((msg, msgIdx) => {
+                        const isFirstInGroup = msgIdx === 0;
+                        const isEdited = Boolean(msg.editedAt);
+                        const isSoftDeleted = Boolean(msg.deletedAt);
+                        const isSaved = savedMessages.some(sm => sm.messageId === msg.id);
+                        const replyCount = (msg.replies || []).length || msg.replyCount || 0;
 
-            {/* Real computer document attachments */}
-            <div className="relative">
-              <input 
-                type="file" 
-                ref={fileInputRef}
-                onChange={handleRealFileSelect}
-                multiple
-                className="hidden"
-                id="team-channels-file-input"
-              />
-              <button 
-                onClick={() => setShowAttachPresets(!showAttachPresets)}
-                className="px-2.5 py-1.5 rounded-lg bg-[var(--color-panel)] hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] text-[10px] font-extrabold border border-[var(--color-border)] transition-all flex items-center gap-1.5"
-              >
-                <Paperclip className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-                <span>Attach Doc</span>
-              </button>
+                        return (
+                          <div
+                            key={msg.id}
+                            id={`msg_${msg.id}`}
+                            className={`group relative p-3 rounded-2xl transition-all border text-left ${
+                              isSoftDeleted
+                                ? "bg-rose-500/5 border-rose-500/20 text-slate-400"
+                                : msg.priority && msg.priority !== "normal"
+                                ? "bg-[var(--color-surface)] border-[var(--color-border)] shadow-md"
+                                : "bg-[var(--color-surface)]/60 border-transparent hover:bg-[var(--color-surface)] hover:border-[var(--color-border)]/60"
+                            }`}
+                          >
+                            {/* Hover Action Toolbar */}
+                            <div className="absolute right-3 -top-3 hidden group-hover:flex items-center gap-1 bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-1 shadow-lg z-10 animate-fade-in">
+                              
+                              {/* Reply Button (Req 3) */}
+                              <button
+                                onClick={() => setActiveThreadParentMsg(msg)}
+                                className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-accent)]"
+                                title="Reply in thread"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5" />
+                              </button>
 
-              {showAttachPresets && (
-                <div className="absolute bottom-full right-0 mb-2 bg-[var(--color-surface-2)] border border-[var(--color-border)]/80 rounded-2xl p-3 w-72 z-30 shadow-2xl text-left select-none">
-                  <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-[var(--color-border)]/60">
-                    <div className="text-[10.5px] font-black uppercase text-[var(--color-text)] flex items-center gap-1.5">
-                      <Upload className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-                      <span>Attach Documents</span>
+                              {/* Save/Bookmark Button */}
+                              <button
+                                onClick={(e) => handleToggleSaveMessage(msg, e)}
+                                className={`p-1 rounded-lg hover:bg-[var(--color-surface-2)] ${isSaved ? 'text-amber-400' : 'text-[var(--color-text-muted)] hover:text-amber-400'}`}
+                                title={isSaved ? "Remove Bookmark" : "Save Message"}
+                              >
+                                <Bookmark className={`w-3.5 h-3.5 ${isSaved ? 'fill-amber-400' : ''}`} />
+                              </button>
+
+                              {/* Pin Button */}
+                              <button
+                                onClick={() => handleTogglePinMessage(msg.id)}
+                                className={`p-1 rounded-lg hover:bg-[var(--color-surface-2)] ${msg.pinned ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-accent)]'}`}
+                                title={msg.pinned ? "Unpin Message" : "Pin Message"}
+                              >
+                                <Pin className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Edit Button */}
+                              {canEditMessage(msg, currentUser) && !isSoftDeleted && (
+                                <button
+                                  onClick={(e) => handleStartEditing(msg, e)}
+                                  className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                                  title="Edit Message"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {/* Delete Button */}
+                              {canDeleteMessage(msg, currentUser) && !isSoftDeleted && (
+                                <button
+                                  onClick={() => setConfirmDeleteMsgId(msg.id)}
+                                  className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-rose-400 hover:text-rose-300"
+                                  title="Delete Message"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {/* Create Task Wizard */}
+                              <button
+                                onClick={() => handleOpenTaskWizard(msg)}
+                                className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-amber-400"
+                                title="Convert to Operational Task"
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                              </button>
+
+                            </div>
+
+                            {/* First Message Header in Group */}
+                            {isFirstInGroup ? (
+                              <div className="flex items-start gap-3">
+                                <Avatar src={msg.authorAvatar} name={msg.author} size="sm" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-black text-[var(--color-text)]">{msg.author}</span>
+                                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-[var(--color-surface-2)] text-[var(--color-text-muted)] border border-[var(--color-border)]/50">
+                                        {msg.role}
+                                      </span>
+                                      {msg.priority && msg.priority !== "normal" && escalationUI && (
+                                        <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${escalationUI.color}`}>
+                                          {escalationUI.label}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[10px] text-[var(--color-text-faint)]">
+                                      <span>{msg.time}</span>
+                                      {msg.status === 'sending' && (
+                                        <span className="text-[9px] text-amber-400 flex items-center gap-1 font-bold">
+                                          <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Sending...
+                                        </span>
+                                      )}
+                                      {msg.status === 'failed' && (
+                                        <button
+                                          onClick={() => handleRetryMessage(msg)}
+                                          className="text-[9px] text-rose-400 font-extrabold underline flex items-center gap-1"
+                                        >
+                                          <AlertCircle className="w-2.5 h-2.5" /> Failed (Retry)
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Editing Mode Input */}
+                                  {editingMsgId === msg.id ? (
+                                    <div className="mt-2 space-y-2">
+                                      <textarea
+                                        value={editContent}
+                                        onChange={(e) => setEditContent(e.target.value)}
+                                        className="w-full bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-2 text-xs text-[var(--color-text)] focus:outline-none"
+                                        rows={2}
+                                      />
+                                      <div className="flex items-center justify-end gap-2">
+                                        <button
+                                          onClick={() => setEditingMsgId(null)}
+                                          className="px-2.5 py-1 rounded-lg text-xs font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          onClick={handleSaveEdit}
+                                          disabled={isSavingEdit || !editContent.trim()}
+                                          className="px-3 py-1 rounded-lg bg-[var(--color-accent)] text-black text-xs font-black shadow-md hover:opacity-90"
+                                        >
+                                          Save
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    /* Message Content Text */
+                                    <div className="mt-1">
+                                      <p className={`text-xs whitespace-pre-wrap leading-relaxed ${isSoftDeleted ? 'italic text-[var(--color-text-faint)]' : 'text-[var(--color-text)]'}`}>
+                                        {renderHighlightedText(msg.text, searchQuery)}
+                                      </p>
+                                      {isEdited && !isSoftDeleted && (
+                                        <span className="text-[9px] text-[var(--color-text-faint)] italic ml-1">(edited)</span>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Client Link Tag */}
+                                  {msg.clientTag && !isSoftDeleted && (
+                                    <div className="mt-2 flex items-center gap-1">
+                                      <span
+                                        onClick={() => msg.clientId && onOpenClient(msg.clientId)}
+                                        className="text-[10px] font-extrabold text-[var(--color-accent)] bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 px-2 py-0.5 rounded-md cursor-pointer hover:underline flex items-center gap-1"
+                                      >
+                                        <Tag className="w-3 h-3" />
+                                        {msg.clientTag}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {/* Attachments */}
+                                  {msg.attachments && msg.attachments.length > 0 && !isSoftDeleted && (
+                                    <div className="mt-2.5 flex flex-wrap gap-2">
+                                      {msg.attachments.map((att: any, idx: number) => (
+                                        <div
+                                          key={idx}
+                                          onClick={() => handleDownloadAttachment(att, msg)}
+                                          className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-2 flex items-center gap-2 cursor-pointer hover:border-[var(--color-accent)]/50 transition-all text-xs"
+                                        >
+                                          <Paperclip className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                                          <div className="min-w-0">
+                                            <div className="font-bold text-[var(--color-text)] truncate max-w-[140px]">{att.name}</div>
+                                            <div className="text-[9px] text-[var(--color-text-faint)]">{att.size}</div>
+                                          </div>
+                                          <Download className="w-3 h-3 text-[var(--color-text-muted)] ml-1" />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Thread Reply Badge (Req 3) */}
+                                  {replyCount > 0 && (
+                                    <button
+                                      onClick={() => setActiveThreadParentMsg(msg)}
+                                      className="mt-2 flex items-center gap-1.5 text-[10.5px] font-extrabold text-[var(--color-accent)] bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 px-2.5 py-1 rounded-xl hover:bg-[var(--color-accent)]/20 transition-all"
+                                    >
+                                      <MessageSquare className="w-3 h-3" />
+                                      <span>{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
+                                      <ChevronRight className="w-3 h-3" />
+                                    </button>
+                                  )}
+
+                                </div>
+                              </div>
+                            ) : (
+                              /* Grouped Sub-Message (Req 6) */
+                              <div className="pl-11 min-w-0">
+                                {editingMsgId === msg.id ? (
+                                  <div className="space-y-2">
+                                    <textarea
+                                      value={editContent}
+                                      onChange={(e) => setEditContent(e.target.value)}
+                                      className="w-full bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-2 text-xs text-[var(--color-text)] focus:outline-none"
+                                      rows={2}
+                                    />
+                                    <div className="flex items-center justify-end gap-2">
+                                      <button onClick={() => setEditingMsgId(null)} className="px-2.5 py-1 rounded-lg text-xs font-bold text-[var(--color-text-muted)]">Cancel</button>
+                                      <button onClick={handleSaveEdit} className="px-3 py-1 rounded-lg bg-[var(--color-accent)] text-black text-xs font-black">Save</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-baseline justify-between group/sub">
+                                    <p className={`text-xs whitespace-pre-wrap ${isSoftDeleted ? 'italic text-[var(--color-text-faint)]' : 'text-[var(--color-text)]'}`}>
+                                      {renderHighlightedText(msg.text, searchQuery)}
+                                      {isEdited && !isSoftDeleted && <span className="text-[9px] text-[var(--color-text-faint)] italic ml-1">(edited)</span>}
+                                    </p>
+                                    <span className="text-[9px] text-[var(--color-text-faint)] opacity-0 group-hover/sub:opacity-100 transition-opacity ml-2 shrink-0">{msg.time}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                          </div>
+                        );
+                      })}
                     </div>
-                    <button 
-                      onClick={() => setShowAttachPresets(false)}
-                      className="text-[var(--color-text-faint)] hover:text-[var(--color-text)] text-xs font-bold px-1"
+                  );
+                })
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-[var(--color-text-faint)]">
+                  <MessageSquare className="w-10 h-10 mb-2 opacity-40" />
+                  <p className="text-xs font-bold">No messages matching criteria.</p>
+                </div>
+              )}
+
+            </div>
+
+            {/* Delete Confirmation Modal */}
+            {confirmDeleteMsgId && (
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-30">
+                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 max-w-sm w-full shadow-2xl text-left space-y-4">
+                  <div className="flex items-center gap-2 text-rose-400 font-black text-sm">
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete Message?</span>
+                  </div>
+                  <p className="text-xs text-[var(--color-text-muted)]">This will soft-delete the message while preserving thread context for teammates.</p>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => setConfirmDeleteMsgId(null)}
+                      className="px-3 py-1.5 rounded-xl border border-[var(--color-border)] text-xs font-bold text-[var(--color-text-muted)]"
                     >
-                      ✕
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleConfirmSoftDelete(confirmDeleteMsgId)}
+                      disabled={isDeletingMsg}
+                      className="px-4 py-1.5 rounded-xl bg-rose-500 text-white font-black text-xs shadow-md hover:bg-rose-600"
+                    >
+                      Delete
                     </button>
                   </div>
+                </div>
+              </div>
+            )}
 
-                  <p className="text-[10px] text-[var(--color-text-muted)] mb-3 leading-relaxed">
-                    Select mortgage documents directly from your computer to attach to this channel message.
-                  </p>
-
-                  {/* Primary File Chooser Button */}
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full py-2.5 px-3 bg-[var(--color-accent)] hover:brightness-110 text-black font-black text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm mb-2"
-                  >
-                    <Upload className="w-4 h-4 text-black" />
-                    <span>Choose Files from Computer</span>
-                  </button>
-
-                  {/* Drag and Drop Zone */}
-                  <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                        const dtFiles = Array.from(e.dataTransfer.files);
-                        const newItems = dtFiles.map((file: File) => ({
-                          name: file.name,
-                          size: formatFileSize(file.size),
-                          type: file.type || "application/pdf"
-                        }));
-                        setAttachedFiles(prev => {
-                          const existingNames = new Set(prev.map(f => f.name));
-                          const filtered = newItems.filter(f => !existingNames.has(f.name));
-                          return [...prev, ...filtered];
-                        });
-                        if (showToast) {
-                          showToast(`${dtFiles.length} file(s) attached from computer`, "success", "📎");
-                        }
-                        setShowAttachPresets(false);
-                      }
-                    }}
-                    className="border-2 border-dashed border-[var(--color-border)] hover:border-[var(--color-accent)]/60 bg-[var(--color-bg)]/40 hover:bg-[var(--color-bg)] rounded-xl p-2.5 text-center cursor-pointer transition-all"
-                  >
-                    <span className="text-[9.5px] text-[var(--color-text-faint)] block font-semibold">
-                      or drag & drop files here
-                    </span>
-                    <span className="text-[8.5px] text-[var(--color-text-faint)]/70 block mt-0.5 font-mono">
-                      PDF, PNG, JPG, DOCX, XLSX
-                    </span>
-                  </div>
-
-                  <div className="mt-2.5 pt-2 border-t border-[var(--color-border)]/50 text-[9px] text-[var(--color-text-faint)] font-medium leading-normal">
-                    💡 Common files: Paystubs, NOAs, Bank Ledgers, Appraisal Reports, Commitment Letters.
-                  </div>
+            {/* ============================================================== */}
+            {/* IMPROVED MESSAGE COMPOSER (Req 4) */}
+            {/* ============================================================== */}
+            <div className="p-3 border-t border-[var(--color-border)] bg-[var(--color-surface)]/60 flex flex-col gap-2 shrink-0">
+              
+              {/* Attached Files List */}
+              {attachedFiles.length > 0 && (
+                <div className="flex flex-wrap gap-2 pb-1 border-b border-[var(--color-border)]/40">
+                  {attachedFiles.map((file, idx) => (
+                    <div key={idx} className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-[11px] flex items-center gap-2">
+                      <Paperclip className="w-3 h-3 text-[var(--color-accent)]" />
+                      <span className="font-bold text-[var(--color-text)] truncate max-w-[120px]">{file.name}</span>
+                      <button onClick={() => setAttachedFiles(prev => prev.filter((_, i) => i !== idx))} className="text-[var(--color-text-muted)] hover:text-rose-400">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
+
+              {/* Main Textarea Form */}
+              <form onSubmit={handleSendMessage} className="space-y-2">
+                <div className="relative">
+                  <textarea
+                    rows={2}
+                    maxLength={2000}
+                    placeholder={`Message ${currentChannelDetails.name}... (Enter sends, Shift+Enter new line)`}
+                    value={msgInputText}
+                    onChange={(e) => setMsgInputText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    className="w-full bg-[var(--color-panel)] border border-[var(--color-border)] rounded-2xl p-3 pr-20 text-xs text-[var(--color-text)] placeholder-[var(--color-text-faint)] focus:outline-none focus:border-[var(--color-accent)]/50 transition-all resize-none"
+                  />
+
+                  {/* Character Counter & Action Buttons inside composer */}
+                  <div className="absolute right-3 bottom-3 flex items-center gap-2">
+                    <span className={`text-[9.5px] font-mono font-bold ${msgInputText.length > 1800 ? 'text-amber-400' : 'text-[var(--color-text-faint)]'}`}>
+                      {msgInputText.length}/2000
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-1.5 rounded-xl text-[var(--color-text-muted)] hover:text-[var(--color-accent)] hover:bg-[var(--color-surface-2)]"
+                      title="Attach documents"
+                    >
+                      <Paperclip className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={!msgInputText.trim() && attachedFiles.length === 0}
+                      className="p-2 rounded-xl bg-[var(--color-accent)] text-black font-black shadow-lg disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-all"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </form>
+
             </div>
 
           </div>
-
-        </div>
+        )}
 
       </div>
 
       {/* ============================================================== */}
-      {/* COLUMN 3: BIDIRECTIONAL MESSAGING-TASK CONVERSION WIZARD SIDEBAR */}
+      {/* BAR 3: EXPANDABLE THREAD PANEL / SIDEBAR (Req 3) */}
       {/* ============================================================== */}
-      {isTaskWizardOpen && wizardDraftTask && (
-        <div className="w-80 shrink-0 bg-[var(--color-surface)] p-4 flex flex-col h-full min-h-0 border-l border-[var(--color-border)]/70 select-none animate-slide-left">
+      {activeThreadParentMsg && (
+        <div className="w-80 shrink-0 border-l border-[var(--color-border)] bg-[var(--color-surface)]/80 flex flex-col h-full animate-slide-left z-20">
           
-          <div className="flex items-center justify-between border-b border-[var(--color-border)]/70 pb-3 mb-4">
-            <div>
-              <div className="text-[10px] text-[var(--color-accent)] font-black uppercase tracking-widest flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-[var(--color-accent)] animate-pulse" />
-                Tasking Pipeline Engine
-              </div>
-              <h3 className="text-xs font-black text-[var(--color-text)] mt-1">Message Escalation Wizard</h3>
+          {/* Thread Header */}
+          <div className="p-3.5 border-b border-[var(--color-border)] bg-[var(--color-panel)]/50 flex items-center justify-between">
+            <div className="flex items-center gap-2 font-black text-xs text-[var(--color-text)]">
+              <MessageSquare className="w-4 h-4 text-[var(--color-accent)]" />
+              <span>Thread Replies</span>
             </div>
-            <button 
-              onClick={() => {
-                setIsTaskWizardOpen(false);
-                setWizardDraftTask(null);
-              }}
-              className="text-[var(--color-text-faint)] hover:text-[var(--color-text)] p-1 rounded-lg"
+            <button
+              onClick={() => setActiveThreadParentMsg(null)}
+              className="p-1 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          <p className="text-[10.5px] text-[var(--color-text-faint)] leading-relaxed mb-4">
-            Convert custom brokerage discussions instantly into a tracked operational milestone for file accountability.
-          </p>
+          {/* Parent Message Card */}
+          <div className="p-3 border-b border-[var(--color-border)]/60 bg-[var(--color-panel)]/30 text-xs text-left">
+            <div className="flex items-center gap-2 mb-1">
+              <Avatar src={activeThreadParentMsg.authorAvatar} name={activeThreadParentMsg.author} size="sm" />
+              <div>
+                <div className="font-bold text-[var(--color-text)]">{activeThreadParentMsg.author}</div>
+                <div className="text-[9px] text-[var(--color-text-faint)]">{activeThreadParentMsg.time}</div>
+              </div>
+            </div>
+            <p className="text-[var(--color-text)]/90 mt-1 whitespace-pre-wrap">{activeThreadParentMsg.text}</p>
+          </div>
 
-          <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-            
-            {/* Task title input */}
-            <div>
-              <label className="text-[9.5px] uppercase text-[var(--color-text-faint)] font-extrabold tracking-wider block mb-1.5">Action Milestone Description</label>
-              <textarea
-                value={wizardDraftTask.title}
-                onChange={(e) => setWizardDraftTask({ ...wizardDraftTask, title: e.target.value })}
-                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-xl p-2.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/20 font-semibold"
-                rows={2}
+          {/* Thread Replies List */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-3 text-left">
+            {(activeThreadParentMsg.replies && activeThreadParentMsg.replies.length > 0) ? (
+              activeThreadParentMsg.replies.map(rep => (
+                <div key={rep.id} className="bg-[var(--color-bg)]/80 border border-[var(--color-border)]/60 rounded-xl p-2.5 text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-extrabold text-[var(--color-text)]">{rep.author}</span>
+                    <span className="text-[9px] text-[var(--color-text-faint)]">{rep.time}</span>
+                  </div>
+                  <p className="text-[var(--color-text)]/90 whitespace-pre-wrap">{rep.text}</p>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8 text-[var(--color-text-faint)] text-xs">
+                <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p>No replies yet in this thread.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Thread Composer */}
+          <div className="p-3 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
+            <form onSubmit={(e) => { e.preventDefault(); handleSendThreadReply(); }} className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Reply to thread..."
+                value={threadReplyInput}
+                onChange={(e) => setThreadReplyInput(e.target.value)}
+                className="flex-1 bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl px-3 py-1.5 text-xs text-[var(--color-text)] focus:outline-none"
               />
-            </div>
-
-            {/* CRM Client target */}
-            <div>
-              <label className="text-[9.5px] uppercase text-[var(--color-text-faint)] font-extrabold tracking-wider block mb-1.5">Client File Context</label>
-              <select
-                value={wizardDraftTask.clientId}
-                onChange={(e) => setWizardDraftTask({ ...wizardDraftTask, clientId: e.target.value })}
-                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-xl px-2.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/20 font-bold"
+              <button
+                type="submit"
+                disabled={!threadReplyInput.trim()}
+                className="px-3 py-1.5 rounded-xl bg-[var(--color-accent)] text-black font-black text-xs disabled:opacity-40"
               >
-                <option value="">-- No active client tie --</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>{c.first} {c.last}</option>
-                ))}
-              </select>
+                Reply
+              </button>
+            </form>
+          </div>
+
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* TASK CONVERSION WIZARD SIDEBAR MODAL */}
+      {/* ============================================================== */}
+      {isTaskWizardOpen && wizardDraftTask && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-40 select-text">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 max-w-md w-full shadow-2xl text-left space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
+              <div className="flex items-center gap-2 font-black text-sm text-[var(--color-accent)]">
+                <Sparkles className="w-4 h-4 animate-pulse" />
+                <span>Escalate Message to Task</span>
+              </div>
+              <button onClick={() => setIsTaskWizardOpen(false)} className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Task Category */}
-            <div>
-              <label className="text-[9.5px] uppercase text-[var(--color-text-faint)] font-extrabold tracking-wider block mb-1.5">Organizational Category</label>
-              <select
-                value={wizardDraftTask.category}
-                onChange={(e) => setWizardDraftTask({ ...wizardDraftTask, category: e.target.value })}
-                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-xl px-2.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/20 font-bold"
-              >
-                <option value="Client Follow-up">Client Follow-up</option>
-                <option value="Document Collection">Document Collection</option>
-                <option value="Lender Follow-up">Lender Follow-up</option>
-                <option value="Underwriting Review">Underwriting Review</option>
-                <option value="Compliance">Compliance Check</option>
-                <option value="Appointment">Scheduling</option>
-                <option value="Internal Admin">Internal Admin</option>
-                <option value="Renewal">Renewal Tracker</option>
-                <option value="Retention">Retention Outreach</option>
-              </select>
-            </div>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-[var(--color-text-muted)] block mb-1">Task Title</label>
+                <input
+                  type="text"
+                  value={wizardDraftTask.title}
+                  onChange={(e) => setWizardDraftTask({ ...wizardDraftTask, title: e.target.value })}
+                  className="w-full bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-2 text-xs text-[var(--color-text)] focus:outline-none font-bold"
+                />
+              </div>
 
-            {/* Assigned person */}
-            <div>
-              <label className="text-[9.5px] uppercase text-[var(--color-text-faint)] font-extrabold tracking-wider block mb-1.5">Assign Responsibility</label>
-              <select
-                value={wizardDraftTask.assignedTo}
-                onChange={(e) => setWizardDraftTask({ ...wizardDraftTask, assignedTo: e.target.value })}
-                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-xl px-2.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/20 font-bold"
-              >
-                {userRoster && userRoster.length > 0 ? (
-                  userRoster.map(u => (
-                    <option key={u.id} value={`${u.first} ${u.last}`}>{u.first} {u.last} ({u.role})</option>
-                  ))
-                ) : (
-                  <>
-                    <option value="David Acosta">David Acosta (Me)</option>
-                    <option value="Jeff Brown">Jeff Brown (Admin Assistant)</option>
-                    <option value="Wayne MacLeod">Wayne MacLeod (Senior Broker)</option>
-                    <option value="Sarah Chen">Sarah Chen (Compliance Auditor)</option>
-                    <option value="Tim Brown">Tim Brown (Broker Principal)</option>
-                  </>
-                )}
-              </select>
-            </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-[var(--color-text-muted)] block mb-1">Category</label>
+                  <select
+                    value={wizardDraftTask.category}
+                    onChange={(e) => setWizardDraftTask({ ...wizardDraftTask, category: e.target.value })}
+                    className="w-full bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-2 text-xs text-[var(--color-text)] focus:outline-none"
+                  >
+                    <option value="Client Follow-up">Client Follow-up</option>
+                    <option value="Underwriting Review">Underwriting Review</option>
+                    <option value="Lender Follow-up">Lender Follow-up</option>
+                    <option value="Document Collection">Document Collection</option>
+                    <option value="Compliance">Compliance</option>
+                  </select>
+                </div>
 
-            {/* Risk priority level */}
-            <div>
-              <label className="text-[9.5px] uppercase text-[var(--color-text-faint)] font-extrabold tracking-wider block mb-1.5">Risk Level Urgency</label>
-              <div className="grid grid-cols-4 gap-1.5">
-                {(["urgent", "high", "medium", "low"] as const).map(prio => {
-                  const isSelect = wizardDraftTask.priority === prio;
-                  const prioGradients: Record<string, string> = {
-                    urgent: "linear-gradient(135deg, #FF416C 0%, #FFB347 100%)",
-                    high:   "linear-gradient(135deg, #FF00CC 0%, #3333FF 100%)",
-                    medium: "linear-gradient(135deg, #FF8800 0%, #FCEE21 100%)",
-                    low:    "linear-gradient(135deg, #56AB2F 0%, #A8E063 100%)"
-                  };
-                  return (
-                    <button
-                      key={prio}
-                      type="button"
-                      onClick={() => setWizardDraftTask({ ...wizardDraftTask, priority: prio })}
-                      className="py-1.5 text-[10px] font-black uppercase rounded-lg border transition-all cursor-pointer"
-                      style={isSelect ? {
-                        background: prioGradients[prio],
-                        color: prio === "medium" ? "#1a1200" : "white",
-                        borderColor: "transparent",
-                        boxShadow: "0 0 10px rgba(0,0,0,0.2)"
-                      } : {
-                        background: "var(--color-surface-2)",
-                        color: "var(--color-text-faint)",
-                        border: "1px solid var(--color-border)"
-                      }}
-                    >
-                      {prio}
-                    </button>
-                  );
-                })}
+                <div>
+                  <label className="font-bold text-[var(--color-text-muted)] block mb-1">Assignee</label>
+                  <select
+                    value={wizardDraftTask.assignedTo}
+                    onChange={(e) => setWizardDraftTask({ ...wizardDraftTask, assignedTo: e.target.value })}
+                    className="w-full bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-2 text-xs text-[var(--color-text)] focus:outline-none"
+                  >
+                    {chatRoster.map(r => (
+                      <option key={r.id} value={r.name}>{r.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-[var(--color-text-muted)] block mb-1">Task Notes</label>
+                <textarea
+                  rows={3}
+                  value={wizardDraftTask.notes}
+                  onChange={(e) => setWizardDraftTask({ ...wizardDraftTask, notes: e.target.value })}
+                  className="w-full bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-2 text-xs text-[var(--color-text)] focus:outline-none"
+                />
               </div>
             </div>
 
-            {/* Scheduling DueDate */}
-            <div>
-              <label className="text-[9.5px] uppercase text-[var(--color-text-faint)] font-extrabold tracking-wider block mb-1.5">Schedules Due Date</label>
-              <input
-                type="date"
-                value={wizardDraftTask.dueDate}
-                onChange={(e) => setWizardDraftTask({ ...wizardDraftTask, dueDate: e.target.value })}
-                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-xl px-2.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/20 font-bold"
-              />
+            <div className="flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-3">
+              <button
+                onClick={() => setIsTaskWizardOpen(false)}
+                className="px-3 py-1.5 rounded-xl border border-[var(--color-border)] text-xs font-bold text-[var(--color-text-muted)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCommitWizardTask}
+                className="px-4 py-1.5 rounded-xl bg-[var(--color-accent)] text-black font-black text-xs shadow-md hover:opacity-90"
+              >
+                Generate Operational Task
+              </button>
             </div>
-
-            {/* Custom Notes */}
-            <div>
-              <label className="text-[9.5px] uppercase text-[var(--color-text-faint)] font-extrabold tracking-wider block mb-1.5">Internal Trail Context Notes</label>
-              <textarea
-                value={wizardDraftTask.notes}
-                onChange={(e) => setWizardDraftTask({ ...wizardDraftTask, notes: e.target.value })}
-                className="w-full bg-[var(--color-panel)] border border-[var(--color-border)]/70 rounded-xl p-2.5 text-[11px] text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-accent)]/10 leading-relaxed font-semibold h-24"
-              />
-            </div>
-
           </div>
-
-          <div className="border-t border-[var(--color-border)]/70 pt-3 mt-3 shrink-0">
-            <button
-              onClick={handleCommitWizardTask}
-              className="w-full py-2.5 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-lg select-none hover:brightness-110 cursor-pointer"
-              style={{
-                background: "linear-gradient(135deg, #6A11C8 0%, #FF758C 100%)",
-                boxShadow: "0 0 16px rgba(106, 17, 200, 0.3)"
-              }}
-            >
-              <span>Add to Workflow Pipeline</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
         </div>
       )}
 

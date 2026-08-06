@@ -280,22 +280,25 @@ export interface ClearanceMatrix {
 export interface User {
   id: string;
   name?: string;
+  fullName?: string;
   first: string;
   last: string;
   email: string;
   role: 'Developer/Admin' | 'Admin' | 'Broker' | 'Agent' | 'Assistant' | string;
-  status: 'active' | 'inactive' | 'pending' | 'Active' | 'Inactive' | 'Pending';
+  status: 'active' | 'inactive' | 'pending' | 'Active' | 'Inactive' | 'Pending' | string;
   brokerage?: string;
   licenseNumber?: string;
   phone?: string;
   photo?: string | null;
   profilePhoto?: string | null;
+  profilePhotoUrl?: string | null;
   pin?: string;
   pinHash?: string;
   lastLogin: string;
   lastActive?: string;
   created: string;
   createdAt?: string;
+  updatedAt?: string;
   isOwner?: boolean;
   fsraNum?: string;
   fsraExpiry?: string;
@@ -353,4 +356,82 @@ export interface Shortcut {
   category: ShortcutCategory;
   actionName?: string;
 }
+
+export interface MessageAttachment {
+  name: string;
+  size: string;
+  type: string;
+  url?: string;
+}
+
+export interface Message {
+  id: string;
+  channelId?: string;
+  senderId?: string;
+  authorId?: string;
+  author: string;
+  authorName?: string;
+  authorAvatar?: string;
+  initials?: string;
+  role: string;
+  senderChatColor?: string;
+  content?: string;
+  text: string;
+  time: string;
+  date: string;
+  createdAt?: string;
+  editedAt?: string;
+  deletedAt?: string;
+  deletedBy?: string;
+  replyToId?: string;
+  replies?: Message[];
+  replyCount?: number;
+  threadId?: string;
+  status?: 'sending' | 'sent' | 'failed';
+  clientTag?: string;
+  clientId?: string;
+  priority?: "urgent" | "blocked" | "lender_pending" | "client_pending" | "compliance" | "normal";
+  pinned?: boolean;
+  attachments?: MessageAttachment[];
+  mentions?: string[];
+  readBy?: string[];
+  reactions?: Record<string, string[]>;
+}
+
+export interface ChannelInfo {
+  id: string;
+  name: string;
+  description?: string;
+  isFavorite?: boolean;
+  isArchived?: boolean;
+  lastMessage?: string;
+  lastActivityAt?: string;
+  unreadCount?: number;
+  role?: string;
+  status?: string;
+  statusLabel?: string;
+  color?: string;
+  chatColor?: string;
+  avatar?: string | null;
+}
+
+export interface SavedMessage {
+  id: string;
+  messageId: string;
+  channelId: string;
+  userId: string;
+  savedAt: string;
+}
+
+export type MessageAction = 'edit' | 'delete' | 'save' | 'unsave' | 'reply';
+
+export interface MessagePermission {
+  canAccess?: boolean;
+  canSend?: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canSave: boolean;
+  canViewAttachment?: boolean;
+}
+
 

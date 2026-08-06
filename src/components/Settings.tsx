@@ -23,6 +23,8 @@ import {
   UpdateCheckResult 
 } from "../lib/updateChecker";
 import { electronUpdater } from "../lib/electronUpdater";
+import { dispatchUserEvent } from "../lib/userUtils";
+import { updateUserProfile } from "../lib/api";
 import { 
   MAJOR_TIMEZONES, 
   DATE_FORMAT_OPTIONS, 
@@ -73,6 +75,75 @@ export const Settings: React.FC<SettingsProps> = ({
   const [isCheckingUp, setIsCheckingUp] = useState<boolean>(false);
   const [upDownloadProgress, setUpDownloadProgress] = useState<number>(0);
   const [isDownloadingUp, setIsDownloadingUp] = useState<boolean>(false);
+
+  // System Broadcast Banners / Notifications state inside Settings
+  const [broadcastBanners, setBroadcastBanners] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem("gbk_admin_broadcasts");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [
+      {
+        id: "broad_1",
+        sender: "David Acosta",
+        senderRole: "Developer/Admin",
+        message: "⚠️ Attention Brokers: Please verify that all FSRA Ontario Licence registrations are fully uploaded to your profile vaults before tomorrow's audit cutoff.",
+        type: "critical",
+        timestamp: new Date(Date.now() - 3600000).toISOString(),
+        active: true
+      },
+      {
+        id: "broad_2",
+        sender: "Tim Brown",
+        senderRole: "Admin",
+        message: "Rate Sheet Update: TD Canada Trust has updated their 5-Year Fixed benchmark rates. Check Lender Sheets for compliance margins.",
+        type: "info",
+        timestamp: new Date(Date.now() - 7200000).toISOString(),
+        active: true
+      }
+    ];
+  });
+
+  useEffect(() => {
+    checkForUpdates().then((res) => {
+      setUpCheckResult(res);
+    });
+  }, []);
+
+  const handleDismissBroadcast = (id: string) => {
+    setBroadcastBanners(prev => {
+      const updated = prev.map(b => b.id === id ? { ...b, active: false } : b);
+      try { localStorage.setItem("gbk_admin_broadcasts", JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    showToast("Notification dismissed", "info");
+  };
+
+  const handleResetBroadcasts = () => {
+    const defaults = [
+      {
+        id: "broad_1",
+        sender: "David Acosta",
+        senderRole: "Developer/Admin",
+        message: "⚠️ Attention Brokers: Please verify that all FSRA Ontario Licence registrations are fully uploaded to your profile vaults before tomorrow's audit cutoff.",
+        type: "critical",
+        timestamp: new Date().toISOString(),
+        active: true
+      },
+      {
+        id: "broad_2",
+        sender: "Tim Brown",
+        senderRole: "Admin",
+        message: "Rate Sheet Update: TD Canada Trust has updated their 5-Year Fixed benchmark rates. Check Lender Sheets for compliance margins.",
+        type: "info",
+        timestamp: new Date().toISOString(),
+        active: true
+      }
+    ];
+    setBroadcastBanners(defaults);
+    try { localStorage.setItem("gbk_admin_broadcasts", JSON.stringify(defaults)); } catch {}
+    showToast("Sample system notifications restored", "info");
+  };
 
   const handleUpdateSettingChange = <K extends keyof UpdateSettings>(key: K, value: UpdateSettings[K]) => {
     const updated = { ...upSettings, [key]: value };
@@ -339,24 +410,32 @@ export const Settings: React.FC<SettingsProps> = ({
   };
 
   // Handle Profile Save
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profileFirst || !profileLast || !profileEmail) {
       showToast("First name, last name, and email address are required.", "error");
       return;
     }
 
+    const timestamp = new Date().toISOString();
+    const photoUrl = profilePhoto || null;
+
     const updatedUser: User = {
       ...currentUser,
       first: profileFirst,
       last: profileLast,
-      displayName: profileDisplayName,
+      name: `${profileFirst} ${profileLast}`.trim(),
+      fullName: `${profileFirst} ${profileLast}`.trim(),
+      displayName: profileDisplayName || `${profileFirst} ${profileLast}`.trim(),
       email: profileEmail,
       phone: profilePhone || undefined,
-      photo: profilePhoto || null,
+      photo: photoUrl,
+      profilePhoto: photoUrl,
+      profilePhotoUrl: photoUrl,
       jobTitle: profileJobTitle,
       fsraNum: profileFsra || undefined,
-      eoPolicy: profileEoPolicy || undefined
+      eoPolicy: profileEoPolicy || undefined,
+      updatedAt: timestamp
     };
 
     // Update active user state
@@ -366,6 +445,19 @@ export const Settings: React.FC<SettingsProps> = ({
     const updatedRoster = userRoster.map(u => u.id === currentUser.id ? updatedUser : u);
     setUserRoster(updatedRoster);
     localStorage.setItem("gbk_roster", JSON.stringify(updatedRoster));
+
+    // Try API sync
+    try {
+      await updateUserProfile(currentUser.id, updatedUser);
+    } catch (e) {
+      // silent fallback to local storage
+    }
+
+    // Dispatch real-time events
+    dispatchUserEvent("user.updated", { user: updatedUser, userId: currentUser.id });
+    if (photoUrl !== currentUser.photo) {
+      dispatchUserEvent("user.profilePhotoUpdated", { user: updatedUser, userId: currentUser.id, photoUrl });
+    }
 
     showToast("Personal profile updated successfully!", "success", "👤");
   };
@@ -1127,60 +1219,201 @@ export const Settings: React.FC<SettingsProps> = ({
 
           {/* TAB 2: NOTIFICATIONS */}
           {activeTab === "notifications" && (
-            <div className="max-w-2xl space-y-6">
+            <div className="max-w-4xl space-y-6 animate-in fade-in duration-200">
               
-              {/* Active System Status Card */}
-              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-xl shadow-sm space-y-4">
-                <div>
-                  <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider mb-1 flex items-center gap-2">
-                    <Info className="w-4 h-4 text-[var(--color-accent)]" /> System Alerts &amp; Connection Status
-                  </h3>
-                  <p className="text-[11px] text-[var(--color-text-muted)]">Real-time status updates and storage connection alerts.</p>
+              {/* Header */}
+              <div>
+                <h2 className="text-lg font-bold text-[var(--color-text)] flex items-center gap-2">
+                  <Bell className="w-5 h-5 text-[var(--color-accent)]" /> Notifications &amp; System Alerts Center
+                </h2>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                  View software update notifications, active broadcast announcements, system alerts, and manage automated notification preferences.
+                </p>
+              </div>
+
+              {/* SECTION 1: SOFTWARE UPDATE NOTIFICATIONS */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-2xl shadow-sm space-y-5">
+                <div className="flex items-center justify-between border-b border-[var(--color-border)]/70 pb-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" /> Software Updates &amp; Release Center
+                    </h3>
+                    <p className="text-[11px] text-[var(--color-text-muted)]">Check for version releases and manage background application update notifications.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCheckUpdatesNow}
+                    disabled={isCheckingUp}
+                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUp ? "animate-spin" : ""}`} />
+                    {isCheckingUp ? "Checking..." : "Check for Updates"}
+                  </button>
+                </div>
+
+                {/* Software Update Card (If Update Available) */}
+                {upCheckResult?.hasUpdate && upCheckResult.manifest ? (
+                  <div className="p-5 bg-gradient-to-r from-blue-950/40 via-indigo-950/30 to-purple-950/30 border border-blue-500/40 rounded-xl space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 bg-amber-400 text-slate-950 font-black text-[10px] rounded-full uppercase tracking-wide">
+                          Update Available: v{upCheckResult.manifest.latestVersion}
+                        </span>
+                        <span className="text-xs font-semibold text-blue-300">
+                          Released {upCheckResult.manifest.releaseDate}
+                        </span>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-amber-300">
+                        {upCheckResult.manifest.fileSizeMB} MB
+                      </span>
+                    </div>
+
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Release Summary</h4>
+                      <p className="text-xs text-blue-100 leading-relaxed">
+                        {upCheckResult.manifest.releaseNotes}
+                      </p>
+                    </div>
+
+                    <div>
+                      <h4 className="text-xs font-bold text-blue-200 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <ArrowUpCircle className="w-3.5 h-3.5 text-emerald-400" /> What&apos;s New in v{upCheckResult.manifest.latestVersion}
+                      </h4>
+                      <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {upCheckResult.manifest.changelog.map((item, idx) => (
+                          <li key={idx} className="text-xs text-slate-200 flex items-start gap-2 bg-white/5 p-2 rounded-lg border border-white/10">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-1.5 shrink-0" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {isDownloadingUp && (
+                      <div className="space-y-1.5 pt-2">
+                        <div className="flex justify-between text-xs text-blue-300 font-bold">
+                          <span>Downloading Update Installer Package...</span>
+                          <span>{upDownloadProgress}%</span>
+                        </div>
+                        <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-150 rounded-full"
+                            style={{ width: `${upDownloadProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="pt-2 flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleManualDownloadUpdate}
+                        disabled={isDownloadingUp}
+                        className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs transition flex items-center gap-2 cursor-pointer shadow-md"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        {isDownloadingUp ? `Downloading (${upDownloadProgress}%)` : "Download & Install (.exe)"}
+                      </button>
+                      <a
+                        href={upCheckResult.manifest.downloadUrl.exe}
+                        download
+                        className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl text-xs transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        Direct Download Link <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-[var(--color-surface-2)]/60 border border-[var(--color-border)] rounded-xl flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                      <div>
+                        <div className="font-bold text-[var(--color-text)]">GBK CRM is up to date (v{CURRENT_APP_VERSION})</div>
+                        <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                          Installed on Stable Channel. Last checked: {upSettings.lastChecked ? new Date(upSettings.lastChecked).toLocaleString() : "Just now"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION 2: SYSTEM BROADCASTS & ANNOUNCEMENTS */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-2xl shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-[var(--color-border)]/70 pb-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
+                      <ShieldAlert className="w-4 h-4 text-amber-500" /> Active System Broadcasts &amp; Alerts
+                    </h3>
+                    <p className="text-[11px] text-[var(--color-text-muted)]">Broadcasting alerts sent by system administrators.</p>
+                  </div>
+                  {broadcastBanners.some(b => !b.active) && (
+                    <button
+                      type="button"
+                      onClick={handleResetBroadcasts}
+                      className="px-3 py-1 bg-[var(--color-surface-2)] hover:bg-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] font-semibold rounded-lg text-xs transition cursor-pointer"
+                    >
+                      Reset System Notifications
+                    </button>
+                  )}
                 </div>
 
                 <div className="space-y-3">
-                  {!bridgeOnline ? (
-                    <div 
-                      className="p-4 rounded-lg border flex items-start gap-3 select-none bg-[var(--color-error-subtle)]"
-                      style={{ borderColor: "rgba(224,92,110,0.35)" }}
-                    >
-                      <div className="text-xl shrink-0 mt-0.5">🔌</div>
-                      <div className="space-y-1">
-                        <span className="text-xs font-extrabold text-[var(--color-error)] uppercase tracking-wider block">
-                          Z Drive Storage Notice
-                        </span>
-                        <span className="text-[11px] text-[var(--color-text)] font-semibold block leading-normal">
-                          Z Drive Offline — Operating in local sandbox storage mode. All changes automatically sync when the bridge reconnects.
-                        </span>
-                      </div>
-                    </div>
+                  {broadcastBanners.filter(b => b.active).length > 0 ? (
+                    broadcastBanners.filter(b => b.active).map((banner) => {
+                      const isCritical = banner.type === "critical";
+                      const isWarning = banner.type === "warning";
+
+                      return (
+                        <div 
+                          key={banner.id}
+                          className={`p-4 rounded-xl border flex items-start justify-between gap-4 transition-all ${
+                            isCritical 
+                              ? "bg-red-950/20 border-red-500/30 text-red-200" 
+                              : isWarning 
+                                ? "bg-amber-950/20 border-amber-500/30 text-amber-200" 
+                                : "bg-blue-950/20 border-blue-500/30 text-blue-200"
+                          }`}
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                                isCritical ? "bg-red-500/20 text-red-400 border border-red-500/30" : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                              }`}>
+                                {banner.type} broadcast
+                              </span>
+                              <span className="text-[10px] text-[var(--color-text-muted)]">
+                                {banner.sender} ({banner.senderRole}) • {new Date(banner.timestamp).toLocaleString()}
+                              </span>
+                            </div>
+                            <p className="text-xs font-medium text-[var(--color-text)] leading-relaxed pt-1">
+                              {banner.message}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDismissBroadcast(banner.id)}
+                            className="p-1.5 rounded-lg bg-[var(--color-surface-2)] hover:bg-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition cursor-pointer shrink-0"
+                            title="Dismiss notification"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })
                   ) : (
-                    <div 
-                      className="p-4 rounded-lg border flex items-start gap-3 select-none"
-                      style={{
-                        background: "rgba(16,185,129,0.06)",
-                        borderColor: "rgba(16,185,129,0.3)",
-                      }}
-                    >
-                      <div className="text-xl shrink-0 mt-0.5 text-emerald-500">🟢</div>
-                      <div className="space-y-1">
-                        <span className="text-xs font-extrabold text-emerald-500 uppercase tracking-wider block">
-                          Z Drive Operational
-                        </span>
-                        <span className="text-[11px] text-[var(--color-text)] font-semibold block leading-normal">
-                          All connection nodes active. Local storage bridge is synchronized and operational.
-                        </span>
-                      </div>
+                    <div className="p-4 bg-[var(--color-surface-2)]/40 border border-[var(--color-border)]/60 rounded-xl text-center text-xs text-[var(--color-text-muted)]">
+                      No active system announcements at this time.
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Notification Preferences */}
-              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-xl shadow-sm space-y-6">
+              {/* SECTION 3: AUTOMATED NOTIFICATION TRIGGERS */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-2xl shadow-sm space-y-6">
                 <div>
                   <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider mb-1 flex items-center gap-2">
-                    <Bell className="w-4 h-4 text-[var(--color-accent)]" /> Notification Triggers
+                    <Bell className="w-4 h-4 text-[var(--color-accent)]" /> Notification Triggers &amp; Preferences
                   </h3>
                   <p className="text-[11px] text-[var(--color-text-muted)]">Choose which automated alerts and activity notifications you wish to receive.</p>
                 </div>
@@ -1254,6 +1487,54 @@ export const Settings: React.FC<SettingsProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* SECTION 4: SYSTEM ALERT CONNECTION STATUS */}
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-2xl shadow-sm space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider mb-1 flex items-center gap-2">
+                    <Info className="w-4 h-4 text-[var(--color-accent)]" /> Storage Connection Alert Status
+                  </h3>
+                  <p className="text-[11px] text-[var(--color-text-muted)]">Real-time status updates and storage connection alerts.</p>
+                </div>
+
+                <div className="space-y-3">
+                  {!bridgeOnline ? (
+                    <div 
+                      className="p-4 rounded-lg border flex items-start gap-3 select-none bg-[var(--color-error-subtle)]"
+                      style={{ borderColor: "rgba(224,92,110,0.35)" }}
+                    >
+                      <div className="text-xl shrink-0 mt-0.5">🔌</div>
+                      <div className="space-y-1">
+                        <span className="text-xs font-extrabold text-[var(--color-error)] uppercase tracking-wider block">
+                          Z Drive Storage Notice
+                        </span>
+                        <span className="text-[11px] text-[var(--color-text)] font-semibold block leading-normal">
+                          Z Drive Offline — Operating in local sandbox storage mode. All changes automatically sync when the bridge reconnects.
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div 
+                      className="p-4 rounded-lg border flex items-start gap-3 select-none"
+                      style={{
+                        background: "rgba(16,185,129,0.06)",
+                        borderColor: "rgba(16,185,129,0.3)",
+                      }}
+                    >
+                      <div className="text-xl shrink-0 mt-0.5 text-emerald-500">🟢</div>
+                      <div className="space-y-1">
+                        <span className="text-xs font-extrabold text-emerald-500 uppercase tracking-wider block">
+                          Z Drive Operational
+                        </span>
+                        <span className="text-[11px] text-[var(--color-text)] font-semibold block leading-normal">
+                          All connection nodes active. Local storage bridge is synchronized and operational.
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
             </div>
           )}
 

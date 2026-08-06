@@ -1155,55 +1155,7 @@ export default function App() {
           </div>
         </header>
 
-        {/* Active System Broadcast Banners */}
-        {broadcastBanners.filter(b => b.active).map((banner) => {
-          const isCritical = banner.type === "critical";
-          const isWarning = banner.type === "warning";
-          const colorClass = isCritical 
-            ? "text-[var(--color-error)]" 
-            : isWarning 
-              ? "text-[var(--color-warning)]" 
-              : "text-[var(--color-success)]";
-          const bgVal = isCritical 
-            ? "var(--color-error-subtle)" 
-            : isWarning 
-              ? "var(--color-warning-subtle)" 
-              : "var(--color-success-subtle)";
-          const borderVal = "var(--color-border)";
-          
-          return (
-            <div 
-              key={banner.id} 
-              className="px-6 py-2.5 text-[10px] flex items-center justify-between gap-4 border-b shrink-0 font-bold uppercase tracking-wider select-none"
-              style={{
-                background: bgVal,
-                borderColor: borderVal,
-                backdropFilter: "blur(12px)",
-                WebkitBackdropFilter: "blur(12px)"
-              }}
-            >
-              <div className={`flex items-center gap-2 truncate ${colorClass}`}>
-                {isCritical ? (
-                  <ShieldAlert className="w-4 h-4 shrink-0" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4 shrink-0" />
-                )}
-                <span className="truncate">
-                  <strong className="mr-1.5 font-black">[{banner.type} broadcast]:</strong>
-                  <span className="text-[var(--color-text)] normal-case font-semibold">{banner.message}</span>
-                </span>
-              </div>
-              <button 
-                onClick={() => {
-                  setBroadcastBanners(prev => prev.map(b => b.id === banner.id ? { ...b, active: false } : b));
-                }}
-                className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] border border-[var(--color-border)] shrink-0 font-black px-2.5 py-1 rounded-full transition-all text-[8px] tracking-widest cursor-pointer"
-              >
-                ✕ Dismiss
-              </button>
-            </div>
-          );
-        })}
+        {/* System broadcasts and notifications moved into Settings -> Notifications section */}
 
         {/* Tab content viewer area */}
         <main className="flex-1 overflow-hidden p-6 relative">

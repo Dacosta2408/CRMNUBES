@@ -22,16 +22,11 @@ export const UpdateNotification: React.FC = () => {
   const [isReadyToInstall, setIsReadyToInstall] = useState<boolean>(false);
 
   useEffect(() => {
-    // Initial silent check on component mount
+    // Initial check on component mount without forcing modal popup on dashboard open
     checkForUpdates().then((res) => {
       setCheckResult(res);
-      if (res.hasUpdate) {
-        setIsOpen(true);
-        const settings = getUpdateSettings();
-        if (settings.autoDownload) {
-          handleStartDownload(res.manifest);
-        }
-      }
+      // Notifications are now accessed via Settings -> Notifications
+      setIsOpen(false);
     });
 
     // Subscribe to electron updater status

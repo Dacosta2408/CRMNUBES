@@ -22,6 +22,36 @@ export const crmController = {
     res.json(users);
   },
 
+  async getActiveUsers(req: Request, res: Response) {
+    const users = await dbService.getUsers();
+    const active = users.filter((u: any) => {
+      const st = (u.status || u.account_status || '').toLowerCase();
+      return st === 'active' || st === 'online';
+    });
+    res.json(active);
+  },
+
+  async getUserById(req: Request, res: Response) {
+    const { id } = req.params;
+    const users = await dbService.getUsers();
+    const found = users.find((u: any) => u.id === id);
+    if (!found) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    res.json(found);
+  },
+
+  async createUser(req: Request, res: Response) {
+    const newUser = req.body;
+    res.status(201).json(newUser);
+  },
+
+  async updateUser(req: Request, res: Response) {
+    const { id } = req.params;
+    const updated = { ...req.body, id, updatedAt: new Date().toISOString() };
+    res.json(updated);
+  },
+
   // USER SETTINGS
   async getUserSettings(req: Request, res: Response) {
     const { userId } = req.params;

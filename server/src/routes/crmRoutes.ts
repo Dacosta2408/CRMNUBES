@@ -9,6 +9,10 @@ crmRouter.get("/health", asyncHandler(crmController.getHealth));
 
 // Users
 crmRouter.get("/users", asyncHandler(crmController.getUsers));
+crmRouter.get("/users/active", asyncHandler(crmController.getActiveUsers));
+crmRouter.get("/users/:id", asyncHandler(crmController.getUserById));
+crmRouter.post("/users", asyncHandler(crmController.createUser));
+crmRouter.put("/users/:id", asyncHandler(crmController.updateUser));
 
 // Settings
 crmRouter.get("/settings/:userId", asyncHandler(crmController.getUserSettings));

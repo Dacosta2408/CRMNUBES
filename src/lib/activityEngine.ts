@@ -51,8 +51,9 @@ export interface FileFollowUp {
 
 export interface ActivityEvent {
   id: string;
-  clientId: string;
-  clientName: string;
+  clientId?: string;
+  clientName?: string;
+  action?: string;
   eventType: 
     | 'stage_change' 
     | 'note_added' 
@@ -67,7 +68,15 @@ export interface ActivityEvent {
     | 'broker_assigned'
     | 'compliance_flagged'
     | 'client_created'
-    | 'client_updated';
+    | 'client_updated'
+    | 'message_created'
+    | 'message_edited'
+    | 'message_deleted'
+    | 'message_saved'
+    | 'message_unsaved'
+    | 'message_attachment_downloaded'
+    | 'channel_access_changed'
+    | 'channel_accessed';
   user: string;
   timestamp: string; // ISO format
   description: string;
