@@ -91,6 +91,10 @@ export interface Client {
     seAverage?: number;
     notes?: string;
   };
+  closingDate?: string;
+  notes?: string;
+  stage?: string;
+  rate?: string | number;
 }
 
 export interface Note {
@@ -125,6 +129,9 @@ export interface Event {
   clientId?: string | null;
   notes?: string;
   createdBy: string;
+  status?: string;
+  isPrivate?: boolean;
+  duration?: number;
 }
 
 export interface Email {
@@ -196,6 +203,7 @@ export interface Partner {
   nextTouchDate?: string;
   healthScore?: number; // 0-100 score
   timeline?: PartnerTimelineEntry[];
+  isPreferred?: boolean;
 }
 
 export interface Post {
@@ -227,19 +235,67 @@ export interface Lender {
   notes?: string;
 }
 
+export type PermissionLevel = 'none' | 'view' | 'create' | 'edit' | 'delete' | 'manage';
+
+export interface ModulePermissions {
+  dashboard: PermissionLevel;
+  clients: PermissionLevel;
+  pipeline: PermissionLevel;
+  tasks: PermissionLevel;
+  messages: PermissionLevel;
+  email: PermissionLevel;
+  calendar: PermissionLevel;
+  documents: PermissionLevel;
+  lenderSheets: PermissionLevel;
+  partners: PermissionLevel;
+  calculators: PermissionLevel;
+  reports: PermissionLevel;
+  aiAssistant: PermissionLevel;
+  adminPanel: PermissionLevel;
+  userManagement: PermissionLevel;
+  exportData: boolean;
+}
+
+export interface OnboardingTask {
+  id: string;
+  title: string;
+  completed: boolean;
+  completedAt?: string;
+  required: boolean;
+}
+
+export interface ClearanceLevel {
+  level: number;
+  name: string;
+  description: string;
+  defaultModules: ModulePermissions;
+}
+
+export interface ClearanceMatrix {
+  levels: ClearanceLevel[];
+  modules: string[];
+  permissions: Record<string, Record<string, PermissionLevel>>;
+}
+
 export interface User {
   id: string;
+  name?: string;
   first: string;
   last: string;
   email: string;
-  role: 'Developer/Admin' | 'Admin' | 'Broker';
-  status: 'active' | 'inactive';
+  role: 'Developer/Admin' | 'Admin' | 'Broker' | 'Agent' | 'Assistant' | string;
+  status: 'active' | 'inactive' | 'pending' | 'Active' | 'Inactive' | 'Pending';
+  brokerage?: string;
+  licenseNumber?: string;
   phone?: string;
   photo?: string | null;
+  profilePhoto?: string | null;
   pin?: string;
   pinHash?: string;
   lastLogin: string;
+  lastActive?: string;
   created: string;
+  createdAt?: string;
   isOwner?: boolean;
   fsraNum?: string;
   fsraExpiry?: string;
@@ -247,13 +303,28 @@ export interface User {
   eoPolicy?: string;
   eoExpiry?: string;
   docsStatus?: string;
-  permOverrides?: Record<string, boolean>;
+  clearanceLevel?: number; // 1-6
+  permissions?: Partial<ModulePermissions>;
+  specialPermissions?: Record<string, boolean>;
+  permOverrides?: Record<string, boolean | string>;
+  modulePermissions?: Record<string, string>;
+  reportingTo?: string; // manager user ID or name
+  onboardingCompleted?: boolean;
+  onboardingTasks?: OnboardingTask[];
+  onboardingStartDate?: string;
+  probationPeriodDays?: number;
+  mentorId?: string;
+  commissionRate?: string;
+  territory?: string;
+  brokerTier?: string;
+  adminNotes?: string;
   emailHost?: string;
   emailPort?: string;
   emailPassword?: string;
   emailUsername?: string;
   displayName?: string;
   jobTitle?: string;
+  tags?: string[];
 }
 
 export interface ComplianceItem {

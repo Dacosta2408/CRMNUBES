@@ -55,7 +55,7 @@ interface CalculatorsProps {
   cPmt: (P: number, rPct: number, yrs: number) => number;
   pToAmt: (pmt: number, rPct: number, yrs: number) => number;
   fd: (n: number) => string;
-  showToast: (msg: string, type?: "success" | "error" | "info" | "warning") => void;
+  showToast: (msg: string, type?: "success" | "error" | "info" | "warning", icon?: string) => void;
   selectedClient: Client | null;
   onSaveCalcToClient: (snapshot: Partial<Exclude<Client["calcSnapshot"], undefined>>) => void;
   onNavigateToClient: (id: string) => void;

@@ -377,6 +377,18 @@ export default function App() {
     logActivityEvent
   });
 
+  const handleOpenClient = (id: string, initialTab?: string) => {
+    setActiveTab("clients");
+    openClient(id, initialTab);
+  };
+
+  // Automatically close client detail panel when navigating to any section other than "clients" (Client Database)
+  useEffect(() => {
+    if (activeTab !== "clients") {
+      closeDetail();
+    }
+  }, [activeTab]);
+
   const {
     tasks,
     setTasks,
@@ -1213,7 +1225,7 @@ export default function App() {
               auditLogs={auditLogs}
               currentUser={currentUser}
               docVault={docVault}
-              onOpenClient={openClient}
+              onOpenClient={handleOpenClient}
               onAddClient={openManualIntake}
               onOpenNewClientIntake={openApplicationIntake}
               onOpenAIIntake={openApplicationIntake}
@@ -1233,7 +1245,7 @@ export default function App() {
             <ClientsList 
               clients={clients}
               lenders={lenders}
-              onOpenClient={openClient}
+              onOpenClient={handleOpenClient}
               onAddClient={openManualIntake}
               onOpenAIIntake={openApplicationIntake}
               onOpenNewClientIntake={openApplicationIntake}
@@ -1252,7 +1264,7 @@ export default function App() {
             <ClientsList 
               clients={clients}
               lenders={lenders}
-              onOpenClient={openClient}
+              onOpenClient={handleOpenClient}
               onAddClient={openManualIntake}
               onOpenAIIntake={openApplicationIntake}
               onOpenNewClientIntake={openApplicationIntake}
@@ -1374,7 +1386,7 @@ export default function App() {
               setActiveChannel={setActiveChannel}
               linkedChatClientId={linkedChatClientId}
               setLinkedChatClientId={setLinkedChatClientId}
-              onOpenClient={openClient}
+              onOpenClient={handleOpenClient}
               tasks={tasks}
               setTasks={setTasks}
               showToast={showToast}
@@ -1397,7 +1409,7 @@ export default function App() {
               setTasks={setTasks}
               events={events}
               setEvents={setEvents}
-              onOpenClient={openClient}
+              onOpenClient={handleOpenClient}
               logActivity={logActivity}
               docVault={docVault}
               setDocVault={setDocVault}
@@ -1503,7 +1515,7 @@ export default function App() {
               setAuditLogEnabled={setAuditLogEnabled}
               onLockApp={() => setAppLocked(true)}
               showToast={showToast}
-              onOpenClient={openClient}
+              onOpenClient={handleOpenClient}
             />
           )}
 
@@ -1513,7 +1525,7 @@ export default function App() {
               currentUser={currentUser}
               docVault={docVault}
               setDocVault={setDocVault}
-              onOpenClient={openClient}
+              onOpenClient={handleOpenClient}
               showToast={showToast}
               agentNames={getAgentNames()}
               isOwnerOrManager={currentUser.role === 'Developer/Admin' || currentUser.role === 'Admin'}
@@ -1625,7 +1637,7 @@ export default function App() {
 
       {/* Detail panel slider */}
       <ClientDetailPanel
-        currentClient={(activeTab === "ai" || activeTab === "calculators") ? null : currentClient}
+        currentClient={activeTab === "clients" ? currentClient : null}
         currentUser={currentUser}
         clients={clients}
         lenders={lenders}
@@ -1634,7 +1646,7 @@ export default function App() {
         detailTab={detailTab}
         setDetailTab={setDetailTab}
         closeDetail={closeDetail}
-        openClient={openClient}
+        openClient={handleOpenClient}
         handleUpdateClient={handleUpdateClient}
         handleUpdateClientStatus={handleUpdateClientStatus}
         handleDeleteClient={handleDeleteClient}

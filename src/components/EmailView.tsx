@@ -16,7 +16,7 @@ interface EmailViewProps {
   templates: EmailTemplate[];
   currentUser: any;
   onOpenCompose?: (templateId?: string) => void;
-  showToast: (msg: string, type?: any) => void;
+  showToast: (msg: string, type?: any, icon?: string) => void;
   clients?: Client[];
   setClients?: React.Dispatch<React.SetStateAction<Client[]>>;
   tasks?: Task[];

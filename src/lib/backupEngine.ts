@@ -34,21 +34,35 @@ export interface BackupPolicy {
   archiveOlder: boolean;
   autoDeletePurged: boolean;
   enableAutoScheduling: boolean; // readiness flag
-  scheduleInterval: "daily" | "weekly" | "monthly"; // readiness flag
+  scheduleInterval: "hourly" | "daily" | "weekly" | "monthly"; // readiness flag
   encryptionEnabled: boolean; // readiness flag
   destination: "local" | "secure_s3" | "google_drive"; // readiness flag
   notifyEmail: string;
+  notifyOnCompletion: boolean;
+  scopes: {
+    users: boolean;
+    clients: boolean;
+    files: boolean;
+    settings: boolean;
+  };
 }
 
 const DEFAULT_POLICY: BackupPolicy = {
   keepLastXBackups: 5,
   archiveOlder: true,
   autoDeletePurged: false,
-  enableAutoScheduling: false,
-  scheduleInterval: "weekly",
-  encryptionEnabled: false,
+  enableAutoScheduling: true,
+  scheduleInterval: "daily",
+  encryptionEnabled: true,
   destination: "local",
-  notifyEmail: "vdacosta247@gmail.com"
+  notifyEmail: "vdacosta247@gmail.com",
+  notifyOnCompletion: true,
+  scopes: {
+    users: true,
+    clients: true,
+    files: true,
+    settings: true
+  }
 };
 
 // Keys categorization mapping for our backups

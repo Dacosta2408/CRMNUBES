@@ -15,8 +15,8 @@ import { formatDateInTimeZone, useUserTimeZone } from "../lib/timeUtils";
 // Extended Event typing for optional duration support (in minutes)
 interface CalendarEvent extends Event {
   duration?: number; // duration in minutes
-  status?: "scheduled" | "completed" | "canceled";
-  reminder?: "none" | "15m" | "30m" | "1h" | "1d";
+  status?: "scheduled" | "completed" | "canceled" | string;
+  reminder?: "none" | "15m" | "30m" | "1h" | "1d" | string;
   isPrivate?: boolean;
 }
 
@@ -316,8 +316,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [eventClientId, setEventClientId] = useState<string>("");
 
   // CRM Activity states
-  const [eventStatus, setEventStatus] = useState<"scheduled" | "completed" | "canceled">("scheduled");
-  const [eventReminder, setEventReminder] = useState<"none" | "15m" | "30m" | "1h" | "1d">("none");
+  const [eventStatus, setEventStatus] = useState<"scheduled" | "completed" | "canceled" | string>("scheduled");
+  const [eventReminder, setEventReminder] = useState<"none" | "15m" | "30m" | "1h" | "1d" | string>("none");
   const [eventIsPrivate, setEventIsPrivate] = useState<boolean>(false);
   const [createFollowUp, setCreateFollowUp] = useState<boolean>(false);
   const [followUpDate, setFollowUpDate] = useState<string>("");

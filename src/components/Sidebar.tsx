@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, memo } from "react";
 import { 
   Users, Layers, BrainCircuit, Calculator, Globe, Calendar, 
   CheckSquare, MessageSquare, Mail, Heart, ShieldCheck, ShieldAlert,
-  Settings, BarChart3, Search, ChevronDown, ChevronUp,
+  Settings, BarChart3, ChevronDown, ChevronUp,
   PanelLeftClose, PanelLeftOpen, X, Keyboard, LogOut, Lock, HelpCircle,
   User as UserIcon, Sliders
 } from "lucide-react";
@@ -66,9 +66,6 @@ export const Sidebar: React.FC<SidebarProps> = memo(({
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     return localStorage.getItem("gbk_sidebar_collapsed") === "true";
   });
-
-  // Filter search query inside sidebar
-  const [searchQuery, setSearchQuery] = useState("");
 
   // Collapsed state per group section
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -228,16 +225,6 @@ export const Sidebar: React.FC<SidebarProps> = memo(({
     }
   ];
 
-  // Filter groups according to search query
-  const filteredGroups = menuGroups.map(group => {
-    if (!searchQuery.trim()) return group;
-    const q = searchQuery.toLowerCase();
-    const filteredItems = group.items.filter(item => 
-      item.label.toLowerCase().includes(q) || item.id.toLowerCase().includes(q)
-    );
-    return { ...group, items: filteredItems };
-  }).filter(group => group.items.length > 0);
-
   // Content renderer for the sidebar interior
   const renderSidebarContent = (isMobileDrawer = false) => {
     const effectiveCollapsed = isMobileDrawer ? false : isCollapsed;
@@ -303,53 +290,13 @@ export const Sidebar: React.FC<SidebarProps> = memo(({
           )}
         </div>
 
-        {/* ── Search / Quick Action Box ── */}
-        <div className="px-3 pt-3 pb-1 shrink-0">
-          {!effectiveCollapsed ? (
-            <div className="relative flex items-center">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 text-white/50 pointer-events-none" />
-              <input 
-                type="text"
-                placeholder="Search menu..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 hover:border-white/20 focus:border-[var(--color-accent)] focus:bg-white/10 rounded-xl pl-8 pr-7 py-1.5 text-xs text-white placeholder-white/40 outline-none transition-all font-medium"
-              />
-              {searchQuery ? (
-                <button 
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-2 text-white/40 hover:text-white text-xs cursor-pointer"
-                  title="Clear search"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              ) : (
-                <kbd className="absolute right-2 hidden sm:inline-block text-[9px] font-mono text-white/40 bg-white/10 px-1 py-0.5 rounded pointer-events-none">
-                  ⌘K
-                </kbd>
-              )}
-            </div>
-          ) : (
-            <button
-              onClick={() => setIsCollapsed(false)}
-              className="w-full h-8 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-white/60 hover:text-white transition-all cursor-pointer relative group"
-              title="Quick Search (Click to expand)"
-            >
-              <Search className="w-3.5 h-3.5" />
-              <div className="absolute left-full ml-3 hidden group-hover:flex items-center px-2.5 py-1.5 bg-slate-900/95 text-white text-xs font-semibold rounded-lg shadow-xl border border-white/10 z-50 whitespace-nowrap pointer-events-none">
-                Search Navigation (⌘K)
-              </div>
-            </button>
-          )}
-        </div>
-
         {/* ── Navigation List ── */}
         <nav 
           className="flex-1 overflow-y-auto px-2 py-2 flex flex-col gap-2.5 select-none scrollbar-thin"
           role="navigation"
           aria-label="Main Navigation"
         >
-          {filteredGroups.map((group, gIdx) => {
+          {menuGroups.map((group, gIdx) => {
             const isGroupCollapsed = !!collapsedGroups[group.label];
 
             return (

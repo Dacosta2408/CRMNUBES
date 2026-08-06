@@ -246,6 +246,7 @@ export const Messages: React.FC<MessagesProps> = ({
         status: status,
         statusLabel: statusLabel,
         color: color,
+        chatColor: (u as any).chatColor || color,
         avatar: photo,
         email: u.email
       };

@@ -663,7 +663,7 @@ export const ApplicationIntake: React.FC<ApplicationIntakeProps> = ({
                       {activeTab === "personal" && "1. Client & Co-Applicant Verification"}
                       {activeTab === "address" && "2. Residential History Logging"}
                       {activeTab === "employment" && "3. Professional & Active Employment tenure"}
-                      {activeTab === "income" && "4. Supplemental Income & Cashflows"}
+                      {(activeTab as string) === "income" && "4. Supplemental Income & Cashflows"}
                       {activeTab === "property" && "5. Real Estate Collateral parameters"}
                       {activeTab === "mortgage" && "6. Loan Structure & Underwriting terms"}
                       {activeTab === "submit" && "7. Final Submission Checklist"}
@@ -672,7 +672,7 @@ export const ApplicationIntake: React.FC<ApplicationIntakeProps> = ({
                       {activeTab === "personal" && "Enter authentic details for the primary borrower and co-borrower. Date of Birth and contact channels are required to generate automated email workflows."}
                       {activeTab === "address" && "Input three contiguous years of residency. If the applicant has lived at their current address for less than 36 months, make sure to populate the previous address fields to prevent credit bureau check failures."}
                       {activeTab === "employment" && "Detail primary professional records. Mortgages require a steady income baseline; include complete salary or guaranteed hours with accurate employer contacts."}
-                      {activeTab === "income" && "Verify all secondary income sources such as active rental property leases, military pensions, investment dividends, or legal child support records."}
+                      {(activeTab as string) === "income" && "Verify all secondary income sources such as active rental property leases, military pensions, investment dividends, or legal child support records."}
                       {activeTab === "property" && "Define the physical property address, estimated valuation, and tax rolls. For pre-approvals without a specific subject property, check the 'Pre-Approval / No Address' flag."}
                       {activeTab === "mortgage" && "Specify the desired principal requested, loan amortization timeline, and current interest rates to calculate real-time debt ratios and pricing options."}
                       {activeTab === "submit" && "Review parsed data fields side-by-side with your client file. Confirm accuracy and resolve missing records prior to synchronizing this deal to the central workspace."}

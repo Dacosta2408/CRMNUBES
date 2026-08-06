@@ -13,7 +13,8 @@ import { AdminOverview } from "./admin/AdminOverview";
 import { UserManagement } from "./admin/UserManagement";
 import { PermissionsView } from "./admin/PermissionsView";
 import { SecurityView } from "./admin/SecurityView";
-import { BackupRecoveryPanel } from "./BackupRecoveryPanel";
+import { BackupRecoveryView } from "./admin/BackupRecoveryView";
+import { IntegrationsView } from "./admin/IntegrationsView";
 import { AuditLogsView } from "./admin/AuditLogsView";
 import { SystemAlerts } from "./admin/SystemAlerts";
 import { DeploymentPanel } from "./admin/DeploymentPanel";
@@ -45,7 +46,7 @@ interface AdminPanelProps {
   bridgeVersion?: string | null;
 }
 
-type AdminTab = "overview" | "users" | "permissions" | "security" | "defaults" | "backup" | "audit" | "alerts" | "deployment";
+type AdminTab = "overview" | "users" | "permissions" | "security" | "defaults" | "backup" | "integrations" | "audit" | "alerts" | "deployment";
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   userRoster,
@@ -152,6 +153,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     backup: {
       title: "Storage Integrity & Disaster Recovery",
       desc: "Perform cold-storage sync, check validation status, download backup images, and initiate restoration."
+    },
+    integrations: {
+      title: "System Integrations & API Hub",
+      desc: "Manage external service connections, active OAuth apps, API tokens, webhook listeners, and transmission logs."
     },
     audit: {
       title: "Operations Trajectory Log",
@@ -280,6 +285,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <Database className="w-4 h-4 shrink-0" /> Backups &amp; Recovery
                 </button>
 
+                {/* System Integrations & API Hub */}
+                <button
+                  onClick={() => setActiveTab("integrations")}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-lg transition-all ${
+                    activeTab === "integrations" 
+                      ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)]" 
+                      : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]/50"
+                  }`}
+                >
+                  <Layers className="w-4 h-4 shrink-0 text-blue-400" /> Integrations &amp; APIs
+                </button>
+
                 {/* Deployment Readiness (Owner / Master Admin only) */}
                 {(currentUser.role === "Developer/Admin" || currentUser.isOwner) && (
                   <button
@@ -350,6 +367,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <option value="security">Security Policy</option>
                 <option value="defaults">CRM Defaults</option>
                 <option value="backup">Database Backup</option>
+                <option value="integrations">Integrations &amp; API Hub</option>
                 {(currentUser.role === "Owner / Master Admin" || currentUser.isOwner) && (
                   <option value="deployment">Deployment Readiness</option>
                 )}
@@ -364,12 +382,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             {activeTab === "overview" && (
               <AdminOverview 
                 userRoster={userRoster}
+                setUserRoster={setUserRoster}
                 clients={clients}
                 tasks={tasks}
                 auditLogs={auditLogs}
+                setAuditLogs={setAuditLogs}
                 onLockApp={onLockApp}
                 setActiveTab={(tab) => setActiveTab(tab as AdminTab)}
-                showToast={(msg, type) => showToast(msg, type)}
+                showToast={(msg, type, icon) => showToast(msg, type, icon)}
               />
             )}
 
@@ -422,11 +442,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             )}
 
             {activeTab === "backup" && (
-              <BackupRecoveryPanel 
+              <BackupRecoveryView 
                 currentUser={currentUser}
                 clients={clients}
-                showToast={(msg, type) => showToast(msg, type as any)}
+                userRoster={userRoster}
+                showToast={(msg, type, icon) => showToast(msg, type, icon)}
                 onRefreshCRMData={() => showToast("CRM database arrays refreshed successfully.", "success")}
+                logActivity={logActivity}
+              />
+            )}
+
+            {activeTab === "integrations" && (
+              <IntegrationsView 
+                currentUser={currentUser}
+                showToast={(msg, type, icon) => showToast(msg, type, icon)}
+                logActivity={logActivity}
               />
             )}
 
@@ -453,6 +483,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 auditLogs={auditLogs}
                 setAuditLogs={setAuditLogs}
                 currentUser={currentUser}
+                userRoster={userRoster}
                 showToast={(msg, type) => showToast(msg, type)}
               />
             )}
