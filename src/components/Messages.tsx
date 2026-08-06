@@ -876,7 +876,14 @@ export const Messages: React.FC<MessagesProps> = ({
                     </span>
 
                     {countBadge > 0 && (
-                      <span className="bg-red-500 text-white font-mono text-[9px] px-1.5 py-0.5 rounded-full font-black">
+                      <span 
+                        className="font-mono text-[9px] px-1.5 py-0.5 rounded-full font-black"
+                        style={{
+                          background: `${chatColorGradients[tm.chatColor ?? ""] ?? DEFAULT_CHAT_GRADIENT}`,
+                          color: "white",
+                          boxShadow: "0 0 8px rgba(0,0,0,0.3)"
+                        }}
+                      >
                         {countBadge}
                       </span>
                     )}
@@ -1292,7 +1299,7 @@ export const Messages: React.FC<MessagesProps> = ({
             })
           ) : (
             <div className="my-auto text-center p-12">
-              <Users className="w-10 h-10 text-[var(--color-text-faint)]/20 mx-auto mb-2" />
+              <Users className="w-10 h-10 mx-auto mb-2" style={{ color: "rgba(0, 198, 255, 0.25)" }} />
               <div className="text-xs font-black text-[var(--color-text-faint)] uppercase tracking-widest">No matching comments</div>
               <p className="text-[10.5px] text-[var(--color-text-faint)] mt-1 max-w-xs mx-auto">
                 No pipeline updates found matching criteria inside channel. Discard constraints to review full thread history.
@@ -1316,21 +1323,36 @@ export const Messages: React.FC<MessagesProps> = ({
               
               {/* Linked client block */}
               {linkedChatClientId && (
-                <div className="bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/30 px-3 py-1.5 rounded-xl text-xs flex items-center gap-2 text-[var(--color-accent)] select-none">
-                  <Link2 className="w-3.5 h-3.5 text-[var(--color-accent)]" />
+                <div 
+                  className="px-3 py-1.5 rounded-xl text-xs flex items-center gap-2 select-none"
+                  style={{
+                    background: "rgba(86, 171, 47, 0.12)",
+                    border: "1px solid rgba(86, 171, 47, 0.35)",
+                    color: "#A8E063"
+                  }}
+                >
+                  <Link2 className="w-3.5 h-3.5 text-[#A8E063]" />
                   <span>Linked deal tie: <b>{clients.find(x => x.id === linkedChatClientId)?.first} {clients.find(x => x.id === linkedChatClientId)?.last}</b></span>
-                  <button onClick={() => setLinkedChatClientId(null)} className="text-[var(--color-accent)] hover:text-white font-bold ml-1.5">✕</button>
+                  <button onClick={() => setLinkedChatClientId(null)} className="text-[#A8E063] hover:text-white font-bold ml-1.5 cursor-pointer">✕</button>
                 </div>
               )}
 
               {/* Attachments listing */}
               {attachedFiles.map((fi, idx) => (
-                <div key={idx} className="bg-blue-500/10 border border-blue-500/20 px-2.5 py-1.5 rounded-xl text-[10.5px] flex items-center gap-2 text-blue-300">
-                  <Paperclip className="w-3.5 h-3.5 text-blue-400" />
+                <div 
+                  key={idx} 
+                  className="px-2.5 py-1.5 rounded-xl text-[10.5px] flex items-center gap-2"
+                  style={{
+                    background: "rgba(0, 198, 255, 0.12)",
+                    border: "1px solid rgba(0, 198, 255, 0.30)",
+                    color: "#00C6FF"
+                  }}
+                >
+                  <Paperclip className="w-3.5 h-3.5 text-[#00C6FF]" />
                   <span className="font-bold truncate max-w-[120px]">{fi.name}</span>
                   <button 
                     onClick={() => setAttachedFiles(p => p.filter((_, o) => o !== idx))} 
-                    className="text-blue-300 hover:text-white font-bold ml-1"
+                    className="text-[#00C6FF] hover:text-white font-bold ml-1 cursor-pointer"
                   >
                     ✕
                   </button>
@@ -1722,16 +1744,28 @@ export const Messages: React.FC<MessagesProps> = ({
               <div className="grid grid-cols-4 gap-1.5">
                 {(["urgent", "high", "medium", "low"] as const).map(prio => {
                   const isSelect = wizardDraftTask.priority === prio;
+                  const prioGradients: Record<string, string> = {
+                    urgent: "linear-gradient(135deg, #FF416C 0%, #FFB347 100%)",
+                    high:   "linear-gradient(135deg, #FF00CC 0%, #3333FF 100%)",
+                    medium: "linear-gradient(135deg, #FF8800 0%, #FCEE21 100%)",
+                    low:    "linear-gradient(135deg, #56AB2F 0%, #A8E063 100%)"
+                  };
                   return (
                     <button
                       key={prio}
                       type="button"
                       onClick={() => setWizardDraftTask({ ...wizardDraftTask, priority: prio })}
-                      className={`py-1.5 text-[10px] font-black uppercase rounded-lg border transition-all ${
-                        isSelect 
-                          ? "bg-[var(--color-accent)] border-[var(--color-accent)] text-black" 
-                          : "bg-[var(--color-surface-2)] border border-[var(--color-border)]/50 text-[var(--color-text-faint)] hover:text-[var(--color-text)]"
-                      }`}
+                      className="py-1.5 text-[10px] font-black uppercase rounded-lg border transition-all cursor-pointer"
+                      style={isSelect ? {
+                        background: prioGradients[prio],
+                        color: prio === "medium" ? "#1a1200" : "white",
+                        borderColor: "transparent",
+                        boxShadow: "0 0 10px rgba(0,0,0,0.2)"
+                      } : {
+                        background: "var(--color-surface-2)",
+                        color: "var(--color-text-faint)",
+                        border: "1px solid var(--color-border)"
+                      }}
                     >
                       {prio}
                     </button>
@@ -1766,7 +1800,11 @@ export const Messages: React.FC<MessagesProps> = ({
           <div className="border-t border-[var(--color-border)]/70 pt-3 mt-3 shrink-0">
             <button
               onClick={handleCommitWizardTask}
-              className="w-full py-2.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent)] text-black font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-lg select-none"
+              className="w-full py-2.5 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-lg select-none hover:brightness-110 cursor-pointer"
+              style={{
+                background: "linear-gradient(135deg, #6A11C8 0%, #FF758C 100%)",
+                boxShadow: "0 0 16px rgba(106, 17, 200, 0.3)"
+              }}
             >
               <span>Add to Workflow Pipeline</span>
               <ArrowRight className="w-3.5 h-3.5" />

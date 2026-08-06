@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Calendar, Clock, AlertTriangle, FileText, UserCheck, CheckSquare } from "lucide-react";
 import { Client, Task, Event, User as UserType } from "../types";
-import { getFormattedLiveTime, formatDateInTimeZone, useUserTimeZone } from "../lib/timeUtils";
+import { getFormattedLiveTime, formatDateInTimeZone, formatDateInTimezone, useUserTimeZone, useUserDateFormat } from "../lib/timeUtils";
 
 // Import modular sub-components
 import { KPICards } from "./dashboard/KPICards";
@@ -53,6 +53,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onClearLogs
 }) => {
   const userTz = useUserTimeZone();
+  const userDateFormat = useUserDateFormat();
   const [liveTime, setLiveTime] = useState<string>("");
   const [timeZoneName, setTimeZoneName] = useState<string>("");
 
@@ -75,12 +76,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const getFormattedDate = () => {
-    return formatDateInTimeZone(new Date(), { 
-      weekday: "long", 
-      year: "numeric", 
-      month: "long", 
-      day: "numeric" 
-    }, userTz);
+    return formatDateInTimezone(new Date(), userTz, userDateFormat);
   };
 
   // User-scoped metrics for "Today at a glance"
@@ -116,9 +112,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
     <div className="flex flex-col gap-6 h-full overflow-y-auto pr-2 pb-6 text-sans" id="gbk-crm-dashboard">
       
       {/* Dynamic Executive Console Header Section */}
-      <div className="greeting-glass-panel relative overflow-visible isolate rounded-2xl p-6 space-y-4">
-        {/* Subtle upper light reflection bar */}
-        <div className="absolute top-0 left-0 right-0 h-[1.5px] rounded-t-2xl bg-gradient-to-r from-white/25 via-white/10 to-transparent pointer-events-none" />
+      <div 
+        className="relative overflow-visible isolate rounded-2xl p-6 space-y-4"
+        style={{
+          background: "rgba(255, 255, 255, 0.04)",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.06)"
+        }}
+      >
+        {/* Thin top light edge — same height as original (1.5px), position unchanged */}
+        <div 
+          className="absolute top-0 left-0 right-0 h-[1.5px] rounded-t-2xl"
+          style={{ background: "rgba(255, 255, 255, 0.12)" }}
+        />
         
         <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="space-y-1.5">
@@ -131,6 +139,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <span className="text-[var(--color-border)]">•</span>
               <span className="font-mono text-[var(--color-accent)] font-bold tracking-wide bg-[var(--color-surface-3)]/40 px-2 py-0.5 rounded border border-[var(--color-border)]/50">
                 {liveTime} {timeZoneName}
+              </span>
+              <span className="text-[var(--color-border)]">•</span>
+              <span className="text-[10px] font-bold text-[var(--color-accent)] bg-[var(--color-accent)]/10 px-2 py-0.5 rounded border border-[var(--color-accent)]/20">
+                All times shown in {userTz}
               </span>
               {todayEventsCount > 0 && (
                 <>

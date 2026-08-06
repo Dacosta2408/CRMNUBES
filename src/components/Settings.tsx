@@ -2,13 +2,25 @@ import React, { useState, useEffect, useRef } from "react";
 import { 
   User as UserIcon, Bell, Shield, Sliders, Mail, Lock, Laptop, Smartphone,
   CheckCircle2, AlertCircle, ToggleLeft, ToggleRight, Trash2, Upload, Camera,
-  RefreshCw, X, ShieldCheck, Info, Key, Eye, EyeOff, Globe
+  RefreshCw, X, ShieldCheck, Info, Key, Eye, EyeOff, Globe,
+  Briefcase, Building, Phone as PhoneIcon, BadgeCheck
 } from "lucide-react";
 import { User, Client } from "../types";
 import { Avatar } from "./Avatar";
 import { encryptValue } from "../lib/cryptoUtils";
 import { hashPin } from "../hooks/useAuth";
-import { COMMON_TIMEZONES, getUserTimeZone, setUserTimeZone, getDetectedSystemTimeZone } from "../lib/timeUtils";
+import { 
+  MAJOR_TIMEZONES, 
+  DATE_FORMAT_OPTIONS, 
+  getUserTimeZone, 
+  setUserTimeZone, 
+  getUserDateFormat, 
+  setUserDateFormat, 
+  getDetectedSystemTimeZone, 
+  getCurrentTimeInTimezone, 
+  formatDateInTimezone, 
+  formatDateTime 
+} from "../lib/timeUtils";
 
 interface SettingsProps {
   currentUser: User;
@@ -49,16 +61,8 @@ export const Settings: React.FC<SettingsProps> = ({
   // Local File Upload / Avatar State
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [objectUrlToRevoke, setObjectUrlToRevoke] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Avatar Presets
-  const avatarPresets = [
-    "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=150&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80"
-  ];
 
   // Sync profile values when currentUser changes
   useEffect(() => {
@@ -82,11 +86,8 @@ export const Settings: React.FC<SettingsProps> = ({
     };
   }, [objectUrlToRevoke]);
 
-  // Handle local file selection for avatar photo
-  const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  // Process selected image file (for file input & drag and drop)
+  const processSelectedFile = (file: File) => {
     setAvatarError(null);
 
     // Validate image MIME type
@@ -122,6 +123,38 @@ export const Settings: React.FC<SettingsProps> = ({
     // Reset input value to allow re-selecting the same file if needed
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
+    }
+  };
+
+  // Drag and drop event handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processSelectedFile(file);
+    }
+  };
+
+  // Handle local file selection for avatar photo
+  const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processSelectedFile(file);
     }
   };
 
@@ -264,22 +297,28 @@ export const Settings: React.FC<SettingsProps> = ({
   };
 
   // --- 4. PERSONAL PREFERENCES STATE ---
+  // NOTE: Changes to timezone and date format will affect all date/time displays across the application.
   const [prefLanding, setPrefLanding] = useState(() => localStorage.getItem("gbk_pref_landing") || "dashboard");
   const [prefDashboard, setPrefDashboard] = useState(() => localStorage.getItem("gbk_pref_dashboard_view") || "bento");
   const [prefLayout, setPrefLayout] = useState(() => localStorage.getItem("gbk_pref_layout_mode") || "table");
-  const [prefDateFormat, setPrefDateFormat] = useState(() => localStorage.getItem("gbk_pref_date_format") || "YYYY-MM-DD");
+  const [prefDateFormat, setPrefDateFormat] = useState(() => getUserDateFormat());
   const [prefTimeFormat, setPrefTimeFormat] = useState(() => localStorage.getItem("gbk_pref_time_format") || "12");
   const [prefTimeZone, setPrefTimeZone] = useState(() => getUserTimeZone());
+  const [prefLanguage, setPrefLanguage] = useState(() => localStorage.getItem("gbk_pref_language") || "English");
+  const [prefCurrency, setPrefCurrency] = useState(() => localStorage.getItem("gbk_pref_currency") || "USD ($)");
+  const [showTestPreview, setShowTestPreview] = useState(false);
 
   const handleSavePreferences = () => {
     localStorage.setItem("gbk_pref_landing", prefLanding);
     localStorage.setItem("gbk_pref_dashboard_view", prefDashboard);
     localStorage.setItem("gbk_pref_layout_mode", prefLayout);
-    localStorage.setItem("gbk_pref_date_format", prefDateFormat);
     localStorage.setItem("gbk_pref_time_format", prefTimeFormat);
+    localStorage.setItem("gbk_pref_language", prefLanguage);
+    localStorage.setItem("gbk_pref_currency", prefCurrency);
+    setUserDateFormat(prefDateFormat);
     setUserTimeZone(prefTimeZone);
     
-    showToast("Personal workspace preferences saved!", "success", "⚙️");
+    showToast("Personal workspace preferences saved! Date/time displays updated across app.", "success", "⚙️");
   };
 
   // --- 5. EMAIL & SMTP CONFIGURATION STATE ---
@@ -373,8 +412,8 @@ export const Settings: React.FC<SettingsProps> = ({
       {/* Title Header */}
       <div className="p-6 border-b border-[var(--color-border)]/70 bg-[var(--color-surface)] shrink-0 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-[var(--color-text)] font-sans flex items-center gap-2">
-            <UserIcon className="w-5 h-5 text-[var(--color-accent)]" /> Personal Account Settings
+          <h1 className="text-xl font-bold tracking-tight text-[#B39DDB] font-sans flex items-center gap-2">
+            <UserIcon className="w-5 h-5 text-[#B39DDB]" /> Personal Account Settings
           </h1>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
             Manage your personal broker profile, avatar photo, notifications, access code, and interface preferences.
@@ -471,236 +510,274 @@ export const Settings: React.FC<SettingsProps> = ({
           
           {/* TAB 1: MY PROFILE */}
           {activeTab === "profile" && (
-            <div className="max-w-2xl space-y-6">
+            <div className="max-w-5xl space-y-6">
               
               {/* Profile Card */}
-              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-xl shadow-sm space-y-6">
-                <div>
-                  <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider mb-1 flex items-center gap-2">
-                    <UserIcon className="w-4 h-4 text-[var(--color-accent)]" /> My Profile &amp; Photo
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 md:p-8 rounded-2xl shadow-sm space-y-6">
+                <div className="border-b border-[var(--color-border)]/70 pb-4">
+                  <h3 className="text-base font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
+                    <UserIcon className="w-5 h-5 text-[var(--color-accent)]" /> My Profile &amp; Photo
                   </h3>
-                  <p className="text-[11px] text-[var(--color-text-muted)]">
-                    Update your display details, contact numbers, job title, and profile picture avatar.
+                  <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                    Update your personal profile details, contact information, professional credentials, and avatar photo.
                   </p>
                 </div>
 
                 <form onSubmit={handleSaveProfile} className="space-y-6">
                   
-                  {/* Avatar Upload Card Section */}
-                  <div className="bg-[var(--color-surface-2)]/70 p-4 rounded-xl border border-[var(--color-border)]/80 space-y-4">
-                    <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider">
-                      Profile Avatar Photo
-                    </label>
+                  {/* Two-Column Responsive Layout (1 col mobile, 12 cols desktop) */}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+                    
+                    {/* LEFT COLUMN: Profile Photo Upload Area (4-5 cols on desktop) */}
+                    <div className="md:col-span-5 lg:col-span-4 flex flex-col items-center space-y-4 bg-[var(--color-surface-2)]/50 p-6 rounded-2xl border border-[var(--color-border)]/70">
+                      <label className="w-full text-center text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">
+                        Profile Photo
+                      </label>
 
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
-                      {/* Avatar Preview */}
-                      <div className="relative group shrink-0">
-                        <Avatar
-                          src={profilePhoto}
-                          first={profileFirst}
-                          last={profileLast}
-                          name={profileDisplayName}
-                          size="xl"
-                          className="shadow-md"
+                      {/* Drag and Drop Zone with ~200x200px Preview */}
+                      <div
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`relative w-48 h-48 md:w-52 md:h-52 rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center p-2 text-center cursor-pointer overflow-hidden group select-none ${
+                          isDragging
+                            ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10 scale-[1.02]"
+                            : "border-[var(--color-border)] hover:border-[var(--color-accent)]/70 bg-[var(--color-surface)]"
+                        }`}
+                      >
+                        {/* Hidden File Input */}
+                        <input 
+                          ref={fileInputRef}
+                          type="file" 
+                          accept="image/*"
+                          onChange={handleAvatarFileSelect}
+                          className="hidden"
+                          id="avatar-file-input"
+                          aria-label="Upload profile photo file"
+                        />
+
+                        {profilePhoto ? (
+                          <div className="relative w-full h-full rounded-xl overflow-hidden">
+                            <img
+                              src={profilePhoto}
+                              alt={profileDisplayName}
+                              className="w-full h-full object-cover rounded-xl transition-transform duration-300 group-hover:scale-105"
+                            />
+                            {/* Hover Overlay */}
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white p-3">
+                              <Camera className="w-8 h-8 mb-1.5 text-[var(--color-accent)]" />
+                              <span className="text-xs font-bold">Change Photo</span>
+                              <span className="text-[10px] text-gray-300 mt-1">Drag new image or click</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center p-4 space-y-2">
+                            <div className="w-14 h-14 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center text-[var(--color-accent)] mb-1 group-hover:scale-110 transition-transform">
+                              <Upload className="w-7 h-7" />
+                            </div>
+                            <span className="text-xs font-bold text-[var(--color-text)]">
+                              Drag &amp; drop photo
+                            </span>
+                            <span className="text-[11px] text-[var(--color-text-muted)]">
+                              or <span className="text-[var(--color-accent)] underline font-semibold">browse files</span>
+                            </span>
+                            <span className="text-[10px] text-[var(--color-text-muted)] pt-1">
+                              JPG, PNG, WEBP, or GIF
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* File Limit Indicator */}
+                      <div className="text-center">
+                        <span className="text-[10px] font-semibold text-[var(--color-text-muted)] bg-[var(--color-surface)] px-3 py-1 rounded-full border border-[var(--color-border)]/60 inline-block">
+                          Max file size: <strong className="text-[var(--color-text)]">5 MB</strong>
+                        </span>
+                      </div>
+
+                      {/* Action Buttons for Photo */}
+                      <div className="w-full space-y-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="w-full px-4 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-text-inverse)] text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          {profilePhoto ? "Change Photo" : "Upload Photo"}
+                        </button>
+
+                        {profilePhoto && (
+                          <button
+                            type="button"
+                            onClick={handleRemovePhoto}
+                            className="w-full px-4 py-2 bg-[var(--color-surface)] hover:bg-red-500/10 text-red-500 hover:text-red-400 border border-red-500/30 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Remove Photo
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Inline Error Message */}
+                      {avatarError && (
+                        <div className="w-full p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-[11px] text-red-500 font-semibold flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <span>{avatarError}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* RIGHT COLUMN: Personal Information Form (7-8 cols on desktop) */}
+                    <div className="md:col-span-7 lg:col-span-8 space-y-5">
+                      <h4 className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider flex items-center gap-2 pb-1 border-b border-[var(--color-border)]/50">
+                        <UserIcon className="w-4 h-4 text-[var(--color-accent)]" /> Personal Information
+                      </h4>
+
+                      {/* 1. Full Name Fields (First Name & Last Name Grid + Display Name) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                            <UserIcon className="w-3 h-3 text-[var(--color-accent)]" /> First Name <span className="text-red-500">*</span>
+                          </label>
+                          <input 
+                            type="text"
+                            value={profileFirst}
+                            onChange={(e) => setProfileFirst(e.target.value)}
+                            placeholder="First Name"
+                            required
+                            className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-xl px-3.5 py-2.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                            <UserIcon className="w-3 h-3 text-[var(--color-accent)]" /> Last Name <span className="text-red-500">*</span>
+                          </label>
+                          <input 
+                            type="text"
+                            value={profileLast}
+                            onChange={(e) => setProfileLast(e.target.value)}
+                            placeholder="Last Name"
+                            required
+                            className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-xl px-3.5 py-2.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                          <UserIcon className="w-3 h-3 text-[var(--color-accent)]" /> Display Name
+                        </label>
+                        <input 
+                          type="text"
+                          value={profileDisplayName}
+                          onChange={(e) => setProfileDisplayName(e.target.value)}
+                          placeholder="Display Name"
+                          className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-xl px-3.5 py-2.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
                         />
                       </div>
 
-                      {/* File Controls */}
-                      <div className="space-y-2.5 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {/* Hidden File Input */}
+                      {/* 2. Email Address & Phone Number Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                            <Mail className="w-3 h-3 text-[var(--color-accent)]" /> Email Address <span className="text-red-500">*</span>
+                          </label>
                           <input 
-                            ref={fileInputRef}
-                            type="file" 
-                            accept="image/*"
-                            onChange={handleAvatarFileSelect}
-                            className="hidden"
-                            id="avatar-file-input"
-                            aria-label="Upload profile photo file"
+                            type="email"
+                            value={profileEmail}
+                            onChange={(e) => setProfileEmail(e.target.value)}
+                            placeholder="email@domain.com"
+                            required
+                            className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-xl px-3.5 py-2.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
                           />
-
-                          {/* Trigger Button */}
-                          <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="px-3.5 py-1.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--color-text-inverse)] text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-                          >
-                            <Upload className="w-3.5 h-3.5" />
-                            {profilePhoto ? "Change Photo" : "Upload Photo"}
-                          </button>
-
-                          {/* Remove Photo Button */}
-                          {profilePhoto && (
-                            <button
-                              type="button"
-                              onClick={handleRemovePhoto}
-                              className="px-3.5 py-1.5 bg-[var(--color-surface-2)] hover:bg-red-500/10 text-red-500 hover:text-red-400 border border-red-500/20 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              Remove Photo
-                            </button>
-                          )}
                         </div>
 
-                        <p className="text-[10px] text-[var(--color-text-muted)]">
-                          Upload a JPG, PNG, WEBP, or GIF image from your computer (max 5 MB).
-                        </p>
-
-                        {/* Inline Error Message if file is invalid or oversized */}
-                        {avatarError && (
-                          <div className="p-2 bg-red-500/10 border border-red-500/20 rounded-lg text-[11px] text-red-500 font-semibold flex items-center gap-1.5">
-                            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                            {avatarError}
-                          </div>
-                        )}
-
-                        {/* Optional Presets */}
-                        <div className="pt-2 border-t border-[var(--color-border)]/50 flex items-center gap-2">
-                          <span className="text-[10px] font-semibold text-[var(--color-text-faint)]">Or select preset avatar:</span>
-                          <div className="flex gap-1.5">
-                            {avatarPresets.map((preset, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => {
-                                  setProfilePhoto(preset);
-                                  setAvatarError(null);
-                                }}
-                                className="w-6 h-6 rounded-full overflow-hidden border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-                                title={`Preset avatar ${idx + 1}`}
-                              >
-                                <img src={preset} alt="" className="w-full h-full object-cover" />
-                              </button>
-                            ))}
-                          </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                            <PhoneIcon className="w-3 h-3 text-[var(--color-accent)]" /> Phone Number
+                          </label>
+                          <input 
+                            type="text"
+                            value={profilePhone}
+                            onChange={(e) => setProfilePhone(e.target.value)}
+                            placeholder="e.g. 416-555-0199"
+                            className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-xl px-3.5 py-2.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
+                          />
                         </div>
                       </div>
+
+                      {/* 3. Role/Position & Brokerage/Company Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                            <Briefcase className="w-3 h-3 text-[var(--color-accent)]" /> Role / Position
+                          </label>
+                          <input 
+                            type="text"
+                            value={profileJobTitle}
+                            onChange={(e) => setProfileJobTitle(e.target.value)}
+                            placeholder="e.g. Senior Mortgage Agent"
+                            className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-xl px-3.5 py-2.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                            <Building className="w-3 h-3 text-[var(--color-accent)]" /> Brokerage / Company
+                          </label>
+                          <input 
+                            type="text"
+                            value={profileEoPolicy}
+                            onChange={(e) => setProfileEoPolicy(e.target.value)}
+                            placeholder="e.g. Dominion Lending / Marsh"
+                            className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-xl px-3.5 py-2.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* 4. License Number (Own Row) */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                          <BadgeCheck className="w-3 h-3 text-[var(--color-accent)]" /> License Number
+                        </label>
+                        <input 
+                          type="text"
+                          value={profileFsra}
+                          onChange={(e) => setProfileFsra(e.target.value)}
+                          placeholder="e.g. M12003456"
+                          className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-xl px-3.5 py-2.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] font-mono"
+                        />
+                      </div>
+
+                      {/* Assigned System Role Info Box */}
+                      <div className="bg-[var(--color-surface-2)]/60 p-3.5 rounded-xl border border-[var(--color-border)]/70 flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] block">
+                            Assigned System Access Role
+                          </span>
+                          <span className="text-xs font-bold text-[var(--color-accent)] mt-0.5 block">
+                            {currentUser.role}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-[var(--color-text-muted)] font-medium">
+                          Managed by System Admin
+                        </span>
+                      </div>
+
+                      {/* Save Profile Button */}
+                      <div className="pt-2">
+                        <button 
+                          type="submit"
+                          className="w-full py-3 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-xl hover:bg-[var(--color-accent-hover)] transition-all uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-2"
+                        >
+                          <CheckCircle2 className="w-4 h-4" /> Save Profile Changes
+                        </button>
+                      </div>
+
                     </div>
                   </div>
-
-                  {/* Form Input Fields */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5">
-                        First Name
-                      </label>
-                      <input 
-                        type="text"
-                        value={profileFirst}
-                        onChange={(e) => setProfileFirst(e.target.value)}
-                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-lg px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/40"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5">
-                        Last Name
-                      </label>
-                      <input 
-                        type="text"
-                        value={profileLast}
-                        onChange={(e) => setProfileLast(e.target.value)}
-                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-lg px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/40"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5">
-                        Display Name
-                      </label>
-                      <input 
-                        type="text"
-                        value={profileDisplayName}
-                        onChange={(e) => setProfileDisplayName(e.target.value)}
-                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-lg px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/40"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5">
-                        Job Title
-                      </label>
-                      <input 
-                        type="text"
-                        value={profileJobTitle}
-                        onChange={(e) => setProfileJobTitle(e.target.value)}
-                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-lg px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/40"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5">
-                        Email Address
-                      </label>
-                      <input 
-                        type="email"
-                        value={profileEmail}
-                        onChange={(e) => setProfileEmail(e.target.value)}
-                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-lg px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/40"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5">
-                        Cellular Phone
-                      </label>
-                      <input 
-                        type="text"
-                        value={profilePhone}
-                        onChange={(e) => setProfilePhone(e.target.value)}
-                        placeholder="e.g. 416-555-0199"
-                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-lg px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/40"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5">
-                        FSRA Licence #
-                      </label>
-                      <input 
-                        type="text"
-                        value={profileFsra}
-                        onChange={(e) => setProfileFsra(e.target.value)}
-                        placeholder="e.g. M12003456"
-                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-lg px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/40 font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5">
-                        E&amp;O Policy / Insurer
-                      </label>
-                      <input 
-                        type="text"
-                        value={profileEoPolicy}
-                        onChange={(e) => setProfileEoPolicy(e.target.value)}
-                        placeholder="e.g. Marsh / EO-998124"
-                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)]/70 rounded-lg px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/40 font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Role Info Box */}
-                  <div className="bg-[var(--color-surface-2)] p-3.5 rounded-lg border border-[var(--color-border)]/70 flex items-center justify-between">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] block">
-                        Assigned Broker Role
-                      </span>
-                      <span className="text-xs font-semibold text-[var(--color-text)] mt-0.5 block">
-                        {currentUser.role}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-[var(--color-text-muted)]">
-                      Managed by system admin
-                    </span>
-                  </div>
-
-                  <button 
-                    type="submit"
-                    className="w-full py-2.5 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-lg hover:bg-[var(--color-accent-hover)] transition-all uppercase tracking-wider cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
-                  >
-                    <CheckCircle2 className="w-4 h-4" /> Save Profile Changes
-                  </button>
                 </form>
               </div>
             </div>
@@ -987,18 +1064,166 @@ export const Settings: React.FC<SettingsProps> = ({
 
           {/* TAB 4: PERSONAL PREFERENCES */}
           {activeTab === "preferences" && (
-            <div className="max-w-2xl space-y-6">
-              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-xl shadow-sm space-y-6">
+            <div className="max-w-3xl space-y-6">
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] p-6 rounded-2xl shadow-sm space-y-6">
                 <div>
                   <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider mb-1 flex items-center gap-2">
-                    <Sliders className="w-4 h-4 text-[var(--color-accent)]" /> Personal Preferences
+                    <Sliders className="w-4 h-4 text-[var(--color-accent)]" /> Personal Preferences &amp; Regional Formatting
                   </h3>
-                  <p className="text-[11px] text-[var(--color-text-muted)]">Configure landing views, dashboard layout preferences, and date formatting.</p>
+                  <p className="text-[11px] text-[var(--color-text-muted)]">
+                    Configure landing views, dashboard layout preferences, currency, and global timezone &amp; date formatting.
+                  </p>
                 </div>
 
-                <div className="space-y-4">
+                {/* Global Synchronization Note */}
+                <div className="p-3 bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 rounded-xl text-xs text-[var(--color-text)] flex items-start gap-2.5">
+                  <Info className="w-4 h-4 text-[var(--color-accent)] shrink-0 mt-0.5" />
+                  <p className="text-[11px] leading-relaxed">
+                    <strong>System Note:</strong> Changes to timezone and date format will automatically affect all date/time displays across the application, including dashboard charts, client timelines, and task schedules.
+                  </p>
+                </div>
+
+                <div className="space-y-5">
+                  {/* 1. Time Zone Selection */}
+                  <div className="bg-[var(--color-surface-2)]/50 p-4 rounded-xl border border-[var(--color-border)]/70 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <span className="text-xs font-bold text-[var(--color-text)] flex items-center gap-1.5">
+                          <Globe className="w-4 h-4 text-[var(--color-accent)]" /> Preferred Time Zone
+                        </span>
+                        <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">
+                          Select your local operational timezone.
+                        </span>
+                      </div>
+                      <select
+                        value={prefTimeZone}
+                        onChange={(e) => setPrefTimeZone(e.target.value)}
+                        className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl px-3.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] w-full sm:w-72 cursor-pointer font-sans"
+                      >
+                        {MAJOR_TIMEZONES.map((tz) => (
+                          <option key={tz.value} value={tz.value}>
+                            {tz.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Live Current Time Display */}
+                    <div className="p-2.5 bg-[var(--color-surface)] border border-[var(--color-border)]/60 rounded-lg flex items-center justify-between text-xs">
+                      <span className="text-[11px] text-[var(--color-text-muted)] font-medium">
+                        Current time: <strong className="text-[var(--color-accent)] font-mono">{getCurrentTimeInTimezone(prefTimeZone)}</strong> in <span className="text-[var(--color-text)] font-semibold">{prefTimeZone}</span>
+                      </span>
+                      <span className="text-[10px] text-[var(--color-text-faint)] font-mono hidden sm:inline">
+                        Detected: {getDetectedSystemTimeZone()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 2. Date Format Field */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--color-border)]/70 pb-4">
+                    <div>
+                      <span className="text-xs font-bold text-[var(--color-text)] block">Date Format</span>
+                      <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">
+                        Display format for calendar dates and timelines throughout the app.
+                      </span>
+                    </div>
+                    <select
+                      value={prefDateFormat}
+                      onChange={(e) => setPrefDateFormat(e.target.value)}
+                      className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] w-full sm:w-64 cursor-pointer"
+                    >
+                      {DATE_FORMAT_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* 3. Test Time Display Button & Live Preview Box */}
+                  <div className="bg-[var(--color-surface-2)]/60 p-4 rounded-xl border border-[var(--color-border)]/70 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-bold text-[var(--color-text)] block">Time &amp; Date Formatting Preview</span>
+                        <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">
+                          Test how timestamps will look with your current timezone and format selections.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowTestPreview(!showTestPreview)}
+                        className="px-3.5 py-1.5 bg-[var(--color-accent)]/15 border border-[var(--color-accent)]/30 hover:bg-[var(--color-accent)]/25 text-[var(--color-accent)] text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${showTestPreview ? "animate-spin" : ""}`} />
+                        {showTestPreview ? "Refresh Preview" : "Test Time Display"}
+                      </button>
+                    </div>
+
+                    {showTestPreview && (
+                      <div className="p-3.5 bg-[var(--color-surface)] border border-[var(--color-accent)]/30 rounded-xl space-y-2 animate-fadeIn">
+                        <div className="text-[10px] font-bold text-[var(--color-accent)] uppercase tracking-wider">
+                          Live Formatting Example
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                          <div className="p-2.5 bg-[var(--color-surface-2)] rounded-lg border border-[var(--color-border)]/60">
+                            <span className="text-[10px] text-[var(--color-text-muted)] block">Formatted Sample Date (e.g. Aug 5, 2026 3:45 PM):</span>
+                            <span className="font-bold text-[var(--color-text)] text-sm block mt-1 font-mono">
+                              {formatDateTime(new Date(2026, 7, 5, 15, 45, 0), prefTimeZone, prefDateFormat)}
+                            </span>
+                          </div>
+                          <div className="p-2.5 bg-[var(--color-surface-2)] rounded-lg border border-[var(--color-border)]/60">
+                            <span className="text-[10px] text-[var(--color-text-muted)] block">Current Live System Timestamp:</span>
+                            <span className="font-bold text-[var(--color-accent)] text-sm block mt-1 font-mono">
+                              {formatDateTime(new Date(), prefTimeZone, prefDateFormat)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 4. Language Field */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--color-border)]/70 pb-4">
+                    <div>
+                      <span className="text-xs font-bold text-[var(--color-text)] block">Language</span>
+                      <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">
+                        System language interface setting.
+                      </span>
+                    </div>
+                    <select
+                      value={prefLanguage}
+                      onChange={(e) => setPrefLanguage(e.target.value)}
+                      className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] w-full sm:w-64 cursor-pointer"
+                    >
+                      <option value="English">English (US / Canada)</option>
+                      <option value="English_UK">English (UK)</option>
+                      <option value="French">Français (French)</option>
+                      <option value="Spanish">Español (Spanish)</option>
+                    </select>
+                  </div>
+
+                  {/* 5. Currency Field */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--color-border)]/70 pb-4">
+                    <div>
+                      <span className="text-xs font-bold text-[var(--color-text)] block">Currency</span>
+                      <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">
+                        Default currency symbol for pipeline mortgage volumes and fees.
+                      </span>
+                    </div>
+                    <select
+                      value={prefCurrency}
+                      onChange={(e) => setPrefCurrency(e.target.value)}
+                      className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] w-full sm:w-64 cursor-pointer"
+                    >
+                      <option value="USD ($)">USD ($) - US Dollar</option>
+                      <option value="CAD ($)">CAD ($) - Canadian Dollar</option>
+                      <option value="EUR (€)">EUR (€) - Euro</option>
+                      <option value="GBP (£)">GBP (£) - British Pound</option>
+                    </select>
+                  </div>
+
                   {/* Landing Screen */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[var(--color-border)]/70 pb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--color-border)]/70 pb-4">
                     <div>
                       <span className="text-xs font-bold text-[var(--color-text)] block">Default Landing Page</span>
                       <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">The CRM view displayed immediately after unlock.</span>
@@ -1006,7 +1231,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     <select
                       value={prefLanding}
                       onChange={(e) => setPrefLanding(e.target.value)}
-                      className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/50 w-full sm:w-48 cursor-pointer"
+                      className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] w-full sm:w-64 cursor-pointer"
                     >
                       <option value="dashboard">Dashboard Overview</option>
                       <option value="clients">Client Database</option>
@@ -1016,7 +1241,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
 
                   {/* Dashboard View */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[var(--color-border)]/70 pb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--color-border)]/70 pb-4">
                     <div>
                       <span className="text-xs font-bold text-[var(--color-text)] block">Preferred Dashboard Style</span>
                       <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">Visual layout style for the primary dashboard.</span>
@@ -1024,7 +1249,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     <select
                       value={prefDashboard}
                       onChange={(e) => setPrefDashboard(e.target.value)}
-                      className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/50 w-full sm:w-48 cursor-pointer"
+                      className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] w-full sm:w-64 cursor-pointer"
                     >
                       <option value="bento">Bento Grid Dashboard</option>
                       <option value="summary">Summary Focus Cards</option>
@@ -1033,7 +1258,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
 
                   {/* Client Layout */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[var(--color-border)]/70 pb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--color-border)]/70 pb-4">
                     <div>
                       <span className="text-xs font-bold text-[var(--color-text)] block">Default Client Directory Layout</span>
                       <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">Preferred display style in the clients database.</span>
@@ -1041,58 +1266,15 @@ export const Settings: React.FC<SettingsProps> = ({
                     <select
                       value={prefLayout}
                       onChange={(e) => setPrefLayout(e.target.value)}
-                      className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/50 w-full sm:w-48 cursor-pointer"
+                      className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] w-full sm:w-64 cursor-pointer"
                     >
                       <option value="table">Table List View</option>
                       <option value="cards">Interactive Cards Grid</option>
                     </select>
                   </div>
 
-                  {/* Date Formats */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[var(--color-border)]/70 pb-4">
-                    <div>
-                      <span className="text-xs font-bold text-[var(--color-text)] block">Date Format</span>
-                      <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">Display format for dates throughout the app.</span>
-                    </div>
-                    <select
-                      value={prefDateFormat}
-                      onChange={(e) => setPrefDateFormat(e.target.value)}
-                      className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/50 w-full sm:w-48 cursor-pointer"
-                    >
-                      <option value="YYYY-MM-DD">YYYY-MM-DD (2026-06-24)</option>
-                      <option value="DD/MM/YYYY">DD/MM/YYYY (24/06/2026)</option>
-                      <option value="MM/DD/YYYY">MM/DD/YYYY (06/24/2026)</option>
-                    </select>
-                  </div>
-
-                  {/* Time Zone Selection */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[var(--color-border)]/70 pb-4">
-                    <div>
-                      <span className="text-xs font-bold text-[var(--color-text)] block flex items-center gap-1.5">
-                        <Globe className="w-3.5 h-3.5 text-[var(--color-accent)]" /> Time Zone
-                      </span>
-                      <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block max-w-sm">
-                        Used for dashboard time, calendar events, reminders, and deadlines.
-                      </span>
-                      <span className="text-[9px] text-[var(--color-text-faint)] mt-0.5 block">
-                        Detected system timezone: <strong className="font-mono text-[var(--color-text)]">{getDetectedSystemTimeZone()}</strong>
-                      </span>
-                    </div>
-                    <select
-                      value={prefTimeZone}
-                      onChange={(e) => setPrefTimeZone(e.target.value)}
-                      className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/50 w-full sm:w-64 cursor-pointer font-sans"
-                    >
-                      {COMMON_TIMEZONES.map((tz) => (
-                        <option key={tz.value} value={tz.value}>
-                          {tz.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
                   {/* Time format */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                       <span className="text-xs font-bold text-[var(--color-text)] block">Time Format</span>
                       <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5 block">Clock format for calendar appointments and timestamps.</span>
@@ -1100,7 +1282,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     <select
                       value={prefTimeFormat}
                       onChange={(e) => setPrefTimeFormat(e.target.value)}
-                      className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]/50 w-full sm:w-48 cursor-pointer"
+                      className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3.5 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] w-full sm:w-64 cursor-pointer"
                     >
                       <option value="12">12-hour (AM / PM)</option>
                       <option value="24">24-hour scale</option>
@@ -1109,7 +1291,7 @@ export const Settings: React.FC<SettingsProps> = ({
 
                   <button 
                     onClick={handleSavePreferences}
-                    className="w-full py-2.5 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-lg hover:bg-[var(--color-accent-hover)] transition-all uppercase tracking-wider mt-4 cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
+                    className="w-full py-3 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-xl hover:bg-[var(--color-accent-hover)] transition-all uppercase tracking-wider mt-4 cursor-pointer shadow-sm flex items-center justify-center gap-2"
                   >
                     <CheckCircle2 className="w-4 h-4" /> Save Personal Preferences
                   </button>

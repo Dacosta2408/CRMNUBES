@@ -1222,3 +1222,9 @@ select {
   background: linear-gradient(135deg, rgba(30, 64, 175, 0.75) 0%, rgba(2, 132, 199, 0.50) 50%, rgba(30, 58, 138, 0.35) 100%);
 }
 
+[data-theme="light"] #gbk-crm-dashboard > div:first-child {
+  background: rgba(255, 255, 255, 0.55) !important;
+  border: 1px solid rgba(15, 23, 42, 0.06) !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+}
+

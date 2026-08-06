@@ -33,6 +33,19 @@ interface TasksViewProps {
   currentUser?: any;
 }
 
+export const categoryHexColors: Record<string, string> = {
+  "Client Follow-up": "#f59e0b",
+  "Document Collection": "#14b8a6",
+  "Lender Follow-up": "#06b6d4",
+  "Underwriting Review": "#f43f5e",
+  "Compliance": "#10b981",
+  "Appointment": "#d97706",
+  "Internal Admin": "#8e95a3",
+  "Renewal": "#3b82f6",
+  "Retention": "#f97316",
+  "Partner Follow-up": "#0ea5e9"
+};
+
 export const TASK_CATEGORIES = [
   { value: "Client Follow-up", color: "bg-[var(--color-warning)]", border: "border-[var(--color-warning)]/25", text: "text-amber-700 dark:text-[var(--color-warning)]", lightBg: "bg-[var(--color-warning-subtle)]", glow: "shadow-[0_0_12px_rgba(200,146,42,0.15)]" },
   { value: "Document Collection", color: "bg-teal-500", border: "border-teal-500/25", text: "text-teal-700 dark:text-teal-400", lightBg: "bg-teal-500/10", glow: "shadow-[0_0_12px_rgba(20,184,166,0.15)]" },
@@ -1022,7 +1035,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
               /* RENDER CASE 1: STANDARD PIPELINE LIST FEED */
               viewLayout === "list" && (
                 <div className="space-y-2.5">
-                  {sortedAndFilteredTasks.map(tk => {
+                  {sortedAndFilteredTasks.map((tk, index) => {
                     const isSelected = selectedTaskId === tk.id;
                     const isCompleted = tk.extendedStatus === "done";
                     const isOverdue = !isCompleted && tk.dueDate && tk.dueDate < todayStr;
@@ -1034,8 +1047,11 @@ export const TasksView: React.FC<TasksViewProps> = ({
                     const progressPercent = subtaskCount > 0 ? Math.round((subtaskDone / subtaskCount) * 100) : 0;
 
                     return (
-                      <div
+                      <motion.div
                         key={tk.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: Math.min(index * 0.04, 0.35), duration: 0.2, ease: "easeOut" }}
                         onClick={() => setSelectedTaskId(tk.id)}
                         className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-4 text-left ${
                           isSelected 
@@ -1156,7 +1172,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                           </button>
                         </div>
 
-                      </div>
+                      </motion.div>
                     );
                   })}
                 </div>
@@ -1186,12 +1202,15 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
                       {/* Stack internal list items */}
                       <div className="flex-1 space-y-2.5 overflow-y-auto pr-1">
-                        {itemsInCol.map(it => {
+                        {itemsInCol.map((it, index) => {
                           const isSelected = selectedTaskId === it.id;
                           const scheme = getCategoryColorSchema(it.category);
                           return (
-                            <div
+                            <motion.div
                               key={it.id}
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: Math.min(index * 0.04, 0.35), duration: 0.2, ease: "easeOut" }}
                               onClick={() => setSelectedTaskId(it.id)}
                               className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
                                 isSelected 
@@ -1231,7 +1250,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                                   File: {it.clientName}
                                 </div>
                               )}
-                            </div>
+                            </motion.div>
                           );
                         })}
                       </div>
@@ -1245,7 +1264,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
             {/* RENDER CASE 3: CHECKLIST FOCUS GRID WITH VISIBLE INDEPENDENT SUBTASKS CHECK BOXES */}
             {viewLayout === "checklist" && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {sortedAndFilteredTasks.map(tk => {
+                {sortedAndFilteredTasks.map((tk, index) => {
                   const isSelected = selectedTaskId === tk.id;
                   const isCompleted = tk.extendedStatus === "done";
                   const subs = tk.subtasks || [];
@@ -1254,8 +1273,11 @@ export const TasksView: React.FC<TasksViewProps> = ({
                   const scheme = getCategoryColorSchema(tk.category);
 
                   return (
-                    <div
+                    <motion.div
                       key={tk.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: Math.min(index * 0.04, 0.35), duration: 0.2, ease: "easeOut" }}
                       onClick={() => setSelectedTaskId(tk.id)}
                       className={`p-4 rounded-2xl border flex flex-col text-left transition-all cursor-pointer ${
                         isSelected 
@@ -1335,7 +1357,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                         </div>
                       )}
 
-                    </div>
+                    </motion.div>
                   );
                 })}
               </div>
@@ -1749,17 +1771,30 @@ export const TasksView: React.FC<TasksViewProps> = ({
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden"
+              className="rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden"
+              style={{
+                background: "rgba(255, 255, 255, 0.04)",
+                backdropFilter: "blur(20px)",
+                WebkitBackdropFilter: "blur(20px)",
+                border: "1px solid rgba(255, 126, 95, 0.15)",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.05)"
+              }}
             >
               {/* Header */}
               <div className="p-4 border-b border-[var(--color-border)]/70 bg-[var(--color-surface-2)]/40 flex items-center justify-between">
-                <h3 className="text-xs uppercase font-extrabold text-[var(--color-primary)] tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 fill-[var(--color-primary)]/35 text-[var(--color-primary)]" />
+                <h3 
+                  className="text-xs uppercase font-extrabold tracking-wider flex items-center gap-1.5"
+                  style={{
+                    color: "#FF7E5F",
+                    textShadow: "0 0 14px rgba(255, 126, 95, 0.4)"
+                  }}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-[#FF7E5F]" />
                   Log Mortgage Condition Action
                 </h3>
                 <button
                   onClick={() => setIsAddingTask(false)}
-                  className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] p-1 rounded-lg bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] transition-colors"
+                  className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] p-1 rounded-lg bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] transition-colors cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1787,19 +1822,31 @@ export const TasksView: React.FC<TasksViewProps> = ({
                   <div className="grid grid-cols-2 gap-2">
                     {TASK_CATEGORIES.map(et => {
                       const isMatch = newCategory === et.value;
+                      const categoryColor = categoryHexColors[et.value] || "#8e95a3";
                       return (
                         <button
                           key={et.value}
                           type="button"
                           onClick={() => setNewCategory(et.value)}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-xl text-left border text-[11px] font-semibold transition-all ${
-                            isMatch 
-                              ? `${et.lightBg} ${et.border} ${et.text} ${et.glow} border-white/20 ring-1 ring-white/10` 
-                              : "bg-[var(--color-surface-2)]/40 border-[var(--color-border)]/70 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-                          }`}
+                          className="rounded-full px-3 py-1.5 transition-all cursor-pointer flex items-center gap-2 text-left"
+                          style={isMatch ? {
+                            background: `${categoryColor}15`,
+                            backdropFilter: "blur(10px)",
+                            WebkitBackdropFilter: "blur(10px)",
+                            border: `1.5px solid ${categoryColor}`,
+                            boxShadow: `0 0 14px ${categoryColor}4D`
+                          } : {
+                            background: "rgba(255, 255, 255, 0.03)",
+                            backdropFilter: "blur(10px)",
+                            WebkitBackdropFilter: "blur(10px)",
+                            border: `1.5px solid ${categoryColor}80`,
+                            boxShadow: `0 0 10px ${categoryColor}33`
+                          }}
                         >
-                          <span className={`w-2 h-2 rounded-full ${et.color} ${et.glow} shrink-0`} />
-                          <span>{et.value}</span>
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: categoryColor, boxShadow: `0 0 6px ${categoryColor}` }} />
+                          <span className="text-xs font-bold" style={{ color: categoryColor }}>
+                            {et.value}
+                          </span>
                         </button>
                       );
                     })}
@@ -1935,15 +1982,30 @@ export const TasksView: React.FC<TasksViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsAddingTask(false)}
-                    className="px-4 py-2 border border-[var(--color-border)]/70 hover:border-[var(--color-border)] rounded-xl text-[var(--color-text-muted)] hover:text-[var(--color-text)] text-xs font-bold transition-all cursor-pointer"
+                    className="px-4 py-2 rounded-xl text-xs font-bold transition-all hover:brightness-110 cursor-pointer"
+                    style={{
+                      background: "rgba(255, 255, 255, 0.04)",
+                      backdropFilter: "blur(12px)",
+                      WebkitBackdropFilter: "blur(12px)",
+                      border: "1.5px solid rgba(255, 255, 255, 0.15)",
+                      color: "var(--color-text-muted)"
+                    }}
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-[var(--color-calendar-selected-bg)] hover:opacity-90 text-[var(--color-calendar-selected-text)] font-black text-xs rounded-xl transition-all flex items-center gap-1 shadow-lg cursor-pointer"
+                    className="px-5 py-2 font-extrabold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer hover:brightness-110 hover:-translate-y-0.5"
+                    style={{
+                      background: "rgba(255, 255, 255, 0.05)",
+                      backdropFilter: "blur(14px)",
+                      WebkitBackdropFilter: "blur(14px)",
+                      border: "1.5px solid rgba(255, 126, 95, 0.6)",
+                      color: "#FEB47B",
+                      boxShadow: "0 0 16px rgba(255, 126, 95, 0.3), inset 0 1px 0 rgba(255,255,255,0.06)"
+                    }}
                   >
-                    <Check className="w-3.5 h-3.5 text-[var(--color-calendar-selected-text)]" /> Book Action Task
+                    <Check className="w-3.5 h-3.5 text-[#FEB47B]" /> Book Action Task
                   </button>
                 </div>
 
