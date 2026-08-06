@@ -8,6 +8,9 @@ import {
 } from "lucide-react";
 import { Client, Task, Message, SavedMessage, MessageAction, MessagePermission, ChannelInfo, User } from "../types";
 import { Avatar } from "./Avatar";
+import { UserStatusModal } from "./UserStatusModal";
+import { TypingIndicator } from "./TypingIndicator";
+import { startTyping, stopTyping, subscribeToTyping, TypingUser } from "../lib/typingService";
 import { DEFAULT_USERS } from "../data";
 import { getNotesForClient, saveNotesForClient, logActivityEvent, FileNote } from "../lib/activityEngine";
 import { getUserFullName, getUserPhotoUrl } from "../lib/userUtils";
@@ -17,7 +20,10 @@ import {
   canSendMessage, 
   canEditMessage, 
   canDeleteMessage, 
-  canSaveMessage 
+  canSaveMessage,
+  getActiveTeamUsers,
+  canViewUserInChannel,
+  getChannelMembers
 } from "../lib/permissions";
 import { 
   getAccessibleChannels,
@@ -259,6 +265,9 @@ export const Messages: React.FC<MessagesProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachedFiles, setAttachedFiles] = useState<{ name: string; size: string; type: string }[]>([]);
 
+  // Status Modal State
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+
   // Action Menu, Edit & Delete States
   const [activeMenuMsgId, setActiveMenuMsgId] = useState<string | null>(null);
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
@@ -312,7 +321,59 @@ export const Messages: React.FC<MessagesProps> = ({
 
   // Pins Panel toggle
   const [showPinsPanel, setShowPinsPanel] = useState(false);
-  const [typingUser, setTypingUser] = useState<string | null>(null);
+  const [activeTypingUsers, setActiveTypingUsers] = useState<TypingUser[]>([]);
+  const [activeTouchActionsMsgId, setActiveTouchActionsMsgId] = useState<string | null>(null);
+  const seenMsgIdsRef = useRef<Set<string>>(new Set());
+  const typingDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Pre-populate seenMsgIdsRef when activeChannel or messages change so history does not animate
+  useEffect(() => {
+    const list = messages[activeChannel] || [];
+    list.forEach((m: any) => {
+      if (m?.id) seenMsgIdsRef.current.add(m.id);
+    });
+  }, [activeChannel, messages]);
+
+  // Subscribe to typing state for active channel
+  useEffect(() => {
+    if (!activeChannel || activeChannel === "saved-messages") {
+      setActiveTypingUsers([]);
+      return;
+    }
+
+    const unsubscribe = subscribeToTyping(activeChannel, (users) => {
+      setActiveTypingUsers(users);
+    });
+
+    return () => {
+      if (typingDebounceTimerRef.current) clearTimeout(typingDebounceTimerRef.current);
+      stopTyping(activeChannel, currentUserId);
+      unsubscribe();
+    };
+  }, [activeChannel, currentUserId]);
+
+  // Handle composer input change with debounced typing signal
+  const handleComposerInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setMsgInputText(val);
+
+    if (activeChannel === "saved-messages") return;
+
+    if (val.trim()) {
+      startTyping(activeChannel, {
+        id: currentUserId,
+        name: currentUser.displayName || `${currentUser.first} ${currentUser.last}`.trim() || "You"
+      });
+
+      if (typingDebounceTimerRef.current) clearTimeout(typingDebounceTimerRef.current);
+      typingDebounceTimerRef.current = setTimeout(() => {
+        stopTyping(activeChannel, currentUserId);
+      }, 3000);
+    } else {
+      if (typingDebounceTimerRef.current) clearTimeout(typingDebounceTimerRef.current);
+      stopTyping(activeChannel, currentUserId);
+    }
+  };
 
   // Close message action menu when clicking outside
   useEffect(() => {
@@ -420,7 +481,7 @@ export const Messages: React.FC<MessagesProps> = ({
         if (!u) return false;
         const st = (u.status || "").toLowerCase();
         // Exclude inactive, disabled, or deleted users from active team directory
-        if (st === 'inactive' || st === 'disabled' || st === 'deleted') return false;
+        if (st === 'inactive' || st === 'disabled' || st === 'deleted' || st === 'pending') return false;
         return canAccessMessages(u);
       })
       .map(u => {
@@ -428,23 +489,35 @@ export const Messages: React.FC<MessagesProps> = ({
         const photo = getUserPhotoUrl(u);
         const userRole = u.jobTitle || u.role || "Mortgage Specialist";
         
-        const rawStatus = (u.status || "active").toLowerCase();
+        const availability = (u.availability || u.userStatus?.availability || (u.status === 'active' ? 'available' : 'offline')) as any;
         let status = "online";
-        let statusLabel = "Active 🟢";
+        let statusLabel = "Available 🟢";
         let color = "bg-emerald-500";
 
-        if (rawStatus === 'busy') {
+        if (availability === 'busy') {
           status = "busy";
           statusLabel = "Busy 🔴";
-          color = "bg-red-400";
-        } else if (rawStatus === 'away') {
+          color = "bg-rose-500";
+        } else if (availability === 'in_meeting') {
+          status = "in_meeting";
+          statusLabel = "In a meeting 📅";
+          color = "bg-purple-500";
+        } else if (availability === 'on_call') {
+          status = "on_call";
+          statusLabel = "On a call 📞";
+          color = "bg-blue-500";
+        } else if (availability === 'do_not_disturb') {
+          status = "do_not_disturb";
+          statusLabel = "Do not disturb ⛔";
+          color = "bg-rose-600";
+        } else if (availability === 'away') {
           status = "away";
           statusLabel = "Away 🟡";
           color = "bg-amber-500";
-        } else if (rawStatus === 'offline') {
+        } else if (availability === 'offline') {
           status = "offline";
           statusLabel = "Offline ⚪";
-          color = "bg-slate-500";
+          color = "bg-slate-400";
         }
 
         return {
@@ -454,6 +527,7 @@ export const Messages: React.FC<MessagesProps> = ({
           last: u.last || "",
           role: userRole,
           status: status,
+          availability: availability,
           statusLabel: statusLabel,
           color: color,
           chatColor: (u as any).chatColor || color,
@@ -463,20 +537,6 @@ export const Messages: React.FC<MessagesProps> = ({
         };
       });
   }, [userRoster, currentUser]);
-
-  useEffect(() => {
-    if (activeChannel === "saved-messages") {
-      setTypingUser(null);
-      return;
-    }
-    const dm = chatRoster.find(t => t.id === activeChannel);
-    if (!dm) { setTypingUser(null); return; }
-    const delay = setTimeout(() => {
-      setTypingUser(dm.name.split(" ")[0]);
-      setTimeout(() => setTypingUser(null), 3000);
-    }, 1500);
-    return () => clearTimeout(delay);
-  }, [activeChannel, chatRoster]);
 
   // Mark channel read when opened (Req 1)
   useEffect(() => {
@@ -828,7 +888,10 @@ export const Messages: React.FC<MessagesProps> = ({
       return updatedObj;
     });
 
-    // Clear composer inputs & channel draft
+    // Clear composer inputs, typing state & channel draft
+    if (typingDebounceTimerRef.current) clearTimeout(typingDebounceTimerRef.current);
+    stopTyping(activeChannel, currentUserId);
+
     setMsgInputText("");
     setAttachedFiles([]);
     setMsgPriority("normal");
@@ -1395,10 +1458,13 @@ export const Messages: React.FC<MessagesProps> = ({
                   const isUnread = countBadge > 0;
 
                   return (
-                    <button
+                    <div
                       key={`fav_${tm.id}`}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setActiveChannel(tm.id)}
-                      className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition-all ${
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveChannel(tm.id); }}
+                      className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
                         isActive 
                           ? "bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/15 text-[var(--color-accent)]" 
                           : "border border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
@@ -1431,7 +1497,7 @@ export const Messages: React.FC<MessagesProps> = ({
                           </span>
                         )}
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -1453,10 +1519,13 @@ export const Messages: React.FC<MessagesProps> = ({
                 const isFav = favoriteChannels.includes(tm.id);
 
                 return (
-                  <button
+                  <div
                     key={tm.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setActiveChannel(tm.id)}
-                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition-all group ${
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveChannel(tm.id); }}
+                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition-all group cursor-pointer ${
                       isActive 
                         ? "bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/15 text-[var(--color-accent)]" 
                         : "border border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
@@ -1517,7 +1586,7 @@ export const Messages: React.FC<MessagesProps> = ({
                         </span>
                       )}
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -1526,28 +1595,33 @@ export const Messages: React.FC<MessagesProps> = ({
         </div>
 
         {/* Current User Session Overview */}
-        <div className="p-3 border-t border-[var(--color-border)] bg-[var(--color-panel)]/30 flex items-center gap-2.5 shrink-0">
-          <div className="relative">
-            <div
-              className="rounded-full p-[2px]"
-              style={{
-                background: chatColorGradients[(currentUser as any)?.chatColor ?? ""] ?? DEFAULT_CHAT_GRADIENT
-              }}
-            >
-              <Avatar
-                src={getUserPhotoUrl(currentUser) || (currentUser as any)?.avatar}
-                first={currentUser.first}
-                last={currentUser.last}
-                name={currentUser.displayName || getUserFullName(currentUser)}
-                size="sm"
-              />
+        <div 
+          onClick={() => setIsStatusModalOpen(true)}
+          className="p-3 border-t border-[var(--color-border)] bg-[var(--color-panel)]/30 flex items-center justify-between gap-2 shrink-0 cursor-pointer hover:bg-[var(--color-surface-2)]/60 transition-colors group"
+          title="Click to change availability status"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Avatar
+              src={getUserPhotoUrl(currentUser) || (currentUser as any)?.avatar}
+              first={currentUser.first}
+              last={currentUser.last}
+              name={currentUser.displayName || getUserFullName(currentUser)}
+              availability={(currentUser.availability || (currentUser as any)?.userStatus?.availability || 'available') as any}
+              showStatus={true}
+              size="sm"
+            />
+            <div className="min-w-0">
+              <div className="text-[11px] font-black text-[var(--color-text)] truncate leading-tight group-hover:text-[var(--color-accent)] transition-colors">
+                {currentUser.first} {currentUser.last}
+              </div>
+              <div className="text-[8.5px] text-[var(--color-text-muted)] truncate font-semibold uppercase">
+                {currentUser.role || "Mortgage Broker (Owner)"}
+              </div>
             </div>
-            <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[var(--color-bg)] bg-emerald-500" />
           </div>
-          <div className="min-w-0">
-            <div className="text-[11px] font-black text-[var(--color-text)] truncate leading-tight">{currentUser.first} {currentUser.last}</div>
-            <div className="text-[8.5px] text-[var(--color-text-muted)] truncate font-semibold uppercase">{currentUser.role || "Mortgage Broker (Owner)"}</div>
-          </div>
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[var(--color-accent)] shrink-0 group-hover:border-[var(--color-accent)]/50 transition-colors">
+            Set Status
+          </span>
         </div>
 
       </div>
@@ -1872,7 +1946,7 @@ export const Messages: React.FC<MessagesProps> = ({
                 </div>
               )}
 
-              {/* Message Blocks (Date Separators + Grouped Messages) (Req 6) */}
+              {/* Message Blocks (Date Separators + Grouped Messages) */}
               {groupedMessageBlocks.length > 0 ? (
                 groupedMessageBlocks.map(block => {
                   if (block.type === 'date_separator') {
@@ -1888,14 +1962,10 @@ export const Messages: React.FC<MessagesProps> = ({
                   }
 
                   const msgs = block.messages || [];
-                  const firstMsg = msgs[0];
-                  if (!firstMsg) return null;
-
-                  const isCurrentUserAuthor = firstMsg.senderId === currentUserId || (currentUser.first && firstMsg.author?.includes(currentUser.first));
-                  const escalationUI = ESCALATION_FLAGS[firstMsg.priority || "normal"];
+                  if (msgs.length === 0) return null;
 
                   return (
-                    <div key={block.id} className="space-y-1">
+                    <div key={block.id} className="space-y-1.5">
                       {msgs.map((msg, msgIdx) => {
                         const isFirstInGroup = msgIdx === 0;
                         const isEdited = Boolean(msg.editedAt);
@@ -1903,126 +1973,154 @@ export const Messages: React.FC<MessagesProps> = ({
                         const isSaved = savedMessages.some(sm => sm.messageId === msg.id);
                         const replyCount = (msg.replies || []).length || msg.replyCount || 0;
 
+                        // STRICT ALIGNMENT CHECK using authorId or senderId
+                        const isOutgoing = msg.authorId ? msg.authorId === currentUserId : msg.senderId === currentUserId;
+
+                        // Entrance animation check (only animate once for new messages)
+                        const isNew = !seenMsgIdsRef.current.has(msg.id);
+                        if (isNew && msg.id) {
+                          seenMsgIdsRef.current.add(msg.id);
+                        }
+                        const animationClass = isNew
+                          ? (isOutgoing ? "animate-msg-enter-outgoing" : "animate-msg-enter-incoming")
+                          : "";
+
+                        const escalationUI = ESCALATION_FLAGS[msg.priority || "normal"];
+
                         return (
                           <div
                             key={msg.id}
                             id={`msg_${msg.id}`}
-                            className={`group relative p-3 rounded-2xl transition-all border text-left ${
-                              isSoftDeleted
-                                ? "bg-rose-500/5 border-rose-500/20 text-slate-400"
-                                : msg.priority && msg.priority !== "normal"
-                                ? "bg-[var(--color-surface)] border-[var(--color-border)] shadow-md"
-                                : "bg-[var(--color-surface)]/60 border-transparent hover:bg-[var(--color-surface)] hover:border-[var(--color-border)]/60"
-                            }`}
+                            className={`w-full flex my-1.5 ${isOutgoing ? 'justify-end' : 'justify-start'} group relative select-text`}
                           >
-                            {/* Hover Action Toolbar */}
-                            <div className="absolute right-3 -top-3 hidden group-hover:flex items-center gap-1 bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-1 shadow-lg z-10 animate-fade-in">
+                            <div className={`flex items-end gap-2 max-w-[88%] sm:max-w-[75%] lg:max-w-[70%] ${isOutgoing ? 'flex-row-reverse' : 'flex-row'} ${animationClass}`}>
                               
-                              {/* Reply Button (Req 3) */}
-                              <button
-                                onClick={() => setActiveThreadParentMsg(msg)}
-                                className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-accent)]"
-                                title="Reply in thread"
-                              >
-                                <MessageSquare className="w-3.5 h-3.5" />
-                              </button>
+                              {/* Avatar */}
+                              <div className="shrink-0 mb-0.5">
+                                {isFirstInGroup ? (
+                                  <Avatar src={msg.authorAvatar} name={msg.author} size="sm" />
+                                ) : (
+                                  <div className="w-7 h-7" />
+                                )}
+                              </div>
 
-                              {/* Save/Bookmark Button */}
-                              <button
-                                onClick={(e) => handleToggleSaveMessage(msg, e)}
-                                className={`p-1 rounded-lg hover:bg-[var(--color-surface-2)] ${isSaved ? 'text-amber-400' : 'text-[var(--color-text-muted)] hover:text-amber-400'}`}
-                                title={isSaved ? "Remove Bookmark" : "Save Message"}
-                              >
-                                <Bookmark className={`w-3.5 h-3.5 ${isSaved ? 'fill-amber-400' : ''}`} />
-                              </button>
-
-                              {/* Pin Button */}
-                              <button
-                                onClick={() => handleTogglePinMessage(msg.id)}
-                                className={`p-1 rounded-lg hover:bg-[var(--color-surface-2)] ${msg.pinned ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-accent)]'}`}
-                                title={msg.pinned ? "Unpin Message" : "Pin Message"}
-                              >
-                                <Pin className="w-3.5 h-3.5" />
-                              </button>
-
-                              {/* Edit Button */}
-                              {canEditMessage(msg, currentUser) && !isSoftDeleted && (
-                                <button
-                                  onClick={(e) => handleStartEditing(msg, e)}
-                                  className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                                  title="Edit Message"
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-
-                              {/* Delete Button */}
-                              {canDeleteMessage(msg, currentUser) && !isSoftDeleted && (
-                                <button
-                                  onClick={() => setConfirmDeleteMsgId(msg.id)}
-                                  className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-rose-400 hover:text-rose-300"
-                                  title="Delete Message"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-
-                              {/* Create Task Wizard */}
-                              <button
-                                onClick={() => handleOpenTaskWizard(msg)}
-                                className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-amber-400"
-                                title="Convert to Operational Task"
-                              >
-                                <Sparkles className="w-3.5 h-3.5" />
-                              </button>
-
-                            </div>
-
-                            {/* First Message Header in Group */}
-                            {isFirstInGroup ? (
-                              <div className="flex items-start gap-3">
-                                <Avatar src={msg.authorAvatar} name={msg.author} size="sm" />
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs font-black text-[var(--color-text)]">{msg.author}</span>
-                                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-[var(--color-surface-2)] text-[var(--color-text-muted)] border border-[var(--color-border)]/50">
-                                        {msg.role}
+                              {/* Main Content & Bubble Container */}
+                              <div className={`flex flex-col min-w-0 ${isOutgoing ? 'items-end' : 'items-start'}`}>
+                                
+                                {/* Sender label and role (for incoming first message) */}
+                                {isFirstInGroup && !isOutgoing && (
+                                  <div className="flex items-center gap-1.5 mb-1 px-1">
+                                    <span className="text-[11px] font-bold text-[var(--color-text)]">{msg.author}</span>
+                                    {msg.role && (
+                                      <span className="text-[9px] font-semibold text-[var(--color-text-faint)]">· {msg.role}</span>
+                                    )}
+                                    {msg.priority && msg.priority !== "normal" && escalationUI && (
+                                      <span className={`text-[8.5px] font-black uppercase px-1.5 py-0.2 rounded border ${escalationUI.color}`}>
+                                        {escalationUI.label}
                                       </span>
-                                      {msg.priority && msg.priority !== "normal" && escalationUI && (
-                                        <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${escalationUI.color}`}>
-                                          {escalationUI.label}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-2 text-[10px] text-[var(--color-text-faint)]">
-                                      <span>{msg.time}</span>
-                                      {msg.status === 'sending' && (
-                                        <span className="text-[9px] text-amber-400 flex items-center gap-1 font-bold">
-                                          <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Sending...
-                                        </span>
-                                      )}
-                                      {msg.status === 'failed' && (
-                                        <button
-                                          onClick={() => handleRetryMessage(msg)}
-                                          className="text-[9px] text-rose-400 font-extrabold underline flex items-center gap-1"
-                                        >
-                                          <AlertCircle className="w-2.5 h-2.5" /> Failed (Retry)
-                                        </button>
-                                      )}
-                                    </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Outgoing Header flag if priority escalation */}
+                                {isFirstInGroup && isOutgoing && msg.priority && msg.priority !== "normal" && escalationUI && (
+                                  <div className="flex items-center gap-1 mb-1 px-1">
+                                    <span className={`text-[8.5px] font-black uppercase px-1.5 py-0.2 rounded border ${escalationUI.color}`}>
+                                      {escalationUI.label}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Action Toolbar on Hover/Focus/Touch */}
+                                <div className="relative group/bubble">
+                                  
+                                  {/* Action Bar */}
+                                  <div
+                                    className={`absolute top-0 -translate-y-full mb-1 ${isOutgoing ? 'right-0' : 'left-0'} 
+                                    opacity-0 group-hover/bubble:opacity-100 group-focus-within/bubble:opacity-100 
+                                    ${activeTouchActionsMsgId === msg.id ? 'opacity-100' : ''} 
+                                    flex items-center gap-0.5 bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-1 shadow-lg z-20 transition-opacity`}
+                                  >
+                                    {/* Reply */}
+                                    <button
+                                      onClick={() => setActiveThreadParentMsg(msg)}
+                                      aria-label="Reply to message"
+                                      className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] text-[var(--color-text-muted)] hover:text-[var(--color-accent)]"
+                                      title="Reply in thread"
+                                    >
+                                      <MessageSquare className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* Bookmark */}
+                                    <button
+                                      onClick={(e) => handleToggleSaveMessage(msg, e)}
+                                      aria-label={isSaved ? "Remove Bookmark" : "Save Message"}
+                                      className={`p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-amber-400 ${isSaved ? 'text-amber-400' : 'text-[var(--color-text-muted)] hover:text-amber-400'}`}
+                                      title={isSaved ? "Remove Bookmark" : "Save Message"}
+                                    >
+                                      <Bookmark className={`w-3.5 h-3.5 ${isSaved ? 'fill-amber-400' : ''}`} />
+                                    </button>
+
+                                    {/* Pin */}
+                                    <button
+                                      onClick={() => handleTogglePinMessage(msg.id)}
+                                      aria-label={msg.pinned ? "Unpin Message" : "Pin Message"}
+                                      className={`p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${msg.pinned ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-accent)]'}`}
+                                      title={msg.pinned ? "Unpin Message" : "Pin Message"}
+                                    >
+                                      <Pin className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* Edit */}
+                                    {canEditMessage(msg, currentUser) && !isSoftDeleted && (
+                                      <button
+                                        onClick={(e) => handleStartEditing(msg, e)}
+                                        aria-label="Edit message"
+                                        className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                                        title="Edit Message"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+
+                                    {/* Delete */}
+                                    {canDeleteMessage(msg, currentUser) && !isSoftDeleted && (
+                                      <button
+                                        onClick={() => setConfirmDeleteMsgId(msg.id)}
+                                        aria-label="Delete message"
+                                        className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-rose-400 text-rose-400 hover:text-rose-300"
+                                        title="Delete Message"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+
+                                    {/* Convert to Task */}
+                                    <button
+                                      onClick={() => handleOpenTaskWizard(msg)}
+                                      aria-label="Convert message to operational task"
+                                      className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-amber-400 text-amber-400"
+                                      title="Convert to Operational Task"
+                                    >
+                                      <Sparkles className="w-3.5 h-3.5" />
+                                    </button>
                                   </div>
 
-                                  {/* Editing Mode Input */}
-                                  {editingMsgId === msg.id ? (
-                                    <div className="mt-2 space-y-2">
+                                  {/* BUBBLE STYLING */}
+                                  {isSoftDeleted ? (
+                                    <div className="px-3.5 py-2 rounded-2xl bg-[var(--color-surface-2)]/40 border border-dashed border-[var(--color-border)] text-[var(--color-text-faint)] italic text-xs flex items-center gap-2">
+                                      <Trash2 className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                                      <span>[This message was deleted]</span>
+                                    </div>
+                                  ) : editingMsgId === msg.id ? (
+                                    <div className="p-2.5 rounded-2xl bg-[var(--color-surface-2)] border border-[var(--color-accent)] w-full min-w-[240px]">
                                       <textarea
                                         value={editContent}
                                         onChange={(e) => setEditContent(e.target.value)}
                                         className="w-full bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-2 text-xs text-[var(--color-text)] focus:outline-none"
                                         rows={2}
                                       />
-                                      <div className="flex items-center justify-end gap-2">
+                                      <div className="flex items-center justify-end gap-2 mt-2">
                                         <button
                                           onClick={() => setEditingMsgId(null)}
                                           className="px-2.5 py-1 rounded-lg text-xs font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
@@ -2039,92 +2137,123 @@ export const Messages: React.FC<MessagesProps> = ({
                                       </div>
                                     </div>
                                   ) : (
-                                    /* Message Content Text */
-                                    <div className="mt-1">
-                                      <p className={`text-xs whitespace-pre-wrap leading-relaxed ${isSoftDeleted ? 'italic text-[var(--color-text-faint)]' : 'text-[var(--color-text)]'}`}>
-                                        {renderHighlightedText(msg.text, searchQuery)}
-                                      </p>
-                                      {isEdited && !isSoftDeleted && (
-                                        <span className="text-[9px] text-[var(--color-text-faint)] italic ml-1">(edited)</span>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  {/* Client Link Tag */}
-                                  {msg.clientTag && !isSoftDeleted && (
-                                    <div className="mt-2 flex items-center gap-1">
-                                      <span
-                                        onClick={() => msg.clientId && onOpenClient(msg.clientId)}
-                                        className="text-[10px] font-extrabold text-[var(--color-accent)] bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 px-2 py-0.5 rounded-md cursor-pointer hover:underline flex items-center gap-1"
-                                      >
-                                        <Tag className="w-3 h-3" />
-                                        {msg.clientTag}
-                                      </span>
-                                    </div>
-                                  )}
-
-                                  {/* Attachments */}
-                                  {msg.attachments && msg.attachments.length > 0 && !isSoftDeleted && (
-                                    <div className="mt-2.5 flex flex-wrap gap-2">
-                                      {msg.attachments.map((att: any, idx: number) => (
-                                        <div
-                                          key={idx}
-                                          onClick={() => handleDownloadAttachment(att, msg)}
-                                          className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-2 flex items-center gap-2 cursor-pointer hover:border-[var(--color-accent)]/50 transition-all text-xs"
-                                        >
-                                          <Paperclip className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-                                          <div className="min-w-0">
-                                            <div className="font-bold text-[var(--color-text)] truncate max-w-[140px]">{att.name}</div>
-                                            <div className="text-[9px] text-[var(--color-text-faint)]">{att.size}</div>
-                                          </div>
-                                          <Download className="w-3 h-3 text-[var(--color-text-muted)] ml-1" />
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-
-                                  {/* Thread Reply Badge (Req 3) */}
-                                  {replyCount > 0 && (
-                                    <button
-                                      onClick={() => setActiveThreadParentMsg(msg)}
-                                      className="mt-2 flex items-center gap-1.5 text-[10.5px] font-extrabold text-[var(--color-accent)] bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 px-2.5 py-1 rounded-xl hover:bg-[var(--color-accent)]/20 transition-all"
+                                    <div
+                                      onClick={() => setActiveTouchActionsMsgId(prev => prev === msg.id ? null : msg.id)}
+                                      className={`px-3.5 py-2.5 shadow-sm text-xs w-fit ${
+                                        isOutgoing
+                                          ? "bg-blue-600 dark:bg-blue-600 text-white rounded-2xl rounded-br-xs border border-blue-500/30"
+                                          : "bg-[var(--color-surface-2)] text-[var(--color-text)] rounded-2xl rounded-bl-xs border border-[var(--color-border)]"
+                                      }`}
                                     >
-                                      <MessageSquare className="w-3 h-3" />
-                                      <span>{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
-                                      <ChevronRight className="w-3 h-3" />
-                                    </button>
+                                      {/* Text Content */}
+                                      <p className="whitespace-pre-wrap [overflow-wrap:anywhere] break-words leading-relaxed font-normal">
+                                        {renderHighlightedText(msg.text || msg.content || "", searchQuery)}
+                                        {isEdited && (
+                                          <span className={`text-[9px] italic ml-1.5 ${isOutgoing ? 'text-blue-100/70' : 'text-[var(--color-text-faint)]'}`}>
+                                            (edited)
+                                          </span>
+                                        )}
+                                      </p>
+
+                                      {/* Client Link Tag */}
+                                      {msg.clientTag && (
+                                        <div className="mt-1.5 flex items-center gap-1">
+                                          <span
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (msg.clientId) onOpenClient(msg.clientId);
+                                            }}
+                                            className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-md cursor-pointer hover:underline flex items-center gap-1 ${
+                                              isOutgoing
+                                                ? "bg-white/15 text-white border border-white/20"
+                                                : "text-[var(--color-accent)] bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20"
+                                            }`}
+                                          >
+                                            <Tag className="w-3 h-3" />
+                                            {msg.clientTag}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {/* Attachments */}
+                                      {msg.attachments && msg.attachments.length > 0 && (
+                                        <div className="mt-2 flex flex-wrap gap-1.5">
+                                          {msg.attachments.map((att: any, idx: number) => (
+                                            <div
+                                              key={idx}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDownloadAttachment(att, msg);
+                                              }}
+                                              className={`rounded-xl p-2 flex items-center gap-2 cursor-pointer transition-all text-xs border ${
+                                                isOutgoing
+                                                  ? "bg-blue-700/60 border-blue-400/40 text-white hover:bg-blue-700"
+                                                  : "bg-[var(--color-panel)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-accent)]/50"
+                                              }`}
+                                            >
+                                              <Paperclip className={`w-3.5 h-3.5 ${isOutgoing ? 'text-blue-100' : 'text-[var(--color-accent)]'}`} />
+                                              <div className="min-w-0">
+                                                <div className="font-bold truncate max-w-[130px]">{att.name}</div>
+                                                <div className={`text-[8.5px] ${isOutgoing ? 'text-blue-200/80' : 'text-[var(--color-text-faint)]'}`}>{att.size}</div>
+                                              </div>
+                                              <Download className="w-3 h-3 ml-1 opacity-80" />
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      {/* Thread Reply Badge */}
+                                      {replyCount > 0 && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveThreadParentMsg(msg);
+                                          }}
+                                          className={`mt-2 flex items-center gap-1.5 text-[10px] font-extrabold px-2.5 py-1 rounded-xl transition-all border ${
+                                            isOutgoing
+                                              ? "bg-white/15 text-white border-white/20 hover:bg-white/25"
+                                              : "text-[var(--color-accent)] bg-[var(--color-accent)]/10 border-[var(--color-accent)]/20 hover:bg-[var(--color-accent)]/20"
+                                          }`}
+                                        >
+                                          <MessageSquare className="w-3 h-3" />
+                                          <span>{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
+                                          <ChevronRight className="w-3 h-3" />
+                                        </button>
+                                      )}
+
+                                    </div>
                                   )}
 
                                 </div>
-                              </div>
-                            ) : (
-                              /* Grouped Sub-Message (Req 6) */
-                              <div className="pl-11 min-w-0">
-                                {editingMsgId === msg.id ? (
-                                  <div className="space-y-2">
-                                    <textarea
-                                      value={editContent}
-                                      onChange={(e) => setEditContent(e.target.value)}
-                                      className="w-full bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-2 text-xs text-[var(--color-text)] focus:outline-none"
-                                      rows={2}
-                                    />
-                                    <div className="flex items-center justify-end gap-2">
-                                      <button onClick={() => setEditingMsgId(null)} className="px-2.5 py-1 rounded-lg text-xs font-bold text-[var(--color-text-muted)]">Cancel</button>
-                                      <button onClick={handleSaveEdit} className="px-3 py-1 rounded-lg bg-[var(--color-accent)] text-black text-xs font-black">Save</button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-baseline justify-between group/sub">
-                                    <p className={`text-xs whitespace-pre-wrap ${isSoftDeleted ? 'italic text-[var(--color-text-faint)]' : 'text-[var(--color-text)]'}`}>
-                                      {renderHighlightedText(msg.text, searchQuery)}
-                                      {isEdited && !isSoftDeleted && <span className="text-[9px] text-[var(--color-text-faint)] italic ml-1">(edited)</span>}
-                                    </p>
-                                    <span className="text-[9px] text-[var(--color-text-faint)] opacity-0 group-hover/sub:opacity-100 transition-opacity ml-2 shrink-0">{msg.time}</span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
 
+                                {/* Timestamp & Status below bubble */}
+                                <div className={`flex items-center gap-1.5 text-[9.5px] mt-1 px-1 ${
+                                  isOutgoing ? 'text-[var(--color-text-faint)] justify-end' : 'text-[var(--color-text-faint)] justify-start'
+                                }`}>
+                                  <span>{msg.time}</span>
+                                  {isOutgoing && msg.status === 'sending' && (
+                                    <span className="text-amber-400 flex items-center gap-1 font-bold">
+                                      <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Sending...
+                                    </span>
+                                  )}
+                                  {isOutgoing && msg.status === 'failed' && (
+                                    <button
+                                      onClick={() => handleRetryMessage(msg)}
+                                      className="text-rose-400 font-extrabold underline flex items-center gap-1"
+                                    >
+                                      <AlertCircle className="w-2.5 h-2.5" /> Failed (Retry)
+                                    </button>
+                                  )}
+                                  {msg.pinned && (
+                                    <span className="text-[var(--color-accent)] flex items-center gap-0.5 font-bold">
+                                      <Pin className="w-2.5 h-2.5" /> Pinned
+                                    </span>
+                                  )}
+                                </div>
+
+                              </div>
+
+                            </div>
                           </div>
                         );
                       })}
@@ -2169,10 +2298,13 @@ export const Messages: React.FC<MessagesProps> = ({
             )}
 
             {/* ============================================================== */}
-            {/* IMPROVED MESSAGE COMPOSER (Req 4) */}
+            {/* IMPROVED MESSAGE COMPOSER */}
             {/* ============================================================== */}
             <div className="p-3 border-t border-[var(--color-border)] bg-[var(--color-surface)]/60 flex flex-col gap-2 shrink-0">
               
+              {/* Typing Indicator above composer inputs */}
+              <TypingIndicator typingUsers={activeTypingUsers} currentUserId={currentUserId} />
+
               {/* Attached Files List */}
               {attachedFiles.length > 0 && (
                 <div className="flex flex-wrap gap-2 pb-1 border-b border-[var(--color-border)]/40">
@@ -2196,7 +2328,7 @@ export const Messages: React.FC<MessagesProps> = ({
                     maxLength={2000}
                     placeholder={`Message ${currentChannelDetails.name}... (Enter sends, Shift+Enter new line)`}
                     value={msgInputText}
-                    onChange={(e) => setMsgInputText(e.target.value)}
+                    onChange={handleComposerInputChange}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
@@ -2399,6 +2531,14 @@ export const Messages: React.FC<MessagesProps> = ({
           </div>
         </div>
       )}
+
+      {/* User Status Selector Modal */}
+      <UserStatusModal
+        isOpen={isStatusModalOpen}
+        onClose={() => setIsStatusModalOpen(false)}
+        currentUserId={currentUserId}
+        onStatusUpdated={() => refreshTeamRoster()}
+      />
 
     </div>
   );

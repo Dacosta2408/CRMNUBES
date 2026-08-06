@@ -1,4 +1,5 @@
 import React, { useState, useEffect, memo } from "react";
+import { UserAvailability } from "../types";
 
 export interface AvatarProps {
   src?: string | null;
@@ -10,6 +11,8 @@ export interface AvatarProps {
   className?: string;
   border?: boolean;
   borderColor?: string;
+  availability?: UserAvailability;
+  showStatus?: boolean;
   onClick?: (e: React.MouseEvent<HTMLDivElement | HTMLImageElement>) => void;
 }
 
@@ -23,6 +26,8 @@ export const Avatar: React.FC<AvatarProps> = memo(({
   className = "",
   border = true,
   borderColor,
+  availability,
+  showStatus = false,
   onClick
 }) => {
   const [imgError, setImgError] = useState(false);
@@ -92,36 +97,88 @@ export const Avatar: React.FC<AvatarProps> = memo(({
     sizePx ? "" : sizeClass
   } ${className}`;
 
-  if (src && !imgError) {
+  // Availability Badge styling
+  let statusBg = "bg-emerald-500";
+  let statusTitle = "Available";
+  if (availability) {
+    switch (availability) {
+      case 'busy':
+        statusBg = "bg-rose-500";
+        statusTitle = "Busy";
+        break;
+      case 'in_meeting':
+        statusBg = "bg-purple-500";
+        statusTitle = "In a meeting";
+        break;
+      case 'on_call':
+        statusBg = "bg-blue-500";
+        statusTitle = "On a call";
+        break;
+      case 'do_not_disturb':
+        statusBg = "bg-rose-600";
+        statusTitle = "Do not disturb";
+        break;
+      case 'away':
+        statusBg = "bg-amber-500";
+        statusTitle = "Away";
+        break;
+      case 'offline':
+        statusBg = "bg-slate-400";
+        statusTitle = "Offline";
+        break;
+      default:
+        statusBg = "bg-emerald-500";
+        statusTitle = "Available";
+    }
+  }
+
+  const renderAvatarContent = () => {
+    if (src && !imgError) {
+      return (
+        <img
+          src={src}
+          alt={alt || name || "Avatar"}
+          loading="lazy"
+          decoding="async"
+          onError={() => setImgError(true)}
+          referrerPolicy="no-referrer"
+          style={styleObj}
+          onClick={onClick}
+          className={`${containerClasses} object-cover ${onClick ? "cursor-pointer" : ""}`}
+        />
+      );
+    }
+
     return (
-      <img
-        src={src}
-        alt={alt || name || "Avatar"}
-        loading="lazy"
-        decoding="async"
-        onError={() => setImgError(true)}
-        referrerPolicy="no-referrer"
-        style={styleObj}
+      <div
         onClick={onClick}
-        className={`${containerClasses} object-cover ${onClick ? "cursor-pointer" : ""}`}
-      />
+        style={{
+          ...styleObj,
+          background: "var(--grad-warm-highlight, linear-gradient(135deg, #c8922a 0%, #e05c6e 100%))",
+          color: "var(--color-text-inverse, #ffffff)"
+        }}
+        className={`${containerClasses} font-black tracking-wider ${onClick ? "cursor-pointer" : ""}`}
+        title={alt || name || `${first || ""} ${last || ""}`.trim()}
+      >
+        {initials}
+      </div>
+    );
+  };
+
+  if (availability || showStatus) {
+    return (
+      <div className="relative inline-block shrink-0">
+        {renderAvatarContent()}
+        <span
+          className={`absolute bottom-0 right-0 block w-2.5 h-2.5 rounded-full ring-2 ring-[var(--color-surface-1, #ffffff)] ${statusBg}`}
+          title={`Status: ${statusTitle}`}
+          aria-label={`Status: ${statusTitle}`}
+        />
+      </div>
     );
   }
 
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        ...styleObj,
-        background: "var(--grad-warm-highlight, linear-gradient(135deg, #c8922a 0%, #e05c6e 100%))",
-        color: "var(--color-text-inverse, #ffffff)"
-      }}
-      className={`${containerClasses} font-black tracking-wider ${onClick ? "cursor-pointer" : ""}`}
-      title={alt || name || `${first || ""} ${last || ""}`.trim()}
-    >
-      {initials}
-    </div>
-  );
+  return renderAvatarContent();
 });
 
 Avatar.displayName = "Avatar";

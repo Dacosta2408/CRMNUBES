@@ -138,10 +138,14 @@ export async function generateNoteApi(purpose: string, clientName: string, detai
 // Messages & User Access API Service Layer
 // ==========================================
 
-import { User } from "../types";
+import { User, UserAvailability, UserStatus, UserDeletionImpact, UserDeletionAudit } from "../types";
 import { DEFAULT_USERS } from "../data";
 import { dispatchUserEvent } from "./userUtils";
-import { getUserPermissions as calculatePermissions } from "./permissions";
+import { 
+  getUserPermissions as calculatePermissions, 
+  getChannelMembers as calculateChannelMembers,
+  getActiveTeamUsers as calculateActiveTeamUsers 
+} from "./permissions";
 
 /**
  * Local storage / Memory adapter helper for offline/disconnected backend
@@ -197,7 +201,32 @@ export async function getUserById(userId: string): Promise<User | null> {
   return roster.find(u => u.id === userId) || null;
 }
 
+export async function checkUserEmailUnique(email: string, excludeUserId?: string): Promise<{ isUnique: boolean; existingUser?: User }> {
+  if (!email) return { isUnique: true };
+  const targetEmail = email.trim().toLowerCase();
+  
+  const roster = getLocalRoster();
+  const found = roster.find(u => {
+    if (excludeUserId && u.id === excludeUserId) return false;
+    return (u.email || "").trim().toLowerCase() === targetEmail;
+  });
+
+  if (found) {
+    return { isUnique: false, existingUser: found };
+  }
+  return { isUnique: true };
+}
+
 export async function createUser(userData: Partial<User>): Promise<User> {
+  if (userData.email) {
+    const emailCheck = await checkUserEmailUnique(userData.email);
+    if (!emailCheck.isUnique && emailCheck.existingUser) {
+      const err: any = new Error("An account with this email already exists.");
+      err.existingUser = emailCheck.existingUser;
+      throw err;
+    }
+  }
+
   const timestamp = new Date().toISOString();
   const newId = userData.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const first = userData.first || "New";
@@ -437,4 +466,475 @@ export async function searchMessages(params: {
 export async function getSavedMessagesApi(userId: string): Promise<any[] | null> {
   return safeFetchJson<any[]>(`/api/users/${encodeURIComponent(userId)}/saved-messages`, undefined, null);
 }
+
+// ==========================================
+// Channel Members & User Availability API
+// ==========================================
+
+function getLocalUserStatuses(): Record<string, UserStatus> {
+  try {
+    const saved = localStorage.getItem("gbk_user_statuses");
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return {};
+}
+
+function saveLocalUserStatus(status: UserStatus): void {
+  try {
+    const all = getLocalUserStatuses();
+    all[status.userId] = status;
+    localStorage.setItem("gbk_user_statuses", JSON.stringify(all));
+  } catch {}
+}
+
+function clearLocalUserStatus(userId: string): void {
+  try {
+    const all = getLocalUserStatuses();
+    delete all[userId];
+    localStorage.setItem("gbk_user_statuses", JSON.stringify(all));
+  } catch {}
+}
+
+/**
+ * GET /api/channels/:channelId/members
+ * Retrieves authorized active members for a given channel
+ */
+export async function getChannelMembers(channelId: string): Promise<User[]> {
+  const serverMembers = await safeFetchJson<User[]>(`/api/channels/${encodeURIComponent(channelId)}/members`, undefined, null);
+  if (Array.isArray(serverMembers) && serverMembers.length > 0) {
+    return serverMembers;
+  }
+
+  // Fallback to calculate channel members locally
+  const activeUsers = await getActiveUsers();
+  const currentUser = await getCurrentUser();
+  return calculateChannelMembers(channelId, currentUser, activeUsers);
+}
+
+/**
+ * GET /api/users/:userId/status
+ * Retrieves manual user availability status, handling expiration rules
+ */
+export async function getUserAvailability(userId: string): Promise<UserStatus> {
+  const serverStatus = await safeFetchJson<UserStatus>(`/api/users/${encodeURIComponent(userId)}/status`, undefined, null);
+  if (serverStatus && serverStatus.availability) {
+    // Check expiration
+    if (serverStatus.expiresAt && new Date(serverStatus.expiresAt).getTime() < Date.now()) {
+      return {
+        userId,
+        availability: 'available',
+        updatedAt: new Date().toISOString()
+      };
+    }
+    return serverStatus;
+  }
+
+  // Adapter fallback
+  const localStatuses = getLocalUserStatuses();
+  const userStatus = localStatuses[userId];
+  if (userStatus) {
+    if (userStatus.expiresAt && new Date(userStatus.expiresAt).getTime() < Date.now()) {
+      clearLocalUserStatus(userId);
+      return {
+        userId,
+        availability: 'available',
+        updatedAt: new Date().toISOString()
+      };
+    }
+    return userStatus;
+  }
+
+  return {
+    userId,
+    availability: 'available',
+    updatedAt: new Date().toISOString()
+  };
+}
+
+/**
+ * PUT /api/users/me/status
+ * Updates the current user's manual availability status
+ */
+export async function updateMyAvailability(
+  statusOrAvailability: Partial<UserStatus> | UserAvailability,
+  customMessage?: string,
+  expiresAt?: string
+): Promise<UserStatus> {
+  const currentUser = await getCurrentUser();
+  const userId = currentUser?.id || "staff_me";
+
+  let statusObj: UserStatus;
+  if (typeof statusOrAvailability === "string") {
+    statusObj = {
+      userId,
+      availability: statusOrAvailability,
+      customMessage,
+      expiresAt,
+      updatedAt: new Date().toISOString()
+    };
+  } else {
+    statusObj = {
+      userId,
+      availability: statusOrAvailability.availability || 'available',
+      customMessage: statusOrAvailability.customMessage || customMessage,
+      expiresAt: statusOrAvailability.expiresAt || expiresAt,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  // Try API
+  const apiRes = await safeFetchJson<UserStatus>("/api/users/me/status", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(statusObj)
+  }, null);
+
+  const finalStatus = apiRes || statusObj;
+
+  // Local adapter save
+  saveLocalUserStatus(finalStatus);
+
+  // Update user roster in local storage
+  if (currentUser) {
+    const updatedUser = {
+      ...currentUser,
+      availability: finalStatus.availability,
+      userStatus: finalStatus,
+      updatedAt: new Date().toISOString()
+    };
+    const roster = getLocalRoster();
+    const updatedRoster = roster.map(u => u.id === userId ? updatedUser : u);
+    saveLocalRoster(updatedRoster);
+
+    // Dispatch event
+    dispatchUserEvent("user.statusChanged", {
+      user: updatedUser,
+      userId,
+      status: finalStatus.availability,
+      availability: finalStatus.availability,
+      userStatus: finalStatus
+    });
+  }
+
+  return finalStatus;
+}
+
+/**
+ * DELETE /api/users/me/status
+ * Clears custom status and reverts to Available
+ */
+export async function clearMyAvailability(): Promise<UserStatus> {
+  const currentUser = await getCurrentUser();
+  const userId = currentUser?.id || "staff_me";
+
+  await safeFetchJson(`/api/users/me/status`, { method: "DELETE" }, null);
+
+  clearLocalUserStatus(userId);
+
+  const clearedStatus: UserStatus = {
+    userId,
+    availability: 'available',
+    updatedAt: new Date().toISOString()
+  };
+
+  if (currentUser) {
+    const updatedUser = {
+      ...currentUser,
+      availability: 'available' as UserAvailability,
+      userStatus: clearedStatus,
+      updatedAt: new Date().toISOString()
+    };
+    const roster = getLocalRoster();
+    const updatedRoster = roster.map(u => u.id === userId ? updatedUser : u);
+    saveLocalRoster(updatedRoster);
+
+    dispatchUserEvent("user.statusChanged", {
+      user: updatedUser,
+      userId,
+      status: 'available',
+      availability: 'available',
+      userStatus: clearedStatus
+    });
+  }
+
+  return clearedStatus;
+}
+
+/**
+ * GET /api/presence
+ * Calculates recent application activity and presence for given user IDs
+ */
+export async function getPresenceForUsers(userIds: string[]): Promise<Record<string, { online: boolean; lastActive: string; availability: UserAvailability }>> {
+  const query = userIds.map(id => `userIds=${encodeURIComponent(id)}`).join('&');
+  const serverPresence = await safeFetchJson<Record<string, any>>(`/api/presence?${query}`, undefined, null);
+  if (serverPresence) return serverPresence;
+
+  // Fallback adapter
+  const localStatuses = getLocalUserStatuses();
+  const roster = getLocalRoster();
+  const result: Record<string, { online: boolean; lastActive: string; availability: UserAvailability }> = {};
+
+  userIds.forEach(id => {
+    const u = roster.find(user => user.id === id);
+    const status = localStatuses[id];
+    let availability: UserAvailability = status?.availability || (u?.availability as UserAvailability) || 'available';
+    
+    // Check status expiration
+    if (status?.expiresAt && new Date(status.expiresAt).getTime() < Date.now()) {
+      availability = 'available';
+    }
+
+    const lastActive = u?.lastActive || u?.lastLogin || 'Just now';
+    const isOnline = (u?.status || '').toLowerCase() === 'active' || (u?.status || '').toLowerCase() === 'online';
+
+    result[id] = {
+      online: isOnline,
+      lastActive,
+      availability
+    };
+  });
+
+  return result;
+}
+
+// ==========================================
+// User Deletion & Archiving API Functions
+// ==========================================
+
+export async function getUserDeletionImpact(userId: string): Promise<UserDeletionImpact> {
+  const serverImpact = await safeFetchJson<UserDeletionImpact>(`/api/users/${encodeURIComponent(userId)}/deletion-impact`, undefined, null);
+  if (serverImpact) return serverImpact;
+
+  const roster = getLocalRoster();
+  const targetUser = roster.find(u => u.id === userId);
+  const userName = targetUser ? `${targetUser.first} ${targetUser.last}`.trim() : "Unknown User";
+  const userEmail = targetUser?.email || "";
+
+  let clientsCount = 0;
+  try {
+    const rawClients = localStorage.getItem("gbk_clients");
+    if (rawClients) {
+      const parsed = JSON.parse(rawClients);
+      if (Array.isArray(parsed)) {
+        clientsCount = parsed.filter((c: any) => c.assignedAgentId === userId || c.brokerId === userId || c.advisorId === userId).length;
+      }
+    }
+  } catch {}
+
+  let tasksCount = 0;
+  try {
+    const rawTasks = localStorage.getItem("gbk_tasks");
+    if (rawTasks) {
+      const parsed = JSON.parse(rawTasks);
+      if (Array.isArray(parsed)) {
+        tasksCount = parsed.filter((t: any) => t.assignedTo === userId || t.createdById === userId).length;
+      }
+    }
+  } catch {}
+
+  let documentsCount = 0;
+  try {
+    const rawDocs = localStorage.getItem("gbk_documents");
+    if (rawDocs) {
+      const parsed = JSON.parse(rawDocs);
+      if (Array.isArray(parsed)) {
+        documentsCount = parsed.filter((d: any) => d.uploadedBy === userId || d.userId === userId).length;
+      }
+    }
+  } catch {}
+
+  let messagesCount = 0;
+  try {
+    const rawMsgs = localStorage.getItem("gbk_messages");
+    if (rawMsgs) {
+      const parsed = JSON.parse(rawMsgs);
+      if (Array.isArray(parsed)) {
+        messagesCount = parsed.filter((m: any) => m.senderId === userId || m.userId === userId).length;
+      }
+    }
+  } catch {}
+
+  const hasBusinessRecords = (clientsCount + tasksCount + documentsCount + messagesCount) > 0;
+
+  return {
+    userId,
+    userName,
+    userEmail,
+    hasBusinessRecords,
+    clientsCount,
+    applicationsCount: clientsCount > 0 ? 1 : 0,
+    tasksCount,
+    documentsCount,
+    messagesCount,
+    savedMessagesCount: 0,
+    calendarEventsCount: 0,
+    auditRecordsCount: 1,
+    onboardingRecordsCount: targetUser?.onboardingCompleted ? 1 : 0,
+    clearanceAssignmentsCount: targetUser?.clearanceLevel ? 1 : 0
+  };
+}
+
+export async function archiveUser(userId: string, reason: string): Promise<{ success: boolean; user: User }> {
+  const timestamp = new Date().toISOString();
+  const currentUser = await getCurrentUser();
+
+  const apiRes = await safeFetchJson<{ success: boolean; user: User }>(`/api/users/${encodeURIComponent(userId)}/archive`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason, deletedBy: currentUser?.id })
+  }, null);
+
+  const roster = getLocalRoster();
+  const idx = roster.findIndex(u => u.id === userId);
+  let updatedUser: User;
+
+  if (idx >= 0) {
+    updatedUser = {
+      ...roster[idx],
+      status: 'archived',
+      deletedAt: timestamp,
+      deletedBy: currentUser?.id || 'staff_me',
+      deletionReason: reason || 'Archived by Administrator',
+      deletionType: 'archive',
+      updatedAt: timestamp
+    };
+    roster[idx] = updatedUser;
+    saveLocalRoster(roster);
+  } else {
+    throw new Error(`User with ID ${userId} not found.`);
+  }
+
+  dispatchUserEvent("user.updated", { user: updatedUser, userId });
+  dispatchUserEvent("user.deactivated", { user: updatedUser, userId });
+  dispatchUserEvent("user.statusChanged", { user: updatedUser, userId, status: 'archived' });
+
+  return apiRes || { success: true, user: updatedUser };
+}
+
+export async function deleteUserPermanently(
+  userId: string, 
+  reason: string, 
+  confirmationValue: string
+): Promise<{ success: boolean; audit: UserDeletionAudit }> {
+  const timestamp = new Date().toISOString();
+  const currentUser = await getCurrentUser();
+
+  if (currentUser?.id === userId) {
+    throw new Error("You cannot delete your own authenticated account.");
+  }
+
+  const roster = getLocalRoster();
+  const targetUser = roster.find(u => u.id === userId);
+  if (!targetUser) {
+    throw new Error(`User with ID ${userId} not found.`);
+  }
+
+  if (targetUser.isProtected || (targetUser.role === 'Developer/Admin' && roster.filter(u => u.role === 'Developer/Admin' && u.status === 'active').length <= 1)) {
+    throw new Error("Cannot delete the final Super Admin or a protected system account.");
+  }
+
+  const normConf = confirmationValue.trim().toLowerCase();
+  const targetEmail = (targetUser.email || "").trim().toLowerCase();
+  const targetName = (targetUser.name || `${targetUser.first} ${targetUser.last}`).trim().toLowerCase();
+  if (normConf !== targetEmail && normConf !== targetName) {
+    throw new Error("Confirmation value does not match target email address or full name.");
+  }
+
+  await safeFetchJson(`/api/users/${encodeURIComponent(userId)}/permanent`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason, confirmationValue })
+  }, null);
+
+  const impact = await getUserDeletionImpact(userId);
+
+  const updatedRoster = roster.map(u => {
+    if (u.id === userId) {
+      return {
+        ...u,
+        status: 'deleted',
+        deletedAt: timestamp,
+        deletedBy: currentUser?.id || 'staff_me',
+        deletionReason: reason,
+        deletionType: 'permanent' as const,
+        first: 'Deleted',
+        last: 'User',
+        name: 'Deleted User',
+        fullName: 'Deleted User',
+        displayName: 'Deleted User',
+        email: `deleted_${userId}@deleted.invalid`,
+        updatedAt: timestamp
+      };
+    }
+    return u;
+  });
+  saveLocalRoster(updatedRoster);
+
+  const audit: UserDeletionAudit = {
+    id: `audit_del_${Date.now()}`,
+    targetUserId: userId,
+    targetUserEmail: targetUser.email,
+    targetUserName: `${targetUser.first} ${targetUser.last}`,
+    deletedByUserId: currentUser?.id || 'staff_me',
+    deletedByUserName: currentUser ? `${currentUser.first} ${currentUser.last}` : 'Admin',
+    timestamp,
+    deletionReason: reason,
+    deletionType: 'permanent',
+    impactSummary: impact,
+    dataArchived: false,
+    dataPermanentlyDeleted: true
+  };
+
+  dispatchUserEvent("user.deleted", { user: targetUser, userId });
+  dispatchUserEvent("user.deactivated", { user: targetUser, userId });
+  dispatchUserEvent("user.statusChanged", { user: targetUser, userId, status: 'deleted' });
+
+  return { success: true, audit };
+}
+
+export async function restoreArchivedUser(userId: string): Promise<{ success: boolean; user: User }> {
+  const timestamp = new Date().toISOString();
+
+  await safeFetchJson(`/api/users/${encodeURIComponent(userId)}/restore`, {
+    method: "POST"
+  }, null);
+
+  const roster = getLocalRoster();
+  const idx = roster.findIndex(u => u.id === userId);
+  if (idx < 0) {
+    throw new Error(`User with ID ${userId} not found.`);
+  }
+
+  const restoredUser: User = {
+    ...roster[idx],
+    status: 'active',
+    deletedAt: undefined,
+    deletedBy: undefined,
+    deletionReason: undefined,
+    deletionType: undefined,
+    updatedAt: timestamp
+  };
+
+  roster[idx] = restoredUser;
+  saveLocalRoster(roster);
+
+  dispatchUserEvent("user.updated", { user: restoredUser, userId });
+  dispatchUserEvent("user.statusChanged", { user: restoredUser, userId, status: 'active' });
+
+  return { success: true, user: restoredUser };
+}
+
+export async function getArchivedUsers(): Promise<User[]> {
+  const serverArchived = await safeFetchJson<User[]>("/api/users/archived", undefined, null);
+  if (Array.isArray(serverArchived) && serverArchived.length > 0) {
+    return serverArchived;
+  }
+
+  const roster = getLocalRoster();
+  return roster.filter(u => {
+    const st = (u.status || "").toLowerCase();
+    return st === 'archived' || st === 'deleted' || Boolean(u.deletedAt);
+  });
+}
+
 

@@ -277,6 +277,23 @@ export interface ClearanceMatrix {
   permissions: Record<string, Record<string, PermissionLevel>>;
 }
 
+export type UserAvailability =
+  | 'available'
+  | 'busy'
+  | 'in_meeting'
+  | 'on_call'
+  | 'do_not_disturb'
+  | 'away'
+  | 'offline';
+
+export interface UserStatus {
+  userId: string;
+  availability: UserAvailability;
+  customMessage?: string;
+  expiresAt?: string;
+  updatedAt: string;
+}
+
 export interface User {
   id: string;
   name?: string;
@@ -285,7 +302,15 @@ export interface User {
   last: string;
   email: string;
   role: 'Developer/Admin' | 'Admin' | 'Broker' | 'Agent' | 'Assistant' | string;
-  status: 'active' | 'inactive' | 'pending' | 'Active' | 'Inactive' | 'Pending' | string;
+  status: 'active' | 'inactive' | 'pending' | 'archived' | 'deleted' | 'Active' | 'Inactive' | 'Pending' | 'Archived' | 'Deleted' | string;
+  availability?: UserAvailability;
+  userStatus?: UserStatus;
+  userLabel?: 'test' | 'fake' | 'duplicate' | 'imported' | 'production' | 'protected' | string;
+  isProtected?: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
+  deletionReason?: string;
+  deletionType?: 'soft' | 'permanent' | 'archive';
   brokerage?: string;
   licenseNumber?: string;
   phone?: string;
@@ -432,6 +457,38 @@ export interface MessagePermission {
   canDelete: boolean;
   canSave: boolean;
   canViewAttachment?: boolean;
+}
+
+export interface UserDeletionImpact {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  hasBusinessRecords: boolean;
+  clientsCount: number;
+  applicationsCount: number;
+  tasksCount: number;
+  documentsCount: number;
+  messagesCount: number;
+  savedMessagesCount: number;
+  calendarEventsCount: number;
+  auditRecordsCount: number;
+  onboardingRecordsCount: number;
+  clearanceAssignmentsCount: number;
+}
+
+export interface UserDeletionAudit {
+  id: string;
+  targetUserId: string;
+  targetUserEmail: string;
+  targetUserName?: string;
+  deletedByUserId: string;
+  deletedByUserName?: string;
+  timestamp: string;
+  deletionReason: string;
+  deletionType: 'archive' | 'permanent';
+  impactSummary: UserDeletionImpact;
+  dataArchived: boolean;
+  dataPermanentlyDeleted: boolean;
 }
 
 

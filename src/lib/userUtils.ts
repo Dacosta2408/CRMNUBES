@@ -37,6 +37,8 @@ export function getUserPhotoUrl(user: Partial<User> | null | undefined): string 
 export type UserEventType =
   | "user.created"
   | "user.updated"
+  | "user.deactivated"
+  | "user.deleted"
   | "user.profilePhotoUpdated"
   | "user.statusChanged"
   | "user.permissionsChanged";

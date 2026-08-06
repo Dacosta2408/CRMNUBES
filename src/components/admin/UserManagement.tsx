@@ -5,9 +5,17 @@ import {
   FileCheck, ShieldAlert, Award, AlertCircle, FileText, RefreshCw, UserX,
   Briefcase, Building2, CheckSquare, Download, Printer, ChevronRight,
   ShieldCheck, Sparkles, Send, FileSpreadsheet, Layers, UserCheck, HelpCircle,
-  BarChart2, FileUp, CheckCircle2, User, Tag
+  BarChart2, FileUp, CheckCircle2, User, Tag, Archive, AlertTriangle, RotateCcw
 } from "lucide-react";
-import { User as UserType, Client, Task, ModulePermissions, PermissionLevel, OnboardingTask } from "../../types";
+import { User as UserType, Client, Task, ModulePermissions, PermissionLevel, OnboardingTask, UserDeletionImpact } from "../../types";
+import { 
+  getUserDeletionImpact, 
+  archiveUser, 
+  deleteUserPermanently, 
+  restoreArchivedUser, 
+  getArchivedUsers, 
+  checkUserEmailUnique 
+} from "../../lib/api";
 import { Avatar } from "../Avatar";
 import { generateRosterPDF, exportRosterCSV } from "../../lib/rosterPdfGenerator";
 import { DEFAULT_CLEARANCE_LEVELS, DEFAULT_MODULE_KEYS, ROLE_PRESETS } from "../../lib/clearanceMatrixDefaults";
@@ -32,7 +40,7 @@ interface UserManagementProps {
   logActivity: (action: string, details: string) => void;
 }
 
-type UserSubTab = "roster" | "brokers" | "onboarding" | "clearance" | "orgchart" | "activity";
+type UserSubTab = "roster" | "brokers" | "onboarding" | "clearance" | "orgchart" | "activity" | "archived";
 
 export const UserManagement: React.FC<UserManagementProps> = ({
   userRoster,
@@ -57,6 +65,18 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   // Multi-select Bulk Actions
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 
+  // Deletion & Archiving Workflow State
+  const [deletingUser, setDeletingUser] = useState<UserType | null>(null);
+  const [deletionImpact, setDeletionImpact] = useState<UserDeletionImpact | null>(null);
+  const [deletionActionType, setDeletionActionType] = useState<'impact' | 'confirm_delete' | 'archive_prompt'>('impact');
+  const [deletionReason, setDeletionReason] = useState<string>("Test account");
+  const [customDeletionReason, setCustomDeletionReason] = useState<string>("");
+  const [confirmationInput, setConfirmationInput] = useState<string>("");
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  // Duplicate Email Error Modal State
+  const [duplicateEmailError, setDuplicateEmailError] = useState<{ message: string; existingUser: UserType } | null>(null);
+
   // New Modals State
   const [showComparisonModal, setShowComparisonModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
@@ -73,6 +93,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [editBrokerage, setEditBrokerage] = useState<string>("GBK Financial");
   const [editStatus, setEditStatus] = useState<string>("active");
   const [editClearance, setEditClearance] = useState<number>(2);
+  const [editUserLabel, setEditUserLabel] = useState<string>("production");
   const [editSpecialPerms, setEditSpecialPerms] = useState<Record<string, boolean>>({
     canExport: true,
     canManageUsers: false,
@@ -192,6 +213,135 @@ export const UserManagement: React.FC<UserManagementProps> = ({
     };
   };
 
+  // Admin / Developer Permission Check
+  const isAdminOrDev = useMemo(() => {
+    if (!currentUser) return false;
+    const role = currentUser.role || '';
+    return currentUser.isOwner || 
+           role === 'Developer/Admin' || 
+           role === 'Admin' || 
+           (currentUser.clearanceLevel && currentUser.clearanceLevel >= 5);
+  }, [currentUser]);
+
+  // Determine if a target user can be permanently deleted
+  const canDeleteUser = (u: UserType) => {
+    if (!isAdminOrDev) return false;
+    if (u.id === currentUser.id) return false; // Cannot delete self
+    if (u.isProtected || u.userLabel === 'protected') return false; // Protected account
+    if (u.isOwner) return false; // Super admin owner
+    if (u.role === 'Developer/Admin') {
+      const activeDevs = userRoster.filter(r => r.role === 'Developer/Admin' && (r.status || '').toLowerCase() === 'active');
+      if (activeDevs.length <= 1) return false; // Final Super Admin
+    }
+    return true;
+  };
+
+  // Start Deletion / Archiving Workflow
+  const handleStartDeleteUser = async (targetUser: UserType, initialAction: 'archive' | 'delete' = 'delete') => {
+    if (initialAction === 'delete' && !canDeleteUser(targetUser)) {
+      showToast("This user account is protected or you lack permissions to delete it.", "error");
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      const impact = await getUserDeletionImpact(targetUser.id);
+      setDeletionImpact(impact);
+      setDeletingUser(targetUser);
+      setConfirmationInput("");
+      setDeletionReason("Test account");
+      setCustomDeletionReason("");
+
+      if (initialAction === 'archive') {
+        setDeletionActionType('archive_prompt');
+      } else if (impact.hasBusinessRecords) {
+        setDeletionActionType('impact');
+      } else {
+        setDeletionActionType('confirm_delete');
+      }
+    } catch (err: any) {
+      showToast(err?.message || "Failed to calculate user deletion impact.", "error");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Execute User Archiving
+  const handleExecuteArchive = async (targetUser: UserType) => {
+    setIsDeleting(true);
+    try {
+      const reasonText = deletionReason === "Other" ? customDeletionReason || "Archived by Admin" : deletionReason;
+      await archiveUser(targetUser.id, reasonText);
+
+      setUserRoster(prev => prev.map(u => u.id === targetUser.id ? { 
+        ...u, 
+        status: 'archived',
+        deletedAt: new Date().toISOString(),
+        deletionReason: reasonText,
+        deletionType: 'archive'
+      } : u));
+
+      showToast(`User ${targetUser.first} ${targetUser.last} archived successfully.`, "success");
+      logActivity("Archived User Account", `Archived staff member ${targetUser.first} ${targetUser.last} (${targetUser.email}).`);
+      setDeletingUser(null);
+      if (profileUserModal?.id === targetUser.id) setProfileUserModal(null);
+    } catch (err: any) {
+      showToast(err?.message || "Failed to archive user.", "error");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Execute Permanent User Deletion
+  const handleExecutePermanentDelete = async (targetUser: UserType) => {
+    if (!confirmationInput) return;
+    setIsDeleting(true);
+    try {
+      const reasonText = deletionReason === "Other" ? customDeletionReason || "Permanent Deletion" : deletionReason;
+      await deleteUserPermanently(targetUser.id, reasonText, confirmationInput);
+
+      setUserRoster(prev => prev.map(u => u.id === targetUser.id ? { 
+        ...u, 
+        status: 'deleted',
+        deletedAt: new Date().toISOString(),
+        deletionReason: reasonText,
+        deletionType: 'permanent',
+        first: 'Deleted',
+        last: 'User',
+        name: 'Deleted User',
+        fullName: 'Deleted User',
+        displayName: 'Deleted User',
+        email: `deleted_${targetUser.id}@deleted.invalid`
+      } : u));
+
+      showToast(`User ${targetUser.first} ${targetUser.last} permanently deleted.`, "success");
+      logActivity("Permanently Deleted User Account", `Permanently removed user ${targetUser.first} ${targetUser.last} (${targetUser.email}). Reason: ${reasonText}`);
+      setDeletingUser(null);
+      if (profileUserModal?.id === targetUser.id) setProfileUserModal(null);
+    } catch (err: any) {
+      showToast(err?.message || "Failed to permanently delete user.", "error");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Restore Archived or Soft-Deleted User
+  const handleRestoreUser = async (targetUser: UserType) => {
+    try {
+      await restoreArchivedUser(targetUser.id);
+      setUserRoster(prev => prev.map(u => u.id === targetUser.id ? {
+        ...u,
+        status: 'active',
+        deletedAt: undefined,
+        deletionReason: undefined,
+        deletionType: undefined
+      } : u));
+      showToast(`Restored user ${targetUser.first} ${targetUser.last} to active roster.`, "success");
+      logActivity("Restored User Account", `Restored user ${targetUser.first} ${targetUser.last} (${targetUser.email}) from archived state.`);
+    } catch (err: any) {
+      showToast(err?.message || "Failed to restore user.", "error");
+    }
+  };
+
   // Filtered roster calculation
   const filteredRoster = useMemo(() => {
     return userRoster.filter(u => {
@@ -205,7 +355,15 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       const roleMatch = roleFilter === "all" || u.role === roleFilter;
       
       const uStatus = (u.status || "active").toLowerCase();
-      const statusMatch = statusFilter === "all" || uStatus === statusFilter.toLowerCase();
+      
+      let statusMatch = false;
+      if (statusFilter === "all") {
+        statusMatch = uStatus !== "archived" && uStatus !== "deleted";
+      } else if (["test", "fake", "duplicate", "imported", "protected"].includes(statusFilter)) {
+        statusMatch = u.userLabel === statusFilter || (u.tags && u.tags.map(t => t.toLowerCase()).includes(statusFilter));
+      } else {
+        statusMatch = uStatus === statusFilter.toLowerCase();
+      }
 
       const uClearance = u.clearanceLevel || (u.role === "Developer/Admin" ? 6 : u.role === "Admin" ? 5 : u.role === "Broker" ? 3 : 2);
       const clearanceMatch = clearanceFilter === "all" || uClearance === clearanceFilter;
@@ -655,6 +813,17 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           >
             <Clock className="w-4 h-4" /> Activity Timeline
           </button>
+
+          <button
+            onClick={() => setActiveSubTab("archived")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
+              activeSubTab === "archived"
+                ? "bg-[var(--color-accent)] text-white shadow-md"
+                : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
+            }`}
+          >
+            <Archive className="w-4 h-4" /> Archived &amp; Deleted ({userRoster.filter(u => u.status === 'archived' || u.status === 'deleted' || u.deletedAt).length})
+          </button>
         </div>
 
         <div className="flex items-center gap-2 pr-1">
@@ -750,10 +919,15 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="bg-[var(--color-surface-2)] border border-[var(--color-border)]/50 rounded-lg px-3 py-1.5 text-xs text-[var(--color-text)] outline-none cursor-pointer"
               >
-                <option value="all">All Statuses</option>
-                <option value="active">Active</option>
-                <option value="pending">Pending</option>
-                <option value="inactive">Inactive</option>
+                <option value="all">Active Roster (Active &amp; Pending)</option>
+                <option value="active">Active Accounts</option>
+                <option value="pending">Pending Onboarding</option>
+                <option value="inactive">Inactive / Suspended</option>
+                <option value="test">Test Accounts</option>
+                <option value="fake">Fake Accounts</option>
+                <option value="duplicate">Duplicate Accounts</option>
+                <option value="archived">Archived Accounts</option>
+                <option value="deleted">Deleted Accounts (Audit Log)</option>
               </select>
 
               {/* Clearance Level Filter */}
@@ -1037,18 +1211,36 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                                 setUserRoster(prev => prev.map(item => item.id === u.id ? { ...item, status: nextStatus as any } : item));
                                 showToast(`Marked ${u.first} ${u.last} as ${nextStatus}.`, "success");
                               }}
-                              title={uStatus === "active" ? "Suspend / Deactivate" : "Activate"}
+                              title={uStatus === "active" ? "Suspend / Deactivate: Temporarily prevent login while retaining the account." : "Activate Account"}
                               className={`p-1.5 hover:bg-[var(--color-surface-3)] rounded cursor-pointer transition-colors ${
-                                uStatus === "active" ? "text-red-400" : "text-emerald-400"
+                                uStatus === "active" ? "text-amber-400" : "text-emerald-400"
                               }`}
                             >
                               {uStatus === "active" ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
                             </button>
 
                             <button
+                              onClick={() => handleStartDeleteUser(u, 'archive')}
+                              title="Archive: Remove from active operations while preserving business history."
+                              className="p-1.5 hover:bg-amber-500/10 text-amber-300 rounded cursor-pointer transition-colors"
+                            >
+                              <Archive className="w-3.5 h-3.5" />
+                            </button>
+
+                            {canDeleteUser(u) && (
+                              <button
+                                onClick={() => handleStartDeleteUser(u, 'delete')}
+                                title="Delete Permanently: Remove a fake, duplicate, test, or mistakenly created account."
+                                className="p-1.5 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded cursor-pointer transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            <button
                               onClick={() => setReassigningUserId(u.id)}
                               title="Reassign Workload"
-                              className="p-1.5 hover:bg-[var(--color-surface-3)] text-amber-400 rounded cursor-pointer transition-colors"
+                              className="p-1.5 hover:bg-[var(--color-surface-3)] text-blue-400 rounded cursor-pointer transition-colors"
                             >
                               <RefreshCw className="w-3.5 h-3.5" />
                             </button>
@@ -1056,7 +1248,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                             <button
                               onClick={() => setOffboardingUser(u)}
                               title="Start Offboarding Checklist"
-                              className="p-1.5 hover:bg-red-500/10 text-red-400 rounded cursor-pointer transition-colors"
+                              className="p-1.5 hover:bg-purple-500/10 text-purple-400 rounded cursor-pointer transition-colors"
                             >
                               <UserX className="w-3.5 h-3.5" />
                             </button>
@@ -1466,21 +1658,43 @@ export const UserManagement: React.FC<UserManagementProps> = ({
               </div>
 
               {/* Footer */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-[var(--color-border)]">
-                <button
-                  onClick={() => {
-                    showToast(`Password reset email dispatched to ${profileUserModal.email}.`, "success");
-                  }}
-                  className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-xs font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-all cursor-pointer"
-                >
-                  Send Password Reset Email
-                </button>
-                <button
-                  onClick={() => setProfileUserModal(null)}
-                  className="px-5 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-bold uppercase rounded-lg transition-all cursor-pointer"
-                >
-                  Close Dossier
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-[var(--color-border)]">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleStartDeleteUser(profileUserModal, 'archive')}
+                    className="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all"
+                  >
+                    <Archive className="w-3.5 h-3.5" /> Archive Account
+                  </button>
+
+                  {canDeleteUser(profileUserModal) && (
+                    <button
+                      type="button"
+                      onClick={() => handleStartDeleteUser(profileUserModal, 'delete')}
+                      className="px-3 py-1.5 bg-red-600/15 hover:bg-red-600/25 border border-red-500/30 text-red-400 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete Permanently
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      showToast(`Password reset email dispatched to ${profileUserModal.email}.`, "success");
+                    }}
+                    className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-xs font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-all cursor-pointer"
+                  >
+                    Send Reset Email
+                  </button>
+                  <button
+                    onClick={() => setProfileUserModal(null)}
+                    className="px-5 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-bold uppercase rounded-lg transition-all cursor-pointer"
+                  >
+                    Close Dossier
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -2126,10 +2340,20 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                     {wizardStep < 5 ? (
                       <button
                         type="button"
-                        onClick={() => {
-                          if (wizardStep === 1 && (!wizFirst || !wizLast || !wizEmail)) {
-                            showToast("First name, last name, and email are required.", "error");
-                            return;
+                        onClick={async () => {
+                          if (wizardStep === 1) {
+                            if (!wizFirst || !wizLast || !wizEmail) {
+                              showToast("First name, last name, and email are required.", "error");
+                              return;
+                            }
+                            const emailCheck = await checkUserEmailUnique(wizEmail);
+                            if (!emailCheck.isUnique && emailCheck.existingUser) {
+                              setDuplicateEmailError({
+                                message: "An account with this email address already exists.",
+                                existingUser: emailCheck.existingUser
+                              });
+                              return;
+                            }
                           }
                           setWizardStep((prev) => (prev + 1) as any);
                         }}
@@ -2408,6 +2632,96 @@ export const UserManagement: React.FC<UserManagementProps> = ({
         />
       )}
 
+      {/* ─── SUB-TAB 7: ARCHIVED & DELETED USERS AUDIT LOG ─── */}
+      {activeSubTab === "archived" && (
+        <div className="space-y-6">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)]/70 p-5 rounded-xl shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
+                <Archive className="w-4 h-4 text-[var(--color-accent)]" /> Archived &amp; Deleted Account Records
+              </h3>
+              <p className="text-[10px] text-[var(--color-text-muted)] font-semibold mt-0.5">
+                Audit trail of inactive, archived, and permanently deleted staff accounts.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)]/70 rounded-xl overflow-hidden shadow-lg">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)] text-[10px] font-black uppercase text-[var(--color-text-faint)] tracking-wider">
+                    <th className="p-3.5">Staff Member</th>
+                    <th className="p-3.5">Role / Brokerage</th>
+                    <th className="p-3.5">Disposition Status</th>
+                    <th className="p-3.5">Date Archived / Deleted</th>
+                    <th className="p-3.5">Reason</th>
+                    <th className="p-3.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--color-border)]/40 text-xs">
+                  {userRoster.filter(u => u.status === 'archived' || u.status === 'deleted' || u.deletedAt).map(u => {
+                    const isDeleted = u.status === 'deleted' || u.deletionType === 'permanent';
+
+                    return (
+                      <tr key={u.id} className="hover:bg-[var(--color-surface-2)]/30 transition-colors">
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-3">
+                            <Avatar name={`${u.first || ""} ${u.last || ""}`} src={u.photo || u.profilePhoto} size="md" />
+                            <div>
+                              <p className="font-bold text-[var(--color-text)]">{u.first} {u.last}</p>
+                              <p className="text-[10px] text-[var(--color-text-faint)]">{u.email}</p>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="p-3.5">
+                          <p className="font-bold text-[var(--color-text)]">{u.role}</p>
+                          <p className="text-[10px] text-[var(--color-text-faint)]">{u.brokerage || "GBK Financial"}</p>
+                        </td>
+
+                        <td className="p-3.5">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
+                            isDeleted ? "bg-red-500/15 text-red-400 border-red-500/20" : "bg-amber-500/15 text-amber-400 border-amber-500/20"
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isDeleted ? "bg-red-400" : "bg-amber-400"}`} />
+                            {isDeleted ? "Permanently Deleted" : "Archived"}
+                          </span>
+                        </td>
+
+                        <td className="p-3.5 font-mono text-[11px] text-[var(--color-text-muted)]">
+                          {u.deletedAt ? new Date(u.deletedAt).toLocaleDateString() : "Historical"}
+                        </td>
+
+                        <td className="p-3.5 text-[var(--color-text-muted)] italic max-w-xs truncate">
+                          {u.deletionReason || "Account archived by admin"}
+                        </td>
+
+                        <td className="p-3.5 text-right">
+                          <button
+                            onClick={() => handleRestoreUser(u)}
+                            className="px-3 py-1.5 bg-[var(--color-accent)]/15 hover:bg-[var(--color-accent)]/25 text-[var(--color-accent)] border border-[var(--color-accent)]/30 rounded-lg text-xs font-bold uppercase flex items-center gap-1.5 cursor-pointer transition-all ml-auto"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" /> Restore Account
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {userRoster.filter(u => u.status === 'archived' || u.status === 'deleted' || u.deletedAt).length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-[var(--color-text-faint)] italic">
+                        No archived or deleted user accounts found in audit logs.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── MODAL: USER COMPARISON MODAL ─── */}
       {showComparisonModal && (
         <UserComparisonModal
@@ -2456,6 +2770,287 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           onClose={() => setShowTagsModal(false)}
           showToast={showToast}
         />
+      )}
+
+      {/* ─── MODAL: PERMANENT USER DELETION & ARCHIVING CONFIRMATION DIALOG ─── */}
+      {deletingUser && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 overflow-y-auto backdrop-blur-sm animate-in fade-in duration-100">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden text-left">
+            
+            {/* Modal Header */}
+            <div className={`px-6 py-4 border-b flex items-center justify-between ${
+              deletionActionType === 'impact' ? 'bg-amber-500/10 border-amber-500/20' :
+              deletionActionType === 'confirm_delete' ? 'bg-red-500/10 border-red-500/20' :
+              'bg-amber-500/10 border-amber-500/20'
+            }`}>
+              <div className="flex items-center gap-2">
+                {deletionActionType === 'confirm_delete' ? (
+                  <Trash2 className="w-5 h-5 text-red-400" />
+                ) : (
+                  <AlertTriangle className="w-5 h-5 text-amber-400" />
+                )}
+                <h3 className="font-extrabold text-sm text-[var(--color-text)] uppercase tracking-wider">
+                  {deletionActionType === 'impact' ? 'Pre-Deletion Impact Assessment' :
+                   deletionActionType === 'confirm_delete' ? 'Confirm Permanent Account Deletion' :
+                   'Archive User Account'}
+                </h3>
+              </div>
+              <button onClick={() => setDeletingUser(null)} className="text-[var(--color-text-faint)] hover:text-[var(--color-text)] cursor-pointer">✕</button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* User Profile Summary */}
+              <div className="flex items-center gap-4 bg-[var(--color-surface-2)] p-4 rounded-xl border border-[var(--color-border)]/50">
+                <Avatar name={`${deletingUser.first} ${deletingUser.last}`} src={deletingUser.photo || deletingUser.profilePhoto} size="lg" />
+                <div>
+                  <h4 className="font-extrabold text-sm text-[var(--color-text)]">{deletingUser.first} {deletingUser.last}</h4>
+                  <p className="text-xs text-[var(--color-text-faint)]">{deletingUser.email}</p>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="text-[10px] bg-[var(--color-accent)]/15 text-[var(--color-accent)] border border-[var(--color-accent)]/20 px-2 py-0.5 rounded font-black uppercase">
+                      {deletingUser.role}
+                    </span>
+                    <span className="text-[10px] bg-[var(--color-surface-3)] text-[var(--color-text-muted)] border border-[var(--color-border)] px-2 py-0.5 rounded font-bold uppercase">
+                      Status: {deletingUser.status || "active"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* IMPACT CHECK STEP */}
+              {deletionActionType === 'impact' && (
+                <div className="space-y-4">
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-xs space-y-2">
+                    <p className="font-bold text-amber-300 flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      Associated Business Records Detected
+                    </p>
+                    <p className="text-amber-200/90 leading-relaxed">
+                      This user has active associated records in the CRM. Permanently deleting this account will remove user references and may corrupt historical logging.
+                    </p>
+                  </div>
+
+                  {/* Impact Breakdown Grid */}
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="bg-[var(--color-surface-2)] p-3 rounded-lg border border-[var(--color-border)]/50">
+                      <span className="text-[10px] text-[var(--color-text-faint)] uppercase font-bold block">Assigned Clients</span>
+                      <span className="text-sm font-extrabold text-[var(--color-text)] mt-0.5 block">{deletionImpact?.clientsCount || 0}</span>
+                    </div>
+                    <div className="bg-[var(--color-surface-2)] p-3 rounded-lg border border-[var(--color-border)]/50">
+                      <span className="text-[10px] text-[var(--color-text-faint)] uppercase font-bold block">Active Tasks</span>
+                      <span className="text-sm font-extrabold text-[var(--color-text)] mt-0.5 block">{deletionImpact?.tasksCount || 0}</span>
+                    </div>
+                    <div className="bg-[var(--color-surface-2)] p-3 rounded-lg border border-[var(--color-border)]/50">
+                      <span className="text-[10px] text-[var(--color-text-faint)] uppercase font-bold block">Documents Uploaded</span>
+                      <span className="text-sm font-extrabold text-[var(--color-text)] mt-0.5 block">{deletionImpact?.documentsCount || 0}</span>
+                    </div>
+                    <div className="bg-[var(--color-surface-2)] p-3 rounded-lg border border-[var(--color-border)]/50">
+                      <span className="text-[10px] text-[var(--color-text-faint)] uppercase font-bold block">Messages Authored</span>
+                      <span className="text-sm font-extrabold text-[var(--color-text)] mt-0.5 block">{deletionImpact?.messagesCount || 0}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-[var(--color-text-muted)] italic">
+                    Recommendation: Archive or suspend real employee accounts to maintain client records and compliance history. Use permanent deletion for test, fake, or duplicate accounts.
+                  </p>
+
+                  <div className="flex flex-col gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => handleExecuteArchive(deletingUser)}
+                      className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow cursor-pointer transition-all flex items-center justify-center gap-2"
+                    >
+                      <Archive className="w-4 h-4" /> Archive Account (Recommended)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDeletionActionType('confirm_delete')}
+                      className="w-full py-2.5 bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all flex items-center justify-center gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" /> Continue to Permanent Deletion
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* PERMANENT DELETION STEP */}
+              {deletionActionType === 'confirm_delete' && (() => {
+                const targetEmail = deletingUser.email.trim().toLowerCase();
+                const targetFullName = `${deletingUser.first} ${deletingUser.last}`.trim().toLowerCase();
+                const typed = confirmationInput.trim().toLowerCase();
+                const isMatch = typed === targetEmail || typed === targetFullName;
+
+                return (
+                  <div className="space-y-4">
+                    {/* Reason Selector */}
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Select Deletion Reason *</label>
+                      <select
+                        value={deletionReason}
+                        onChange={(e) => setDeletionReason(e.target.value)}
+                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none cursor-pointer"
+                      >
+                        <option value="Test account">Test Account</option>
+                        <option value="Fake account">Fake Account</option>
+                        <option value="Duplicate account">Duplicate Account</option>
+                        <option value="Created by mistake">Created By Mistake</option>
+                        <option value="User request">User Request / Right to be Forgotten</option>
+                        <option value="Other">Other Reason...</option>
+                      </select>
+
+                      {deletionReason === "Other" && (
+                        <input
+                          type="text"
+                          value={customDeletionReason}
+                          onChange={(e) => setCustomDeletionReason(e.target.value)}
+                          placeholder="Specify reason for permanent removal..."
+                          className="w-full mt-2 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none"
+                        />
+                      )}
+                    </div>
+
+                    {/* Required Typing Verification */}
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-xs space-y-2">
+                      <p className="font-bold text-red-400">Required Confirmation Verification:</p>
+                      <p className="text-red-200/90 leading-relaxed">
+                        To permanently delete this account, type the user's exact email (<strong className="text-white">{deletingUser.email}</strong>) or full name (<strong className="text-white">{deletingUser.first} {deletingUser.last}</strong>) below:
+                      </p>
+                      <input
+                        type="text"
+                        value={confirmationInput}
+                        onChange={(e) => setConfirmationInput(e.target.value)}
+                        placeholder={`Type "${deletingUser.email}" to confirm...`}
+                        className="w-full bg-[var(--color-surface)] border border-red-500/50 rounded-lg p-2.5 text-xs text-white outline-none font-mono font-bold"
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setDeletingUser(null)}
+                        className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-xs font-bold text-[var(--color-text-muted)] cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!isMatch || isDeleting}
+                        onClick={() => handleExecutePermanentDelete(deletingUser)}
+                        className="px-5 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-extrabold uppercase rounded-lg shadow-md cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete Permanently
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ARCHIVE PROMPT STEP */}
+              {deletionActionType === 'archive_prompt' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Archiving Reason</label>
+                    <select
+                      value={deletionReason}
+                      onChange={(e) => setDeletionReason(e.target.value)}
+                      className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none cursor-pointer"
+                    >
+                      <option value="Staff offboarded">Staff Member Offboarded</option>
+                      <option value="Temporary leave">Temporary Leave of Absence</option>
+                      <option value="Role change">Role / Brokerage Change</option>
+                      <option value="Other">Other Reason...</option>
+                    </select>
+                  </div>
+
+                  <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                    Archiving removes <strong>{deletingUser.first} {deletingUser.last}</strong> from active team messaging and user selection lists while preserving all historical client data and compliance logs.
+                  </p>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setDeletingUser(null)}
+                      className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-xs font-bold text-[var(--color-text-muted)] cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isDeleting}
+                      onClick={() => handleExecuteArchive(deletingUser)}
+                      className="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-extrabold uppercase rounded-lg shadow-md cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Archive className="w-3.5 h-3.5" /> Confirm Archive
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: DUPLICATE EMAIL ERROR MODAL ─── */}
+      {duplicateEmailError && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 overflow-y-auto backdrop-blur-sm animate-in fade-in duration-100">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden text-left">
+            <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-400" />
+                <h3 className="font-extrabold text-sm text-[var(--color-text)] uppercase tracking-wider">Account Already Exists</h3>
+              </div>
+              <button onClick={() => setDuplicateEmailError(null)} className="text-[var(--color-text-faint)] hover:text-[var(--color-text)] cursor-pointer">✕</button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <p className="text-[var(--color-text-muted)] leading-relaxed">
+                An account registered with email <strong className="text-[var(--color-text)]">{duplicateEmailError.existingUser.email}</strong> already exists in the system database:
+              </p>
+
+              <div className="bg-[var(--color-surface-2)] p-3 rounded-xl border border-[var(--color-border)]/50 space-y-1">
+                <p className="font-bold text-[var(--color-text)]">{duplicateEmailError.existingUser.first} {duplicateEmailError.existingUser.last}</p>
+                <p className="text-[10px] text-[var(--color-text-faint)]">Role: {duplicateEmailError.existingUser.role} • Status: {duplicateEmailError.existingUser.status || "active"}</p>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const u = duplicateEmailError.existingUser;
+                    setDuplicateEmailError(null);
+                    setShowWizardModal(false);
+                    setProfileUserModal(u);
+                  }}
+                  className="w-full py-2.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-bold uppercase rounded-xl cursor-pointer transition-all"
+                >
+                  Open Existing User Profile
+                </button>
+
+                {(duplicateEmailError.existingUser.status === 'archived' || duplicateEmailError.existingUser.status === 'deleted') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleRestoreUser(duplicateEmailError.existingUser);
+                      setDuplicateEmailError(null);
+                    }}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold uppercase rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Restore Archived Account
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setDuplicateEmailError(null)}
+                  className="w-full py-2 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] border border-[var(--color-border)] text-[var(--color-text-muted)] text-xs font-bold rounded-xl cursor-pointer transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

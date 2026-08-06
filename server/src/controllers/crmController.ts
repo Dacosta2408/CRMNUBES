@@ -132,6 +132,134 @@ export const crmController = {
     res.json(logs);
   },
 
+  // USER AVAILABILITY & STATUS
+  async getUserStatus(req: Request, res: Response) {
+    const { userId } = req.params;
+    res.json({
+      userId,
+      availability: 'available',
+      updatedAt: new Date().toISOString()
+    });
+  },
+
+  async updateMyStatus(req: Request, res: Response) {
+    const statusData = req.body;
+    res.json({
+      userId: statusData.userId || 'staff_me',
+      availability: statusData.availability || 'available',
+      customMessage: statusData.customMessage,
+      expiresAt: statusData.expiresAt,
+      updatedAt: new Date().toISOString()
+    });
+  },
+
+  async clearMyStatus(req: Request, res: Response) {
+    res.json({
+      userId: 'staff_me',
+      availability: 'available',
+      updatedAt: new Date().toISOString()
+    });
+  },
+
+  async getChannelMembers(req: Request, res: Response) {
+    const { channelId } = req.params;
+    const users = await dbService.getUsers();
+    const activeMembers = users.filter((u: any) => {
+      const st = (u.status || u.account_status || '').toLowerCase();
+      return st !== 'inactive' && st !== 'disabled' && st !== 'deleted';
+    });
+    res.json(activeMembers);
+  },
+
+  async getPresence(req: Request, res: Response) {
+    const userIds = req.query.userIds ? String(req.query.userIds).split(',') : [];
+    const presenceMap: Record<string, any> = {};
+    userIds.forEach((id) => {
+      presenceMap[id] = {
+        online: true,
+        lastActive: 'Just now',
+        availability: 'available'
+      };
+    });
+    res.json(presenceMap);
+  },
+
+  // DELETION & ARCHIVING
+  async getUserDeletionImpact(req: Request, res: Response) {
+    const { id } = req.params;
+    const users = await dbService.getUsers();
+    const targetUser: any = users.find((u: any) => u.id === id);
+    const userName = targetUser ? `${targetUser.first || ''} ${targetUser.last || ''}`.trim() : "Unknown User";
+    const userEmail = targetUser?.email || "";
+
+    res.json({
+      userId: id,
+      userName,
+      userEmail,
+      hasBusinessRecords: false,
+      clientsCount: 0,
+      applicationsCount: 0,
+      tasksCount: 0,
+      documentsCount: 0,
+      messagesCount: 0,
+      savedMessagesCount: 0,
+      calendarEventsCount: 0,
+      auditRecordsCount: 1,
+      onboardingRecordsCount: targetUser?.onboardingCompleted ? 1 : 0,
+      clearanceAssignmentsCount: targetUser?.clearanceLevel ? 1 : 0
+    });
+  },
+
+  async archiveUser(req: Request, res: Response) {
+    const { id } = req.params;
+    const { reason, deletedBy } = req.body;
+    res.json({
+      success: true,
+      user: {
+        id,
+        status: 'archived',
+        deletedAt: new Date().toISOString(),
+        deletedBy: deletedBy || 'staff_me',
+        deletionReason: reason || 'Archived'
+      }
+    });
+  },
+
+  async deleteUserPermanently(req: Request, res: Response) {
+    const { id } = req.params;
+    const { reason, confirmationValue } = req.body;
+    res.json({
+      success: true,
+      audit: {
+        id: `audit_${Date.now()}`,
+        targetUserId: id,
+        timestamp: new Date().toISOString(),
+        deletionReason: reason || 'Permanent Deletion',
+        deletionType: 'permanent'
+      }
+    });
+  },
+
+  async restoreUser(req: Request, res: Response) {
+    const { id } = req.params;
+    res.json({
+      success: true,
+      user: {
+        id,
+        status: 'active'
+      }
+    });
+  },
+
+  async getArchivedUsers(req: Request, res: Response) {
+    const users = await dbService.getUsers();
+    const archived = users.filter((u: any) => {
+      const st = (u.status || '').toLowerCase();
+      return st === 'archived' || st === 'deleted' || Boolean(u.deletedAt);
+    });
+    res.json(archived);
+  },
+
   // AI ENDPOINTS
   async summarizeClient(req: Request, res: Response) {
     const { clientData } = req.body;

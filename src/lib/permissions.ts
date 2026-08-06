@@ -165,3 +165,63 @@ export function canSaveMessage(arg1: any, arg2?: any): boolean {
   if (!user || !message || message.deletedAt) return false;
   return canAccessMessages(user);
 }
+
+/**
+ * Filter all users to include active users only, excluding deleted, inactive, or pending users.
+ * Removes duplicates by stable user ID.
+ */
+export function getActiveTeamUsers(allUsers?: User[]): User[] {
+  if (!allUsers || !Array.isArray(allUsers)) return [];
+
+  const userMap = new Map<string, User>();
+  allUsers.forEach((u) => {
+    if (!u || !u.id) return;
+    const st = (u.status || "").toLowerCase();
+    if (st === "inactive" || st === "disabled" || st === "deleted" || st === "pending") {
+      return;
+    }
+    if (!canAccessMessages(u)) {
+      return;
+    }
+    // Stable deduplication by ID
+    userMap.set(u.id, u);
+  });
+
+  return Array.from(userMap.values());
+}
+
+/**
+ * Checks if a given user is authorized and eligible to view/participate in a channel.
+ */
+export function canViewUserInChannel(user: User | null | undefined, channel: any): boolean {
+  if (!user) return false;
+  const st = (user.status || "").toLowerCase();
+  if (st === "inactive" || st === "disabled" || st === "deleted" || st === "pending") {
+    return false;
+  }
+  return canAccessChannel(user, channel);
+}
+
+/**
+ * Returns all active channel members for a given channel ID.
+ */
+export function getChannelMembers(
+  channelId: string | any,
+  currentUser?: User | null,
+  allUsers?: User[]
+): User[] {
+  const activeTeam = getActiveTeamUsers(allUsers);
+  const channel = typeof channelId === "string" ? { id: channelId } : channelId;
+
+  const members = activeTeam.filter((u) => canAccessChannel(u, channel));
+
+  // Ensure current user is included if active and allowed
+  if (currentUser && currentUser.id && canAccessChannel(currentUser, channel)) {
+    if (!members.some((m) => m.id === currentUser.id)) {
+      members.unshift(currentUser);
+    }
+  }
+
+  return members;
+}
+

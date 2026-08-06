@@ -6,7 +6,10 @@ import {
   getActiveUsers, 
   getUserById, 
   getMessages, 
-  sendMessage 
+  sendMessage,
+  updateMyAvailability,
+  getUserAvailability,
+  clearMyAvailability
 } from "../lib/api";
 import { 
   getUserPermissions, 
@@ -140,11 +143,26 @@ export async function runUserIntegrationTestSuite(): Promise<{ passed: boolean; 
     const step14Passed = uniqueIds1 === doubleRefresh1.length && uniqueIds2 === doubleRefresh2.length;
     logResult(14, "Refresh does not duplicate users or messages", step14Passed, `No duplicates found in active users list`);
 
-    // Test 15: Suite complete
-    logResult(15, "Full End-to-End User Integration Suite", true, "All 15 test checkpoints passed!");
+    // Test 15: User updates manual availability status
+    const availabilityRes = await updateMyAvailability('in_meeting', 'In client review until 4 PM');
+    const step15Passed = Boolean(availabilityRes && availabilityRes.availability === 'in_meeting');
+    logResult(15, "User updates manual availability status", step15Passed, `Availability status: ${availabilityRes?.availability}`);
+
+    // Test 16: Retrieve status handles expiration
+    const statusCheck = await getUserAvailability('staff_me');
+    const step16Passed = Boolean(statusCheck && statusCheck.availability === 'in_meeting');
+    logResult(16, "Retrieve user status handles availability", step16Passed, `Retrieved status: ${statusCheck?.availability}`);
+
+    // Test 17: Clear status reverts to available
+    const clearedRes = await clearMyAvailability();
+    const step17Passed = Boolean(clearedRes && clearedRes.availability === 'available');
+    logResult(17, "Clear status reverts to available", step17Passed, `Cleared status: ${clearedRes?.availability}`);
+
+    // Test 18: Suite complete
+    logResult(18, "Full End-to-End User Integration & Availability Suite", true, "All 18 test checkpoints passed!");
 
   } catch (err: any) {
-    logResult(15, "Suite Execution Error", false, err?.message || String(err));
+    logResult(18, "Suite Execution Error", false, err?.message || String(err));
   }
 
   const allPassed = results.every(r => r.passed);
