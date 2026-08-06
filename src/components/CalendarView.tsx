@@ -364,24 +364,165 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     "July", "August", "September", "October", "November", "December"
   ];
 
-  // List of event types with professional visual parameters
+  // List of event types mapped to the 9-gradient palette in exact order
   const eventTypes = [
-    { value: "meeting", label: "Meeting / Call", color: "bg-[#DAA428]", border: "border-[#DAA428]/25", text: "text-[#B47D1C] dark:text-[#F9B17A]", lightBg: "bg-[#DAA428]/10", glow: "shadow-[0_0_12px_rgba(218,164,40,0.15)]" },
-    { value: "client", label: "Client Deadline", color: "bg-[#F9B17A]", border: "border-[#F9B17A]/25", text: "text-[#9E5D2A] dark:text-[#F9B17A]", lightBg: "bg-[#F9B17A]/10", glow: "shadow-[0_0_12px_rgba(249,177,122,0.15)]" },
-    { value: "lender", label: "Lender Review", color: "bg-[#676F9D]", border: "border-[#676F9D]/25", text: "text-[#424769] dark:text-[#9FB4CC]", lightBg: "bg-[#676F9D]/10", glow: "shadow-[0_0_12px_rgba(103,111,157,0.15)]" },
-    { value: "personal", label: "Personal Task", color: "bg-[#424769]", border: "border-[#424769]/25", text: "text-[#2D3250] dark:text-[#C8D8E8]", lightBg: "bg-[#424769]/10", glow: "shadow-[0_0_12px_rgba(66,71,105,0.15)]" },
-    { value: "holiday", label: "Stat Holiday", color: "bg-[#C2B19D]", border: "border-[#C2B19D]/25", text: "text-[#7A6451] dark:text-[#E2D5C2]", lightBg: "bg-[#C2B19D]/10", glow: "shadow-[0_0_12px_rgba(194,177,157,0.15)]" },
-    { value: "birthday", label: "Birthday Greeting", color: "bg-[#F4A384]", border: "border-[#F4A384]/25", text: "text-[#9E4A2A] dark:text-[#F4A384]", lightBg: "bg-[#F4A384]/10", glow: "shadow-[0_0_12px_rgba(244,163,132,0.15)]" }
+    { 
+      value: "meeting", 
+      label: "Meeting / Call", 
+      gradientVar: "var(--grad-sunset)", 
+      gradientName: "sunset",
+      startColor: "#FF416C", 
+      endColor: "#FFB347",
+      color: "bg-[#FF416C]", 
+      border: "border-[#FF416C]/30", 
+      text: "text-[#FFB347]", 
+      lightBg: "bg-[var(--glass-bg)] backdrop-blur-md", 
+      glow: "shadow-[0_0_12px_rgba(255,65,108,0.25)]",
+      borderRgba: "rgba(255, 65, 108, 0.35)", 
+      glowRgba: "rgba(255, 65, 108, 0.20)",
+      shadowRgba: "rgba(255, 65, 108, 0.4)",
+      textHex: "#FFB347"
+    },
+    { 
+      value: "client", 
+      label: "Client Deadline", 
+      gradientVar: "var(--grad-royal)", 
+      gradientName: "royal",
+      startColor: "#6A11C8", 
+      endColor: "#FF758C",
+      color: "bg-[#6A11C8]", 
+      border: "border-[#6A11C8]/30", 
+      text: "text-[#FF758C]", 
+      lightBg: "bg-[var(--glass-bg)] backdrop-blur-md", 
+      glow: "shadow-[0_0_12px_rgba(106,17,200,0.25)]",
+      borderRgba: "rgba(106, 17, 200, 0.35)", 
+      glowRgba: "rgba(106, 17, 200, 0.20)",
+      shadowRgba: "rgba(106, 17, 200, 0.4)",
+      textHex: "#FF758C"
+    },
+    { 
+      value: "lender", 
+      label: "Lender Review", 
+      gradientVar: "var(--grad-arctic)", 
+      gradientName: "arctic",
+      startColor: "#00FFFF", 
+      endColor: "#0077FF",
+      color: "bg-[#00FFFF]", 
+      border: "border-[#00FFFF]/30", 
+      text: "text-[#00FFFF]", 
+      lightBg: "bg-[var(--glass-bg)] backdrop-blur-md", 
+      glow: "shadow-[0_0_12px_rgba(0,255,255,0.25)]",
+      borderRgba: "rgba(0, 255, 255, 0.35)", 
+      glowRgba: "rgba(0, 255, 255, 0.20)",
+      shadowRgba: "rgba(0, 255, 255, 0.4)",
+      textHex: "#00FFFF"
+    },
+    { 
+      value: "personal", 
+      label: "Personal Task", 
+      gradientVar: "var(--grad-neon)", 
+      gradientName: "neon",
+      startColor: "#FF00CC", 
+      endColor: "#3333FF",
+      color: "bg-[#FF00CC]", 
+      border: "border-[#FF00CC]/30", 
+      text: "text-[#FF00CC]", 
+      lightBg: "bg-[var(--glass-bg)] backdrop-blur-md", 
+      glow: "shadow-[0_0_12px_rgba(255,0,204,0.25)]",
+      borderRgba: "rgba(255, 0, 204, 0.35)", 
+      glowRgba: "rgba(255, 0, 204, 0.20)",
+      shadowRgba: "rgba(255, 0, 204, 0.4)",
+      textHex: "#FF00CC"
+    },
+    { 
+      value: "holiday", 
+      label: "Stat Holiday", 
+      gradientVar: "var(--grad-citrus)", 
+      gradientName: "citrus",
+      startColor: "#FF8800", 
+      endColor: "#FCEE21",
+      color: "bg-[#FF8800]", 
+      border: "border-[#FF8800]/30", 
+      text: "text-[#FF8800]", 
+      lightBg: "bg-[var(--glass-bg)] backdrop-blur-md", 
+      glow: "shadow-[0_0_12px_rgba(255,136,0,0.25)]",
+      borderRgba: "rgba(255, 136, 0, 0.35)", 
+      glowRgba: "rgba(255, 136, 0, 0.20)",
+      shadowRgba: "rgba(255, 136, 0, 0.4)",
+      textHex: "#FF8800"
+    },
+    { 
+      value: "birthday", 
+      label: "Birthday Greeting", 
+      gradientVar: "var(--grad-ocean)", 
+      gradientName: "ocean",
+      startColor: "#00C6FF", 
+      endColor: "#0072FF",
+      color: "bg-[#00C6FF]", 
+      border: "border-[#00C6FF]/30", 
+      text: "text-[#00C6FF]", 
+      lightBg: "bg-[var(--glass-bg)] backdrop-blur-md", 
+      glow: "shadow-[0_0_12px_rgba(0,198,255,0.25)]",
+      borderRgba: "rgba(0, 198, 255, 0.35)", 
+      glowRgba: "rgba(0, 198, 255, 0.20)",
+      shadowRgba: "rgba(0, 198, 255, 0.4)",
+      textHex: "#00C6FF"
+    },
+    { 
+      value: "doc_review", 
+      label: "Document Review", 
+      gradientVar: "var(--grad-nature)", 
+      gradientName: "nature",
+      startColor: "#56AB2F", 
+      endColor: "#A8E063",
+      color: "bg-[#56AB2F]", 
+      border: "border-[#56AB2F]/30", 
+      text: "text-[#A8E063]", 
+      lightBg: "bg-[var(--glass-bg)] backdrop-blur-md", 
+      glow: "shadow-[0_0_12px_rgba(86,171,47,0.25)]",
+      borderRgba: "rgba(86, 171, 47, 0.35)", 
+      glowRgba: "rgba(86, 171, 47, 0.20)",
+      shadowRgba: "rgba(86, 171, 47, 0.4)",
+      textHex: "#A8E063"
+    },
+    { 
+      value: "follow_up", 
+      label: "Follow-Up Call", 
+      gradientVar: "var(--grad-warm)", 
+      gradientName: "warm",
+      startColor: "#FF7E5F", 
+      endColor: "#FEB47B",
+      color: "bg-[#FF7E5F]", 
+      border: "border-[#FF7E5F]/30", 
+      text: "text-[#FF7E5F]", 
+      lightBg: "bg-[var(--glass-bg)] backdrop-blur-md", 
+      glow: "shadow-[0_0_12px_rgba(255,126,95,0.25)]",
+      borderRgba: "rgba(255, 126, 95, 0.35)", 
+      glowRgba: "rgba(255, 126, 95, 0.20)",
+      shadowRgba: "rgba(255, 126, 95, 0.4)",
+      textHex: "#FF7E5F"
+    },
+    { 
+      value: "rate_lock", 
+      label: "Rate Lock / Closing", 
+      gradientVar: "var(--grad-lavender)", 
+      gradientName: "lavender",
+      startColor: "#8360C3", 
+      endColor: "#FF8FBF",
+      color: "bg-[#8360C3]", 
+      border: "border-[#8360C3]/30", 
+      text: "text-[#FF8FBF]", 
+      lightBg: "bg-[var(--glass-bg)] backdrop-blur-md", 
+      glow: "shadow-[0_0_12px_rgba(131,96,195,0.25)]",
+      borderRgba: "rgba(131, 96, 195, 0.35)", 
+      glowRgba: "rgba(131, 96, 195, 0.20)",
+      shadowRgba: "rgba(131, 96, 195, 0.4)",
+      textHex: "#FF8FBF"
+    }
   ];
 
   const getTypeColor = (type: string) => {
-    return eventTypes.find(t => t.value === type) || {
-      color: "bg-gray-500",
-      border: "border-gray-500/25",
-      text: "text-gray-400",
-      lightBg: "bg-gray-500/10",
-      glow: ""
-    };
+    return eventTypes.find(t => t.value === type) || eventTypes[0];
   };
 
   // Build current week dates based on selectedDateStr (Mon-Sun)
@@ -1046,27 +1187,29 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         {/* Compact Month Mini-Picker Widget */}
         <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-3.5">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[12px] font-extrabold text-[var(--color-calendar-strong-text)] tracking-wider uppercase font-sans">
+            <span className="text-[12px] font-black text-[var(--color-calendar-strong-text)] tracking-wider uppercase font-sans">
               {monthNames[currentMonth]} {currentYear}
             </span>
             <div className="flex items-center gap-1">
               <button 
                 onClick={prevMonth}
-                className="p-1 border border-[var(--color-border)] bg-[var(--color-surface-3)] rounded hover:bg-[var(--color-surface-2)] transition-all"
+                aria-label="Previous Month"
+                className="p-1.5 border border-[var(--color-border)] bg-[var(--color-surface-3)] rounded-lg hover:bg-[var(--color-surface-2)] text-[var(--color-calendar-toolbar-icon)] transition-all cursor-pointer flex items-center justify-center"
               >
-                <ChevronLeft className="w-3.5 h-3.5 text-[#2D3250] dark:text-[var(--color-text-muted)] hover:text-[var(--color-text)]" />
+                <ChevronLeft className="w-3.5 h-3.5 stroke-[3] text-[var(--color-calendar-toolbar-icon)]" />
               </button>
               <button 
                 onClick={nextMonth}
-                className="p-1 border border-[var(--color-border)] bg-[var(--color-surface-3)] rounded hover:bg-[var(--color-surface-2)] transition-all"
+                aria-label="Next Month"
+                className="p-1.5 border border-[var(--color-border)] bg-[var(--color-surface-3)] rounded-lg hover:bg-[var(--color-surface-2)] text-[var(--color-calendar-toolbar-icon)] transition-all cursor-pointer flex items-center justify-center"
               >
-                <ChevronRight className="w-3.5 h-3.5 text-[#2D3250] dark:text-[var(--color-text-muted)] hover:text-[var(--color-text)]" />
+                <ChevronRight className="w-3.5 h-3.5 stroke-[3] text-[var(--color-calendar-toolbar-icon)]" />
               </button>
             </div>
           </div>
 
           {/* Days Week labels */}
-          <div className="grid grid-cols-7 text-center text-[9px] uppercase font-bold text-[var(--color-text-faint)] tracking-wider mb-1.5">
+          <div className="grid grid-cols-7 text-center text-[9.5px] uppercase font-black text-[var(--color-calendar-strong-text)] tracking-wider mb-2">
             {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map(d => <div key={d}>{d}</div>)}
           </div>
 
@@ -1080,20 +1223,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 <button
                   key={idx}
                   onClick={() => selectDay(md.dateStr)}
-                  className={`h-7 w-7 text-[10px] font-bold rounded-lg flex flex-col items-center justify-center relative transition-all ${
+                  className={`h-7 w-7 text-[10.5px] font-extrabold rounded-lg flex flex-col items-center justify-center relative transition-all cursor-pointer ${
                     isSelected 
-                      ? "bg-[var(--color-calendar-selected-bg)] text-[var(--color-calendar-selected-text)] font-extrabold shadow-md shadow-[var(--color-calendar-selected-bg)]/20"
+                      ? "bg-[var(--color-calendar-selected-bg)] text-white font-black shadow-md shadow-[var(--color-calendar-selected-bg)]/30 border border-white/20"
                       : md.isToday 
-                        ? "bg-[var(--color-calendar-selected-bg)]/10 text-[var(--color-calendar-strong-text)] border border-[var(--color-calendar-selected-bg)]/45 font-extrabold"
+                        ? "bg-[var(--color-calendar-selected-bg)]/20 text-[var(--color-calendar-strong-text)] border border-[var(--color-calendar-selected-bg)]/60 font-black"
                         : md.isCurrentMonth
-                          ? "text-[var(--color-text)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-calendar-strong-text)]"
-                          : "text-[var(--color-text-faint)]/50 hover:text-[var(--color-text-muted)]"
+                          ? "text-[var(--color-calendar-strong-text)] font-bold hover:bg-[var(--color-surface-3)] hover:text-[var(--color-calendar-strong-text)]"
+                          : "text-[var(--color-text-faint)] opacity-60 font-semibold hover:text-[var(--color-text-muted)]"
                   }`}
                 >
                   <span>{md.dayNum}</span>
                   {/* Event indicator dot */}
                   {worksOnThisDate && !isSelected && (
-                    <span className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-[var(--color-calendar-selected-bg)]" />
+                    <span className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-[var(--color-calendar-selected-bg)] shadow-[0_0_4px_var(--color-calendar-selected-bg)]" />
                   )}
                 </button>
               );
@@ -1168,21 +1311,36 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               } else {
                 countStr = `${matchingTypeEvents.length}`;
               }
+              const isSelectedLegend = filterType === et.value;
               return (
                 <button
                   key={et.value}
                   onClick={() => setFilterType(et.value)}
-                  className={`w-full flex items-center justify-between p-2 rounded-xl text-left border text-[11px] font-bold transition-all ${
-                    filterType === et.value 
-                      ? `${et.lightBg} ${et.border} ${et.text}` 
-                      : "bg-transparent border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)]/60 hover:text-[var(--color-text)]"
-                  }`}
+                  className="w-full flex items-center justify-between p-2 rounded-xl text-left border text-[11px] font-bold transition-all cursor-pointer"
+                  style={isSelectedLegend ? {
+                    background: "var(--glass-bg)",
+                    backdropFilter: "var(--glass-blur)",
+                    border: `1px solid ${et.borderRgba}`,
+                    boxShadow: `0 0 12px ${et.glowRgba}`
+                  } : {
+                    background: "transparent",
+                    border: "1px solid transparent",
+                    color: "var(--color-text-muted)"
+                  }}
                 >
                   <span className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${et.color} ${et.glow}`} />
-                    {et.label}
+                    <span 
+                      className="w-3 h-3 rounded-full shrink-0" 
+                      style={{ 
+                        background: et.gradientVar, 
+                        boxShadow: `0 0 6px ${et.shadowRgba}` 
+                      }} 
+                    />
+                    <span style={isSelectedLegend ? { color: "var(--color-text)", fontWeight: "800" } : {}}>
+                      {et.label}
+                    </span>
                   </span>
-                  <span className="font-mono text-[10px] opacity-60">({countStr})</span>
+                  <span className="font-mono text-[10px] opacity-70">({countStr})</span>
                 </button>
               );
             })}
@@ -1309,28 +1467,68 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           {/* Bottom Row: Controls Toolbar */}
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3.5 bg-[var(--color-surface)]/40 border border-[var(--color-border)]/60 p-2 rounded-2xl select-none">
             {/* View Multi-Tabs Segmented control */}
-            <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] p-1 rounded-xl flex items-center shrink-0">
+            <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] p-1 rounded-xl flex items-center shrink-0 gap-1">
               <button 
                 onClick={() => setViewMode("day")}
-                className={`flex-grow md:flex-none px-4 py-1.5 text-xs font-extrabold rounded-lg transition-all ${viewMode === "day" ? "bg-[var(--color-calendar-selected-bg)] text-[var(--color-calendar-selected-text)] shadow" : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"}`}
+                className="flex-grow md:flex-none px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer"
+                style={viewMode === "day" ? {
+                  background: "var(--grad-arctic)",
+                  color: "white",
+                  fontWeight: "700",
+                  border: "1px solid rgba(0, 255, 255, 0.35)",
+                  boxShadow: "0 0 16px rgba(0, 119, 255, 0.25)"
+                } : {
+                  color: "var(--color-text-muted)",
+                  background: "transparent"
+                }}
               >
                 Day Timeline
               </button>
               <button 
                 onClick={() => setViewMode("week")}
-                className={`flex-grow md:flex-none px-4 py-1.5 text-xs font-extrabold rounded-lg transition-all ${viewMode === "week" ? "bg-[var(--color-calendar-selected-bg)] text-[var(--color-calendar-selected-text)] shadow" : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"}`}
+                className="flex-grow md:flex-none px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer"
+                style={viewMode === "week" ? {
+                  background: "var(--grad-nature)",
+                  color: "white",
+                  fontWeight: "700",
+                  border: "1px solid rgba(86, 171, 47, 0.35)",
+                  boxShadow: "0 0 16px rgba(86, 171, 47, 0.25)"
+                } : {
+                  color: "var(--color-text-muted)",
+                  background: "transparent"
+                }}
               >
                 Week Timeline
               </button>
               <button 
                 onClick={() => setViewMode("month")}
-                className={`flex-grow md:flex-none px-4 py-1.5 text-xs font-extrabold rounded-lg transition-all ${viewMode === "month" ? "bg-[var(--color-calendar-selected-bg)] text-[var(--color-calendar-selected-text)] shadow" : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"}`}
+                className="flex-grow md:flex-none px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer"
+                style={viewMode === "month" ? {
+                  background: "var(--grad-royal)",
+                  color: "white",
+                  fontWeight: "700",
+                  border: "1px solid rgba(106, 17, 200, 0.35)",
+                  boxShadow: "0 0 16px rgba(255, 117, 140, 0.25)"
+                } : {
+                  color: "var(--color-text-muted)",
+                  background: "transparent"
+                }}
               >
                 Month Grid
               </button>
               <button 
                 onClick={() => setViewMode("list")}
-                className={`flex-grow md:flex-none px-4 py-1.5 text-xs font-extrabold rounded-lg transition-all ${viewMode === "list" ? "bg-[var(--color-calendar-selected-bg)] text-[var(--color-calendar-selected-text)] shadow" : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"}`}
+                className="flex-grow md:flex-none px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer"
+                style={viewMode === "list" ? {
+                  background: "var(--grad-warm)",
+                  color: "white",
+                  fontWeight: "700",
+                  border: "1px solid rgba(255, 126, 95, 0.35)",
+                  boxShadow: "0 0 16px rgba(254, 180, 123, 0.25)"
+                } : {
+                  color: "var(--color-text-muted)",
+                  background: "transparent"
+                }}
               >
                 List Index
               </button>
@@ -1520,8 +1718,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <div className="sticky top-0 z-10 p-4 bg-[var(--color-surface-2)] border-b border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 select-none">
                 <div className="flex flex-col text-left">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wide">Schedule for:</span>
-                    <span className="text-xs font-extrabold text-[var(--color-accent)] uppercase tracking-wider">{selectedDayInfo.label}</span>
+                    <span className="text-xs font-bold uppercase tracking-wide" style={{ color: "#00FFFF" }}>Day Timeline:</span>
+                    <span className="text-xs font-extrabold text-[var(--color-text)] uppercase tracking-wider">{selectedDayInfo.label}</span>
                   </div>
                   <span className="text-[10px] text-[var(--color-text-faint)] mt-0.5">
                     Active range: {String(workdayStartHour).padStart(2, "0")}:00 - {String(workdayEndHour).padStart(2, "0")}:00 ({slotInterval}m slots)
@@ -1805,8 +2003,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               {/* Top Header Bar */}
               <div className="p-3 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-2xl flex items-center justify-between shrink-0 select-none">
                 <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-[var(--color-accent)]" />
-                  <span className="font-bold text-[var(--color-text)] text-xs uppercase tracking-wider">
+                  <Clock className="w-4 h-4 text-[#56AB2F]" />
+                  <span className="font-bold text-xs uppercase tracking-wider" style={{ color: "#56AB2F" }}>
                     Week Timeline ({weekDays[0]?.fullLabel} — {weekDays[6]?.fullLabel})
                   </span>
                 </div>
@@ -2202,8 +2400,24 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           {/* VIEW CASE 3: STANDARD MONTH PLANNER GRID */}
           {viewMode === "month" && (
             <div className="flex-1 flex flex-col min-h-0" id="view-timeline-month">
+              {/* Month Grid Header Bar */}
+              <div className="p-3 bg-[var(--color-surface-2)] border-b border-[var(--color-border)] flex items-center justify-between shrink-0 select-none">
+                <div className="flex items-center gap-2">
+                  <CalendarIcon className="w-4 h-4 text-[#6A11C8]" />
+                  <span className="font-bold text-xs uppercase tracking-wider" style={{ color: "#6A11C8" }}>
+                    Month Grid ({monthNames[currentMonth]} {currentYear})
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleOpenAddModal(selectedDateStr)}
+                  className="px-3 py-1 bg-[var(--color-calendar-selected-bg)]/10 hover:bg-[var(--color-calendar-selected-bg)]/20 border border-[var(--color-calendar-selected-bg)]/30 text-[var(--color-calendar-strong-text)] font-extrabold text-[10px] uppercase rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" /> Book Appointment
+                </button>
+              </div>
+
               {/* Days of Week Header */}
-              <div className="grid grid-cols-7 text-center select-none text-[10px] uppercase font-bold text-[var(--color-text-muted)] tracking-wider py-2.5 bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
+              <div className="grid grid-cols-7 text-center select-none text-[11px] uppercase font-black text-[var(--color-text-muted)] dark:text-white tracking-wider py-2.5 bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
                 {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(day => (
                   <div key={day}>{day}</div>
                 ))}
@@ -2234,14 +2448,26 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             ? "bg-[var(--color-calendar-selected-bg)]/5 border-[var(--color-calendar-selected-bg)]/30" 
                             : md.isCurrentMonth 
                               ? "bg-[var(--color-surface)] border-[var(--color-border)]/40 hover:border-[var(--color-border)] hover:bg-[var(--color-surface-2)]" 
-                              : "bg-transparent border-transparent text-[var(--color-text-faint)]/40 hover:border-[var(--color-border)] hover:bg-[var(--color-surface-2)]"
+                              : "bg-transparent border-transparent text-[var(--color-text-faint)] dark:text-slate-400/80 hover:border-[var(--color-border)] hover:bg-[var(--color-surface-2)]"
                       }`}
                     >
                       <div className="flex items-start justify-between select-none gap-1">
                         <div className="flex items-center gap-1">
-                          <span className={`text-[11px] font-bold font-mono px-1.5 py-0.5 rounded-md ${
-                            md.isToday ? "bg-[var(--color-calendar-selected-bg)] text-[var(--color-calendar-selected-text)] font-extrabold shadow" : "text-[var(--color-text-muted)]"
-                          }`}>
+                          <span 
+                            className={`text-[11px] font-mono px-2 py-0.5 rounded-lg transition-all ${
+                              isSelected || md.isToday 
+                                ? "font-black shadow-md" 
+                                : md.isCurrentMonth
+                                  ? "font-extrabold text-[var(--color-text)] dark:text-slate-100 dark:bg-slate-800/60"
+                                  : "font-semibold text-[var(--color-text-faint)] dark:text-slate-400/90"
+                            }`}
+                            style={isSelected || md.isToday ? {
+                              background: "var(--grad-royal)",
+                              color: "white",
+                              boxShadow: "0 0 12px rgba(106, 17, 200, 0.35)",
+                              border: "1px solid rgba(106, 17, 200, 0.4)"
+                            } : undefined}
+                          >
                             {md.dayNum}
                           </span>
 
@@ -2303,7 +2529,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           {/* VIEW CASE 4: AGENDA INDEX LIST */}
           {viewMode === "list" && (
             <div className="flex-1 bg-[var(--color-surface-2)]/20 p-4 overflow-y-auto" id="view-timeline-list">
-              <h4 className="text-xs font-bold uppercase text-[var(--color-text-muted)] mb-4 tracking-widest">Active Scheduled Items Ledger</h4>
+              <h4 className="text-xs font-bold uppercase mb-4 tracking-widest flex items-center gap-2" style={{ color: "#FF7E5F" }}>
+                <span>List Index — Active Scheduled Items Ledger</span>
+              </h4>
               {filteredEventsForMonth.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 bg-[var(--color-surface-2)]/30 rounded-xl border border-dashed border-[var(--color-border)] text-center">
                   <CalendarIcon className="w-10 h-10 text-[var(--color-accent)] opacity-60 mb-3" />
@@ -2474,8 +2702,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             >
               {/* Header */}
               <div className="p-4 border-b border-[var(--color-border)] bg-[var(--color-surface-2)]/40 flex items-center justify-between shrink-0">
-                <h3 className="text-xs uppercase font-extrabold text-[var(--color-calendar-strong-text)] tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 fill-[var(--color-calendar-selected-bg)]/30 text-[var(--color-calendar-selected-bg)]" />
+                <h3 className="text-xs uppercase font-extrabold tracking-wider flex items-center gap-1.5" style={{ color: "#FFC30B" }}>
+                  <Sparkles className="w-3.5 h-3.5 text-[#FFC30B]" />
                   {editingEvent ? "Tweak Calendar Record" : "Book New Action Record"}
                 </h3>
                 <button
@@ -2615,14 +2843,38 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                   key={et.value}
                                   type="button"
                                   onClick={() => setEventType(et.value as Event["type"])}
-                                  className={`flex items-center gap-1.5 px-2 py-2 rounded-lg text-left border text-[10px] font-bold transition-all cursor-pointer ${
-                                    isSelected 
-                                      ? `${et.lightBg} ${et.border} ${et.text} ${et.glow} border-white/20 ring-1 ring-white/10` 
-                                      : "bg-[var(--color-surface-2)]/40 border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]"
-                                  }`}
+                                  className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-all cursor-pointer"
+                                  style={isSelected ? {
+                                    background: "var(--glass-bg)",
+                                    backdropFilter: "var(--glass-blur)",
+                                    border: `1px solid ${et.borderRgba}`,
+                                    boxShadow: `0 0 12px ${et.glowRgba}`
+                                  } : {
+                                    background: "var(--color-surface-2)",
+                                    border: "1px solid var(--color-border)",
+                                    opacity: 0.75
+                                  }}
                                 >
-                                  <span className={`w-2 h-2 rounded-full ${et.color} ${et.glow} shrink-0`} />
-                                  <span className="truncate">{et.label}</span>
+                                  <span 
+                                    className="w-3 h-3 rounded-full shrink-0" 
+                                    style={{ 
+                                      background: et.gradientVar, 
+                                      boxShadow: `0 0 6px ${et.shadowRgba}` 
+                                    }} 
+                                  />
+                                  <span 
+                                    className="truncate text-[10px] font-bold"
+                                    style={isSelected ? { 
+                                      background: et.gradientVar,
+                                      WebkitBackgroundClip: "text",
+                                      WebkitTextFillColor: "transparent",
+                                      backgroundClip: "text"
+                                    } : {
+                                      color: "var(--color-text)"
+                                    }}
+                                  >
+                                    {et.label}
+                                  </span>
                                 </button>
                               );
                             })}

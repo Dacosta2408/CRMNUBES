@@ -92,6 +92,14 @@ export const PipelineBoard: React.FC<PipelineBoardProps> = ({
   return (
     <div className="flex flex-col gap-5 overflow-y-auto max-h-full pb-8 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
       
+      {/* HEADER TITLE */}
+      <div className="flex items-center gap-2.5 pt-1">
+        <Layers className="w-5 h-5 text-[#FF416C]" />
+        <h2 className="text-base font-black uppercase tracking-wider bg-gradient-to-r from-[#FF416C] to-[#FFB347] bg-clip-text text-transparent">
+          Pipeline Board
+        </h2>
+      </div>
+
       {/* TOP PIPELINE METRICS KPI HEADER */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
         

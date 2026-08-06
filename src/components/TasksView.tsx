@@ -322,29 +322,22 @@ export const TasksView: React.FC<TasksViewProps> = ({
   };
 
   const handleRemoveTask = (taskId: string) => {
-    const taskToDelete = tasks.find(t => t.id === taskId) as ExtendedTask | undefined;
-    if (!taskToDelete) return;
+    const taskToDelete = (tasks.find(t => t.id === taskId) || sanitizedTasks.find(t => t.id === taskId)) as ExtendedTask | undefined;
 
-    if (window.confirm("Are you sure you want to delete this Daily Task from the portfolio and any assigned schedules?")) {
-      // Clear selectedTaskId if the deleted task was currently selected
-      if (selectedTaskId === taskId) {
-        setSelectedTaskId(null);
-      }
-
-      setTasks(prev => {
-        const filtered = prev.filter(t => t.id !== taskId);
-        localStorage.setItem("gbk_tasks", JSON.stringify(filtered));
-        return filtered;
-      });
-
-      // If calendar sync is enabled for that task, ensure any linked synced event is also removed using the existing task/calendar sync pattern.
-      const isSyncEnabled = taskToDelete.calendarSync !== false;
-      if (isSyncEnabled && setEvents) {
-        setEvents(prev => prev.filter(e => e.id !== `ev_task_${taskId}`));
-      }
-
-      showToast("Daily task cleanly removed from CRM logs.", "info", "🗑️");
+    // Clear selectedTaskId if the deleted task was currently selected
+    if (selectedTaskId === taskId) {
+      setSelectedTaskId(null);
     }
+
+    updateTasksListState(prev => prev.filter(t => t.id !== taskId));
+
+    // If calendar sync is enabled for that task, ensure any linked synced event is also removed using the existing task/calendar sync pattern.
+    const isSyncEnabled = taskToDelete ? taskToDelete.calendarSync !== false : true;
+    if (isSyncEnabled && setEvents) {
+      setEvents(prev => prev.filter(e => e.id !== `ev_task_${taskId}`));
+    }
+
+    showToast("Daily task deleted from portfolio.", "info", "🗑️");
   };
 
   const handleCreateTask = (e: React.FormEvent) => {
@@ -617,43 +610,60 @@ export const TasksView: React.FC<TasksViewProps> = ({
       {/* ✦ UPPER NAVIGATION HEADER WITH LIVE MONITORING DETAILS ✦ */}
       <div className="p-4 border-b border-[var(--color-border)]/70 bg-[var(--color-surface-2)]/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shrink-0 select-none">
         <div>
-          <div className="flex items-center gap-2 text-xs font-bold text-[var(--color-text-muted)] font-mono mb-1">
-            <span>ONTARIO MORTGAGE WORKFLOW ENGINE</span>
-            <span className="h-1.5 w-1.5 bg-[var(--color-calendar-selected-bg)] rounded-full animate-pulse" />
-            <span className="text-[var(--color-calendar-selected-bg)] text-[9.5px] uppercase tracking-wider font-extrabold">Active Portfolio Control Panel</span>
-          </div>
-          <h1 className="text-xl font-black text-[var(--color-text)] flex items-center gap-2">
-            <CheckSquare2 className="w-5 h-5 text-[var(--color-calendar-selected-bg)]" />
-            Brokerage Task Command Center
+          <h1 className="text-xl font-black flex items-center gap-2">
+            <CheckSquare2 className="w-5 h-5 text-[#FF7E5F]" />
+            <span 
+              className="bg-clip-text text-transparent"
+              style={{ backgroundImage: "linear-gradient(90deg, #FF7E5F, #FEB47B)" }}
+            >
+              Daily Task
+            </span>
           </h1>
         </div>
 
         {/* Quick Assignee Switchers */}
         <div className="flex items-center gap-3">
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)]/70 p-1 rounded-xl flex items-center shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setCurrentGroup("me")}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                currentGroup === "me" ? "bg-[var(--color-calendar-selected-bg)] text-[var(--color-calendar-selected-text)] font-extrabold shadow-sm" : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-              }`}
+              className="px-3.5 py-2 text-xs font-bold rounded-lg transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5 flex items-center gap-2 cursor-pointer"
+              style={{
+                background: "linear-gradient(135deg, #6A11C8 0%, #FF758C 100%)",
+                color: "white",
+                border: "1px solid rgba(106, 17, 200, 0.35)",
+                boxShadow: "0 0 0 1px rgba(106, 17, 200, 0.15), 0 0 16px rgba(255, 117, 140, 0.20), 0 4px 12px rgba(0,0,0,0.15)",
+                opacity: currentGroup === "me" ? 1 : 0.75
+              }}
             >
-              <User className="w-3.5 h-3.5" /> My Tasks
+              <User className="w-4 h-4" /> My Tasks
             </button>
             <button
               onClick={() => setCurrentGroup("team")}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                currentGroup === "team" ? "bg-[var(--color-calendar-selected-bg)] text-[var(--color-calendar-selected-text)] font-extrabold shadow-sm" : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-              }`}
+              className="px-3.5 py-2 text-xs font-bold rounded-lg transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5 flex items-center gap-2 cursor-pointer"
+              style={{
+                background: "linear-gradient(135deg, #8360C3 0%, #FF8FBF 100%)",
+                color: "white",
+                border: "1px solid rgba(131, 96, 195, 0.35)",
+                boxShadow: "0 0 0 1px rgba(131, 96, 195, 0.15), 0 0 16px rgba(255, 143, 191, 0.20), 0 4px 12px rgba(0,0,0,0.15)",
+                opacity: currentGroup === "team" ? 1 : 0.75
+              }}
             >
-              <UserCheck className="w-3.5 h-3.5" /> Team Board
+              <UserCheck className="w-4 h-4" /> Team Board
             </button>
           </div>
 
           <button
             onClick={() => setIsAddingTask(true)}
-            className="px-4 py-2 bg-[var(--color-calendar-selected-bg)] hover:opacity-90 text-[var(--color-calendar-selected-text)] font-black text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-lg cursor-pointer"
+            className="rounded-lg px-5 py-2 flex items-center gap-2 font-bold text-xs transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5 hover:scale-105 cursor-pointer"
+            style={{
+              background: "linear-gradient(135deg, #FF416C 0%, #FFB347 100%)",
+              color: "white",
+              border: "1px solid rgba(255, 65, 108, 0.4)",
+              boxShadow: "0 0 0 1px rgba(255, 65, 108, 0.18), 0 0 20px rgba(255, 179, 71, 0.25), 0 4px 16px rgba(0,0,0,0.18)"
+            }}
           >
-            <Plus className="w-4 h-4 text-[var(--color-calendar-selected-text)]" /> Log Daily Item
+            <Plus className="w-4 h-4" />
+            <span>Log Daily Item</span>
           </button>
         </div>
       </div>
@@ -916,30 +926,45 @@ export const TasksView: React.FC<TasksViewProps> = ({
           {/* Sub-Header view layout selectors and search filter bar */}
           <div className="p-3 border-b border-[var(--color-border)]/70 bg-[var(--color-surface-2)]/20 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0 select-none">
             {/* Visual layouts selector segment */}
-            <div className="bg-[var(--color-surface)] border border-[var(--color-border)]/70 p-1 rounded-xl flex items-center shrink-0 w-full sm:w-auto">
+            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
               <button
                 onClick={() => setViewLayout("list")}
-                className={`flex-1 sm:flex-initial px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  viewLayout === "list" ? "bg-[var(--color-calendar-selected-bg)] text-[var(--color-calendar-selected-text)] font-extrabold shadow-sm" : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                }`}
+                className="flex-1 sm:flex-initial px-3.5 py-2 text-xs font-bold rounded-lg transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5 flex items-center justify-center gap-2 cursor-pointer"
+                style={{
+                  background: "linear-gradient(135deg, #00FFFF 0%, #0077FF 100%)",
+                  color: "white",
+                  border: "1px solid rgba(0, 255, 255, 0.35)",
+                  boxShadow: "0 0 0 1px rgba(0, 255, 255, 0.15), 0 0 16px rgba(0, 119, 255, 0.20), 0 4px 12px rgba(0,0,0,0.15)",
+                  opacity: viewLayout === "list" ? 1 : 0.75
+                }}
               >
-                <ListFilter className="w-3.5 h-3.5" /> Pipeline Feed
+                <ListFilter className="w-4 h-4" /> Pipeline Feed
               </button>
               <button
                 onClick={() => setViewLayout("board")}
-                className={`flex-1 sm:flex-initial px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  viewLayout === "board" ? "bg-[var(--color-calendar-selected-bg)] text-[var(--color-calendar-selected-text)] font-extrabold shadow-sm" : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                }`}
+                className="flex-1 sm:flex-initial px-3.5 py-2 text-xs font-bold rounded-lg transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5 flex items-center justify-center gap-2 cursor-pointer"
+                style={{
+                  background: "linear-gradient(135deg, #FF8800 0%, #FCEE21 100%)",
+                  color: "#1a1200",
+                  border: "1px solid rgba(255, 136, 0, 0.35)",
+                  boxShadow: "0 0 0 1px rgba(255, 136, 0, 0.15), 0 0 16px rgba(252, 238, 33, 0.20), 0 4px 12px rgba(0,0,0,0.15)",
+                  opacity: viewLayout === "board" ? 1 : 0.75
+                }}
               >
-                <Compass className="w-3.5 h-3.5" /> Action Board
+                <Compass className="w-4 h-4" /> Action Board
               </button>
               <button
                 onClick={() => setViewLayout("checklist")}
-                className={`flex-1 sm:flex-initial px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  viewLayout === "checklist" ? "bg-[var(--color-calendar-selected-bg)] text-[var(--color-calendar-selected-text)] font-extrabold shadow-sm" : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                }`}
+                className="flex-1 sm:flex-initial px-3.5 py-2 text-xs font-bold rounded-lg transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5 flex items-center justify-center gap-2 cursor-pointer"
+                style={{
+                  background: "linear-gradient(135deg, #56AB2F 0%, #A8E063 100%)",
+                  color: "white",
+                  border: "1px solid rgba(86, 171, 47, 0.35)",
+                  boxShadow: "0 0 0 1px rgba(86, 171, 47, 0.15), 0 0 16px rgba(168, 224, 99, 0.20), 0 4px 12px rgba(0,0,0,0.15)",
+                  opacity: viewLayout === "checklist" ? 1 : 0.75
+                }}
               >
-                <CheckSquare2 className="w-3.5 h-3.5" /> Checklist Focus
+                <CheckSquare2 className="w-4 h-4" /> Checklist Focus
               </button>
             </div>
 
@@ -1106,7 +1131,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                           </div>
                         </div>
 
-                        {/* Status badge representation */}
+                        {/* Status badge & delete action button representation */}
                         <div className="flex items-center gap-2 shrink-0 md:justify-end">
                           <span className={`text-[8.5px] font-black uppercase px-2 py-1 rounded-lg border tracking-wider select-none ${
                             tk.extendedStatus === "done" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/15" :
@@ -1117,6 +1142,18 @@ export const TasksView: React.FC<TasksViewProps> = ({
                           }`}>
                             {tk.extendedStatus === "todo" ? "To Do" : tk.extendedStatus?.replace("_", " ")}
                           </span>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveTask(tk.id);
+                            }}
+                            className="p-1.5 text-[var(--color-text-faint)] hover:text-red-400 bg-[var(--color-surface-2)] hover:bg-red-500/10 rounded-lg border border-transparent hover:border-red-500/20 transition-all cursor-pointer"
+                            title="Delete Task"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
 
                       </div>
@@ -1171,9 +1208,22 @@ export const TasksView: React.FC<TasksViewProps> = ({
                                   {it.category}
                                 </span>
 
-                                {it.dueDate && (
-                                  <span className="text-[8.5px] font-mono text-[var(--color-text-muted)] font-bold">{it.dueDate}</span>
-                                )}
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {it.dueDate && (
+                                    <span className="text-[8.5px] font-mono text-[var(--color-text-muted)] font-bold">{it.dueDate}</span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveTask(it.id);
+                                    }}
+                                    className="p-1 text-[var(--color-text-faint)] hover:text-red-400 bg-[var(--color-surface-2)] hover:bg-red-500/10 rounded border border-transparent hover:border-red-500/20 transition-all cursor-pointer"
+                                    title="Delete Task"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
                               </div>
 
                               {it.clientName && (
@@ -1223,9 +1273,22 @@ export const TasksView: React.FC<TasksViewProps> = ({
                           </span>
                         </div>
 
-                        <span className="text-[10px] font-mono bg-[var(--color-surface-3)] text-[var(--color-text)] px-2 py-0.5 rounded-md font-bold shrink-0">
-                          {doneSubs}/{subs.length} Items
-                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] font-mono bg-[var(--color-surface-3)] text-[var(--color-text)] px-2 py-0.5 rounded-md font-bold shrink-0">
+                            {doneSubs}/{subs.length} Items
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveTask(tk.id);
+                            }}
+                            className="p-1.5 text-[var(--color-text-faint)] hover:text-red-400 bg-[var(--color-surface-2)] hover:bg-red-500/10 rounded-lg border border-transparent hover:border-red-500/20 transition-all cursor-pointer"
+                            title="Delete Task"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Subtasks inline loop */}
@@ -1308,11 +1371,13 @@ export const TasksView: React.FC<TasksViewProps> = ({
                   <div className="flex items-center justify-between shrink-0">
                     <span className="text-[9.5px] uppercase font-black text-[var(--color-text-muted)] tracking-widest font-mono">Operations Folder Details</span>
                     <button
+                      type="button"
                       onClick={() => handleRemoveTask(selectedTask.id)}
-                      className="p-1.5 text-[var(--color-text-faint)] hover:text-red-400 bg-[var(--color-surface-2)] hover:bg-red-500/10 rounded-lg border border-transparent hover:border-red-500/20 transition-colors"
-                      title="Delete task item"
+                      className="px-2.5 py-1 text-xs font-bold text-red-500 hover:text-white bg-red-500/10 hover:bg-red-600 rounded-lg border border-red-500/20 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                      title="Delete this task"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Task</span>
                     </button>
                   </div>
 
@@ -1654,6 +1719,18 @@ export const TasksView: React.FC<TasksViewProps> = ({
                       Log
                     </button>
                   </div>
+                </div>
+
+                {/* Section G: Direct Manual Removal Action */}
+                <div className="pt-2 border-t border-[var(--color-border)]/70">
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTask(selectedTask.id)}
+                    className="w-full py-2.5 px-3 bg-red-500/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/20 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete Daily Task</span>
+                  </button>
                 </div>
 
               </motion.div>

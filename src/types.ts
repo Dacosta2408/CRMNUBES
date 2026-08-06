@@ -120,7 +120,7 @@ export interface Event {
   title: string;
   date: string;
   time?: string;
-  type: 'client' | 'lender' | 'meeting' | 'personal' | 'holiday' | 'birthday';
+  type: 'client' | 'lender' | 'meeting' | 'personal' | 'holiday' | 'birthday' | 'doc_review' | 'follow_up' | 'rate_lock' | string;
   reminder?: string;
   clientId?: string | null;
   notes?: string;

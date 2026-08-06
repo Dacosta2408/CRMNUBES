@@ -590,8 +590,11 @@ export const Partners: React.FC<PartnersProps> = ({
         {/* Header Ribbon & Control Section */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-sm font-black text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
-              <Users className="w-5 h-5 text-[var(--color-accent)]" /> GBK Professional Partner Network
+            <h1 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
+              <Users className="w-5 h-5 text-[#56AB2F]" />
+              <span className="bg-gradient-to-r from-[#56AB2F] to-[#A8E063] bg-clip-text text-transparent">
+                Partner Network
+              </span>
             </h1>
             <p className="text-[10px] text-[var(--color-text-muted)] font-semibold mt-0.5">
               Browse, filter, coordinate, and review active lawyers, appraisers, realtors, and inspectors

@@ -138,6 +138,7 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("gbk_theme", theme);
   }, [theme]);
 
@@ -968,22 +969,20 @@ export default function App() {
             <div className="w-px h-5 bg-[var(--color-divider)] shrink-0 mx-0.5" />
 
             {/* Top Header Profile Section */}
-            <div className="relative shrink-0">
-              <div
-                className="p-[1.5px] rounded-full shrink-0"
-                style={{ background: "linear-gradient(90deg, #FF416C, #FFB347)" }}
-                id="header-profile-dropdown-container"
+            <div className="relative shrink-0" id="header-profile-dropdown-container">
+              <button
+                onClick={() => setHeaderProfileOpen(!headerProfileOpen)}
+                className="flex items-center gap-2.5 px-3 py-1.5 rounded-full transition-all duration-200 cursor-pointer text-left select-none hover:border-[var(--color-primary)]/40"
+                style={{
+                  background: "var(--glass-bg)",
+                  backdropFilter: "var(--glass-blur)",
+                  WebkitBackdropFilter: "var(--glass-blur)",
+                  border: "1px solid var(--glass-border)",
+                  borderRadius: "9999px",
+                  boxShadow: "0 2px 10px rgba(0, 0, 0, 0.15)"
+                }}
+                id="header-profile-button"
               >
-                <button
-                  onClick={() => setHeaderProfileOpen(!headerProfileOpen)}
-                  className="flex items-center gap-2.5 px-3 py-1.5 rounded-full transition-all duration-200 cursor-pointer text-left select-none"
-                  style={{
-                    background: "var(--glass-bg)",
-                    backdropFilter: "var(--glass-blur)",
-                    WebkitBackdropFilter: "var(--glass-blur)"
-                  }}
-                  id="header-profile-button"
-                >
                   <Avatar
                     src={currentUser.photo}
                     first={currentUser.first}
@@ -998,7 +997,6 @@ export default function App() {
                   </div>
                   <ChevronDown className="w-3.5 h-3.5 text-[var(--color-text-muted)] shrink-0" />
                 </button>
-              </div>
 
               {/* Dropdown Menu */}
               {headerProfileOpen && (

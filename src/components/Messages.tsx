@@ -16,6 +16,7 @@ interface Message {
   author: string;
   initials: string;
   role: string;
+  senderChatColor?: string;
   text: string;
   time: string;
   date: string;
@@ -77,6 +78,28 @@ export const ESCALATION_FLAGS = {
   client_pending: { label: "📝 Client Pending", color: "text-amber-400 border-amber-500/20 bg-amber-500/5", icon: "📝" },
   compliance: { label: "⚖️ Compliance Concern", color: "text-emerald-400 border-emerald-500/20 bg-emerald-500/5", icon: "⚖️" }
 };
+
+export const ESCALATION_GRADIENTS: Record<string, string> = {
+  normal: "",
+  urgent: "linear-gradient(135deg, #FF416C 0%, #FFB347 100%)",       // Sunset Vibes
+  blocked: "linear-gradient(135deg, #FF00CC 0%, #3333FF 100%)",      // Neon Dream
+  lender_pending: "linear-gradient(135deg, #00FFFF 0%, #0077FF 100%)", // Arctic Glacier
+  client_pending: "linear-gradient(135deg, #FF8800 0%, #FCEE21 100%)", // Citrus Burst
+  compliance: "linear-gradient(135deg, #56AB2F 0%, #A8E063 100%)"    // Nature Fresh
+};
+
+const chatColorGradients: Record<string, string> = {
+  sunset:   "linear-gradient(135deg, #FF416C 0%, #FFB347 100%)",
+  royal:    "linear-gradient(135deg, #6A11C8 0%, #FF758C 100%)",
+  arctic:   "linear-gradient(135deg, #00FFFF 0%, #0077FF 100%)",
+  neon:     "linear-gradient(135deg, #FF00CC 0%, #3333FF 100%)",
+  citrus:   "linear-gradient(135deg, #FF8800 0%, #FCEE21 100%)",
+  ocean:    "linear-gradient(135deg, #00C6FF 0%, #0072FF 100%)",
+  nature:   "linear-gradient(135deg, #56AB2F 0%, #A8E063 100%)",
+  warm:     "linear-gradient(135deg, #FF7E5F 0%, #FEB47B 100%)",
+  lavender: "linear-gradient(135deg, #8360C3 0%, #FF8FBF 100%)",
+};
+const DEFAULT_CHAT_GRADIENT = chatColorGradients.ocean;
 
 export const Messages: React.FC<MessagesProps> = ({
   messages,
@@ -319,6 +342,7 @@ export const Messages: React.FC<MessagesProps> = ({
         statusLabel: dm.statusLabel, 
         color: dm.color, 
         avatar: dm.avatar,
+        chatColor: dm.chatColor,
         privacy: "direct-message", 
         isChannel: false, 
         icon: "👤" 
@@ -348,6 +372,7 @@ export const Messages: React.FC<MessagesProps> = ({
       author: m.author || "Teammate",
       initials: m.initials || m.author?.slice(0, 2).toUpperCase() || "TM",
       role: m.role || (m.author === "Tim Brown" ? "Broker Principal" : m.author === "Wayne MacLeod" ? "BDM" : m.author === "Jeff Brown" ? "Assistant" : "Mortgage Agent"),
+      senderChatColor: m.senderChatColor || chatRoster.find(u => u.id === m.senderId || u.name === m.author)?.chatColor,
       text: m.text || "",
       time: m.time || "10:00 AM",
       date: m.date || "Today",
@@ -360,7 +385,7 @@ export const Messages: React.FC<MessagesProps> = ({
       readBy: m.readBy || ["TB", "WM", "JM"],
       reactions: m.reactions || {}
     }));
-  }, [messages, activeChannel, clients]);
+  }, [messages, activeChannel, clients, chatRoster]);
 
   // Dynamic filter lists
   const filteredMessages = useMemo(() => {
@@ -823,11 +848,18 @@ export const Messages: React.FC<MessagesProps> = ({
                   >
                     <span className="flex items-center gap-2 min-w-0">
                       <span className="relative flex-shrink-0">
-                        <Avatar
-                          src={tm.avatar}
-                          name={tm.name}
-                          size="sm"
-                        />
+                        <div
+                          className="rounded-full p-[2px]"
+                          style={{
+                            background: chatColorGradients[tm.chatColor ?? ""] ?? DEFAULT_CHAT_GRADIENT
+                          }}
+                        >
+                          <Avatar
+                            src={tm.avatar}
+                            name={tm.name}
+                            size="sm"
+                          />
+                        </div>
                         <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-[var(--color-bg)] ${tm.color}`} />
                       </span>
                       <div className="min-w-0">
@@ -859,13 +891,20 @@ export const Messages: React.FC<MessagesProps> = ({
         {/* Current User Session Overview */}
         <div className="p-3 border-t border-[var(--color-border)] bg-[var(--color-panel)]/30 flex items-center gap-2.5 shrink-0">
           <div className="relative">
-            <Avatar
-              src={currentUser.photo || currentUser.avatar}
-              first={currentUser.first}
-              last={currentUser.last}
-              name={currentUser.displayName}
-              size="sm"
-            />
+            <div
+              className="rounded-full p-[2px]"
+              style={{
+                background: chatColorGradients[currentUser?.chatColor ?? ""] ?? DEFAULT_CHAT_GRADIENT
+              }}
+            >
+              <Avatar
+                src={currentUser.photo || currentUser.avatar}
+                first={currentUser.first}
+                last={currentUser.last}
+                name={currentUser.displayName}
+                size="sm"
+              />
+            </div>
             <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[var(--color-bg)] bg-emerald-500" />
           </div>
           <div className="min-w-0">
@@ -886,13 +925,20 @@ export const Messages: React.FC<MessagesProps> = ({
           
           <div className="min-w-0 flex items-center gap-3">
             <div className="relative shrink-0">
-              {currentChannelDetails.avatar ? (
-                <img src={currentChannelDetails.avatar} alt={currentChannelDetails.name} className="w-9 h-9 rounded-full object-cover border border-[var(--color-border)]" referrerPolicy="no-referrer" />
-              ) : (
-                <div className="w-9 h-9 rounded-full bg-[var(--color-panel)] border border-[var(--color-border)] flex items-center justify-center font-mono text-xs font-black text-[var(--color-text-muted)]">
-                  {currentChannelDetails.name.split(" ").map(n => n[0]).join("")}
-                </div>
-              )}
+              <div
+                className="rounded-full p-[2px]"
+                style={{
+                  background: chatColorGradients[currentChannelDetails?.chatColor ?? ""] ?? DEFAULT_CHAT_GRADIENT
+                }}
+              >
+                {currentChannelDetails.avatar ? (
+                  <img src={currentChannelDetails.avatar} alt={currentChannelDetails.name} className="w-9 h-9 rounded-full object-cover border border-[var(--color-border)]" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-[var(--color-panel)] border border-[var(--color-border)] flex items-center justify-center font-mono text-xs font-black text-[var(--color-text-muted)]">
+                    {currentChannelDetails.name.split(" ").map(n => n[0]).join("")}
+                  </div>
+                )}
+              </div>
               <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[var(--color-bg)] ${currentChannelDetails.color}`} />
             </div>
             <div className="min-w-0">
@@ -1049,11 +1095,13 @@ export const Messages: React.FC<MessagesProps> = ({
                   >
                     {/* Sender Symbol / Avatar */}
                     <div className="relative shrink-0">
-                      <div className={`w-8 h-8 rounded-full font-bold flex items-center justify-center text-[11px] border shadow-md select-none ${
-                        isCurrentUserVal 
-                          ? "bg-[var(--color-accent)]/20 border-[var(--color-accent)]/30 text-[var(--color-accent)]" 
-                          : "bg-[var(--color-panel)] border-[var(--color-border)] text-[var(--color-text-muted)]"
-                      }`}>
+                      <div 
+                        className="w-8 h-8 rounded-full font-bold flex items-center justify-center text-[11px] text-white shadow-md select-none"
+                        style={{
+                          background: chatColorGradients[msg.senderChatColor ?? ""] ?? DEFAULT_CHAT_GRADIENT,
+                          boxShadow: "0 0 10px rgba(0,0,0,0.25)"
+                        }}
+                      >
                         {msg.initials}
                       </div>
                       {msg.priority !== "normal" && (
@@ -1076,18 +1124,39 @@ export const Messages: React.FC<MessagesProps> = ({
                       </div>
 
                       {/* Content Speech block with gradient borders for mentions */}
-                      <div className={`p-3 rounded-2xl text-[11.5px] leading-relaxed relative ${
-                        isMentioned 
-                          ? "bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/40 rounded-tl-none ring-1 ring-[var(--color-accent)]/50 shadow-[0_0_15px_rgba(181,166,66,0.1)]"
-                          : isCurrentUserVal 
-                            ? "bg-[var(--color-accent)]/15 text-[var(--color-text)] border border-[var(--color-accent)]/25 rounded-tr-none" 
-                            : "bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)]/70 rounded-tl-none shadow-md"
-                      }`}>
+                      <div 
+                        className={`p-3 rounded-2xl text-[11.5px] leading-relaxed relative ${
+                          isMentioned 
+                            ? "bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/40 rounded-tl-none ring-1 ring-[var(--color-accent)]/50 shadow-[0_0_15px_rgba(181,166,66,0.1)]"
+                            : isCurrentUserVal 
+                              ? "text-[var(--color-text)] rounded-tr-none" 
+                              : "text-[var(--color-text)] rounded-tl-none shadow-md"
+                        }`}
+                        style={!isMentioned ? {
+                          background: "var(--color-surface)",
+                          border: `1px solid ${(chatColorGradients[msg.senderChatColor ?? ""] ? "transparent" : "var(--color-border)")}`,
+                          borderImage: chatColorGradients[msg.senderChatColor ?? ""] 
+                            ? `${chatColorGradients[msg.senderChatColor ?? ""]} 1` 
+                            : undefined,
+                        } : undefined}
+                      >
                         
                         {/* Priority Warning Header */}
                         {msg.priority && msg.priority !== "normal" && (
-                          <div className={`text-[9px] font-black uppercase tracking-widest mb-1.5 flex items-center gap-1 ${priorityUI.color.split(" ")[0]}`}>
-                            <span>{priorityUI.label}</span>
+                          <div 
+                            className="text-[9px] font-black uppercase tracking-widest mb-1.5 flex items-center gap-1 px-2 py-1 rounded-lg w-fit"
+                            style={{
+                              background: `${ESCALATION_GRADIENTS[msg.priority]}22`,
+                              color: "white",
+                              border: `1px solid ${ESCALATION_GRADIENTS[msg.priority] ? "rgba(255,255,255,0.15)" : "transparent"}`
+                            }}
+                          >
+                            <span style={{
+                              background: ESCALATION_GRADIENTS[msg.priority],
+                              WebkitBackgroundClip: "text",
+                              WebkitTextFillColor: "transparent",
+                              backgroundClip: "text"
+                            }}>{priorityUI.label}</span>
                           </div>
                         )}
 
@@ -1369,10 +1438,14 @@ export const Messages: React.FC<MessagesProps> = ({
             {/* Submit Arrow button */}
             <button 
               onClick={handleSendMessage}
-              className="p-3.5 bg-[var(--color-accent)] hover:bg-[var(--color-accent)] text-black font-semibold rounded-2xl transition-all shadow-md flex items-center justify-center shrink-0 h-10 w-10 disabled:opacity-40"
+              className="p-3.5 rounded-2xl transition-all flex items-center justify-center shrink-0 h-10 w-10 disabled:opacity-40 hover:brightness-110 cursor-pointer"
+              style={{
+                background: "linear-gradient(135deg, #00C6FF 0%, #0072FF 100%)",
+                boxShadow: "0 0 16px rgba(0, 114, 255, 0.35)"
+              }}
               disabled={!msgInputText.trim() && attachedFiles.length === 0}
             >
-              <Send className="w-4 h-4 text-black" />
+              <Send className="w-4 h-4 text-white" />
             </button>
           </div>
 
@@ -1383,36 +1456,68 @@ export const Messages: React.FC<MessagesProps> = ({
               <span className="text-[9px] text-[var(--color-accent)] font-black uppercase tracking-widest mr-1.5">Insert Template:</span>
               <button 
                 onClick={() => handleInsertTemplate("follow-up")}
-                className="px-2.5 py-1.5 rounded-lg bg-[var(--color-panel)] hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] text-[10px] font-bold border border-[var(--color-border)] transition-all"
+                className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:brightness-110 cursor-pointer"
+                style={{
+                  background: "linear-gradient(135deg, #00FFFF 0%, #0077FF 100%)",
+                  color: "white",
+                  border: "1px solid rgba(0,255,255,0.3)"
+                }}
               >
                 📋 Client Follow-Up
               </button>
               <button 
                 onClick={() => handleInsertTemplate("lender-update")}
-                className="px-2.5 py-1.5 rounded-lg bg-[var(--color-panel)] hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] text-[10px] font-bold border border-[var(--color-border)] transition-all"
+                className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:brightness-110 cursor-pointer"
+                style={{
+                  background: "linear-gradient(135deg, #00C6FF 0%, #0072FF 100%)",
+                  color: "white",
+                  border: "1px solid rgba(0,198,255,0.3)"
+                }}
               >
                 🏦 Lender Notice
               </button>
               <button 
                 onClick={() => handleInsertTemplate("doc-checklist")}
-                className="px-2.5 py-1.5 rounded-lg bg-[var(--color-panel)] hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] text-[10px] font-bold border border-[var(--color-border)] transition-all"
+                className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:brightness-110 cursor-pointer"
+                style={{
+                  background: "linear-gradient(135deg, #FF8800 0%, #FCEE21 100%)",
+                  color: "#1a1200",
+                  border: "1px solid rgba(255,136,0,0.3)"
+                }}
               >
                 📝 Docs Collector
               </button>
               <button 
                 onClick={() => handleInsertTemplate("blocked-file")}
-                className="px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-black border border-red-500/10 transition-all"
+                className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:brightness-110 cursor-pointer"
+                style={{
+                  background: "linear-gradient(135deg, #FF00CC 0%, #3333FF 100%)",
+                  color: "white",
+                  border: "1px solid rgba(255,0,204,0.3)"
+                }}
               >
                 🛑 Deal Blocked
               </button>
               <button 
                 onClick={() => handleInsertTemplate("compliance-pass")}
-                className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[10px] font-black border border-emerald-500/10 transition-all"
+                className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:brightness-110 cursor-pointer"
+                style={{
+                  background: "linear-gradient(135deg, #56AB2F 0%, #A8E063 100%)",
+                  color: "white",
+                  border: "1px solid rgba(86,171,47,0.3)"
+                }}
               >
                 ⚖️ Audit Pass
               </button>
-              <button onClick={() => handleInsertTemplate("closing-funded")}
-                className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-[10px] font-black border border-emerald-500/10 transition-all">
+              <button 
+                onClick={() => handleInsertTemplate("closing-funded")}
+                className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:brightness-110 cursor-pointer"
+                style={{
+                  background: "linear-gradient(135deg, #FF416C 0%, #FFB347 100%)",
+                  color: "white",
+                  border: "1px solid rgba(255,65,108,0.3)"
+                }}
+              >
                 💰 Deal Funded
               </button>
             </div>

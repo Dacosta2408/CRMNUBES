@@ -117,9 +117,9 @@
   /* ── Calendar UI Corrections ── */
   --color-calendar-selected-bg:   #424769;
   --color-calendar-selected-text: #FFFFFF;
-  --color-calendar-toolbar-icon:  #9FB4CC;
-  --color-calendar-strong-text:   #F0F4F8;
-  --color-calendar-muted-control: #5C7594;
+  --color-calendar-toolbar-icon:  #FFFFFF;
+  --color-calendar-strong-text:   #FFFFFF;
+  --color-calendar-muted-control: #9FB4CC;
 
   /* ── Ocean Breeze Glass Panel System ── */
   --grad-ocean-breeze:         linear-gradient(135deg, #00C6FF 0%, #0072FF 100%);
@@ -146,6 +146,7 @@
   --color-sunset-end: #FFB347;
   --shadow-sunset-panel: 0 0 0 1px rgba(255, 65, 108, 0.20), 0 0 24px rgba(255, 179, 71, 0.12), inset 0 1px 1px rgba(255, 65, 108, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
   /* 2. Royal Purple */
+  --grad-royal: linear-gradient(135deg, #6A11C8 0%, #FF758C 100%);
   --grad-royal-purple: linear-gradient(135deg, #6A11C8 0%, #FF758C 100%);
   --color-royal-start: #6A11C8;
   --color-royal-end: #FF758C;
@@ -185,6 +186,10 @@
   --color-lavender-start: #8360C3;
   --color-lavender-end: #FF8FBF;
   --shadow-lavender-panel: 0 0 0 1px rgba(131, 96, 195, 0.20), 0 0 24px rgba(255, 143, 191, 0.12), inset 0 1px 1px rgba(131, 96, 195, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+
+  /* Tab Colors */
+  --color-pipeline: #FF416C;
+  --color-partners: #56AB2F;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -302,6 +307,7 @@
   --color-sunset-end: #FFB347;
   --shadow-sunset-panel: 0 0 0 1px rgba(255, 65, 108, 0.20), 0 0 24px rgba(255, 179, 71, 0.12), inset 0 1px 1px rgba(255, 65, 108, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
   /* 2. Royal Purple */
+  --grad-royal: linear-gradient(135deg, #6A11C8 0%, #FF758C 100%);
   --grad-royal-purple: linear-gradient(135deg, #6A11C8 0%, #FF758C 100%);
   --color-royal-start: #6A11C8;
   --color-royal-end: #FF758C;
@@ -341,6 +347,10 @@
   --color-lavender-start: #8360C3;
   --color-lavender-end: #FF8FBF;
   --shadow-lavender-panel: 0 0 0 1px rgba(131, 96, 195, 0.20), 0 0 24px rgba(255, 143, 191, 0.12), inset 0 1px 1px rgba(131, 96, 195, 0.10), 0 8px 32px rgba(0, 0, 0, 0.20);
+
+  /* Tab Colors */
+  --color-pipeline: #FF416C;
+  --color-partners: #56AB2F;
 }
 
 /* ─────────────────────────────────────────────────────────────

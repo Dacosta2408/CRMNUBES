@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { 
-  Plus, Search, Filter
+  Plus, Search, Filter, Sparkles
 } from "lucide-react";
 import { Client, Lender, User } from "../types";
 import { Avatar } from "./Avatar";
@@ -145,20 +145,32 @@ export const ClientsList: React.FC<ClientsListProps> = ({
 
           <button 
             onClick={onOpenAIIntake}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold rounded-full text-[var(--color-text-inverse)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md"
+            className="gradient-card nature ocean-btn-edge rounded-lg px-4 py-2 text-xs flex items-center gap-2 cursor-pointer transition-all duration-200"
+            style={{
+              background: "var(--grad-nature)",
+              color: "white",
+              fontWeight: "600",
+              border: "1px solid rgba(86, 171, 47, 0.35)",
+              boxShadow: "0 0 16px rgba(86, 171, 47, 0.20)"
+            }}
           >
-            ✦ AI Extraction
+            <Sparkles className="w-4 h-4" />
+            <span>AI Extraction</span>
           </button>
 
           <button 
             onClick={onAddClient}
-            className="flex items-center gap-1 px-4 py-1.5 text-xs font-extrabold text-[var(--color-text-inverse)] transition-all cursor-pointer hover:shadow-md hover:opacity-95 active:scale-95 duration-200"
+            className="gradient-card nature ocean-btn-edge rounded-lg px-4 py-2 text-xs flex items-center gap-2 cursor-pointer transition-all duration-200"
             style={{
-              background: "var(--grad-warm-highlight)",
-              borderRadius: "999px"
+              background: "var(--grad-nature)",
+              color: "white",
+              fontWeight: "600",
+              border: "1px solid rgba(86, 171, 47, 0.35)",
+              boxShadow: "0 0 16px rgba(86, 171, 47, 0.20)"
             }}
           >
-            <Plus className="w-3.5 h-3.5 stroke-[3]" /> Add Client
+            <Plus className="w-4 h-4" />
+            <span>+ Add Client</span>
           </button>
         </div>
       </div>

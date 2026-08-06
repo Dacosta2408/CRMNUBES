@@ -46,7 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const iconColorMap: Record<string, string> = {
     dashboard:     "#00C6FF",
     clients:       "#56AB2F",
-    pipeline:      "#3D97C9",
+    pipeline:      "#FF416C",
     ai:            "#A855F7",
     calculators:   "#FF8800",
     lenders:       "#00FFFF",
@@ -55,7 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     messages:      "#FF00CC",
     emails:        "#0072FF",
     retention:     "#FFB347",
-    partners:      "#8360C3",
+    partners:      "#56AB2F",
     reports:       "#FCEE21",
     compliance:    "#0077FF",
     file_readiness:"#FEB47B",
@@ -78,8 +78,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: "pipeline", 
           label: "Pipeline Board", 
           icon: (props: React.ComponentProps<"svg">) => (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+              <defs>
+                <linearGradient id="pipeline-sunset-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#FF416C" />
+                  <stop offset="100%" stopColor="#FFB347" />
+                </linearGradient>
+              </defs>
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" stroke="url(#pipeline-sunset-grad)" />
             </svg>
           ) 
         },
@@ -115,10 +121,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: "partners", 
           label: "Partner Network", 
           icon: (props: React.ComponentProps<"svg">) => (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-              <circle cx="18" cy="18" r="3"/>
-              <circle cx="12" cy="7" r="4"/>
-              <path d="M12 12c-2.3 0-5.3 1.1-6.1 3.5"/>
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+              <defs>
+                <linearGradient id="partners-nature-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#56AB2F" />
+                  <stop offset="100%" stopColor="#A8E063" />
+                </linearGradient>
+              </defs>
+              <g stroke="url(#partners-nature-grad)">
+                <circle cx="18" cy="18" r="3"/>
+                <circle cx="12" cy="7" r="4"/>
+                <path d="M12 12c-2.3 0-5.3 1.1-6.1 3.5"/>
+              </g>
             </svg>
           ) 
         },
@@ -246,9 +260,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         layoutId="sidebar-active"
                         className="absolute inset-0 rounded-lg pointer-events-none"
                         style={{
-                          background: "var(--color-sidebar-active)",
-                          border: `1px solid ${iconColorMap[item.id] ?? "rgba(249,177,122,0.20)"}33`,
-                          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)"
+                          background: item.id === "pipeline"
+                            ? "linear-gradient(135deg, rgba(255, 65, 108, 0.28) 0%, rgba(255, 179, 71, 0.18) 100%)"
+                            : item.id === "partners"
+                            ? "linear-gradient(135deg, rgba(86, 171, 47, 0.28) 0%, rgba(168, 224, 99, 0.18) 100%)"
+                            : "var(--color-sidebar-active)",
+                          border: item.id === "pipeline"
+                            ? "1px solid rgba(255, 65, 108, 0.50)"
+                            : item.id === "partners"
+                            ? "1px solid rgba(86, 171, 47, 0.50)"
+                            : `1px solid ${iconColorMap[item.id] ?? "rgba(249,177,122,0.20)"}33`,
+                          boxShadow: item.id === "pipeline"
+                            ? "0 4px 16px rgba(255, 65, 108, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.15)"
+                            : item.id === "partners"
+                            ? "0 4px 16px rgba(86, 171, 47, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.15)"
+                            : "0 4px 12px rgba(0, 0, 0, 0.2)"
                         }}
                       />
                       {/* Slim rounded left-side active indicator */}
@@ -256,9 +282,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         layoutId="sidebar-active-indicator"
                         className="absolute -left-[3px] top-1/2 -translate-y-1/2 w-[6px] h-[26px] rounded-full z-20 pointer-events-none"
                         style={{
-                          background: iconColorMap[item.id] ?? "var(--color-brand-peach)",
-                          boxShadow: `0 0 10px 3px ${iconColorMap[item.id] ?? "rgba(249,177,122,0.6)"}88,
-                                       0 0 4px 1px ${iconColorMap[item.id] ?? "rgba(249,177,122,0.4)"}bb`,
+                          background: item.id === "pipeline"
+                            ? "linear-gradient(180deg, #FF416C 0%, #FFB347 100%)"
+                            : item.id === "partners"
+                            ? "linear-gradient(180deg, #56AB2F 0%, #A8E063 100%)"
+                            : iconColorMap[item.id] ?? "var(--color-brand-peach)",
+                          boxShadow: item.id === "pipeline"
+                            ? "0 0 12px 3px rgba(255, 65, 108, 0.75)"
+                            : item.id === "partners"
+                            ? "0 0 12px 3px rgba(86, 171, 47, 0.75)"
+                            : `0 0 10px 3px ${iconColorMap[item.id] ?? "rgba(249,177,122,0.6)"}88,
+                               0 0 4px 1px ${iconColorMap[item.id] ?? "rgba(249,177,122,0.4)"}bb`,
                         }}
                         transition={{ type: "spring", stiffness: 400, damping: 30 }}
                       />
@@ -307,22 +341,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
         className="p-3 flex flex-col gap-3 shrink-0"
         style={{ borderTop: "1px solid var(--color-sidebar-border)" }}
       >
-        {/* Profile card */}
+        {/* Profile card - Pill format with Ocean Breeze glass styling */}
         <div
           onClick={onOpenProfileManager}
-          className="p-2.5 cursor-pointer rounded-xl flex items-center gap-2.5 select-none"
+          className="cursor-pointer flex items-center gap-2 p-2 rounded-full select-none"
           style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid var(--color-sidebar-border)",
+            background: "rgba(0, 198, 255, 0.12)",
+            border: "1px solid rgba(0, 198, 255, 0.25)",
+            backdropFilter: "var(--glass-blur)",
+            WebkitBackdropFilter: "var(--glass-blur)",
+            boxShadow: "0 0 16px rgba(0, 114, 255, 0.10)",
             transition: "var(--transition-smooth)"
           }}
           onMouseEnter={e => {
-            (e.currentTarget as HTMLElement).style.background = "var(--color-sidebar-active)";
-            (e.currentTarget as HTMLElement).style.borderColor = "rgba(103, 111, 157, 0.3)";
+            (e.currentTarget as HTMLElement).style.background = "rgba(0, 198, 255, 0.20)";
+            (e.currentTarget as HTMLElement).style.borderColor = "rgba(0, 198, 255, 0.40)";
+            (e.currentTarget as HTMLElement).style.boxShadow = "0 0 20px rgba(0, 198, 255, 0.25)";
           }}
           onMouseLeave={e => {
-            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.03)";
-            (e.currentTarget as HTMLElement).style.borderColor = "var(--color-sidebar-border)";
+            (e.currentTarget as HTMLElement).style.background = "rgba(0, 198, 255, 0.12)";
+            (e.currentTarget as HTMLElement).style.borderColor = "rgba(0, 198, 255, 0.25)";
+            (e.currentTarget as HTMLElement).style.boxShadow = "0 0 16px rgba(0, 114, 255, 0.10)";
           }}
         >
           {/* Avatar */}
@@ -331,20 +370,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             first={currentUser.first}
             last={currentUser.last}
             name={currentUser.displayName || currentUser.name}
-            size="md"
+            size="sm"
           />
 
-          <div className="flex-1 min-w-0">
-            <div
-              className="text-xs font-black truncate"
-              style={{ color: "#FFFFFF" }}
-            >
+          <div className="flex-1 min-w-0 pr-1">
+            <div className="text-xs font-semibold text-white truncate">
               {currentUser.displayName || `${currentUser.first || ''} ${currentUser.last || ''}`.trim() || currentUser.name || "Broker Profile"}
             </div>
-            <div
-              className="text-[10px] truncate font-semibold leading-none mt-0.5"
-              style={{ color: "var(--color-text-sidebar-muted)" }}
-            >
+            <div className="text-[10px] text-white/70 truncate">
               {currentUser.jobTitle || currentUser.role || currentUser.email || "Mortgage Broker"}
             </div>
           </div>
