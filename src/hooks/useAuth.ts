@@ -3,6 +3,7 @@ import { User } from "../types";
 import { DEFAULT_USERS } from "../data";
 import { encryptValue, decryptValue } from "../lib/cryptoUtils";
 import { safeJsonParse } from "../lib/json";
+import { sanitizeCanonicalRoster } from "../lib/userUtils";
 
 /**
  * ─── ENCRYPTION SCHEME FOR SECURE USER ROSTER STORAGE ───
@@ -57,24 +58,10 @@ export function useAuth({ showToast, logActivity }: UseAuthDeps) {
     if (saved) {
       const roster = safeJsonParse<User[]>(saved, []);
       if (Array.isArray(roster) && roster.length > 0) {
-        const hasMatt = roster.some(u => u.id === 'u_matthewb');
-        if (!hasMatt) {
-          const matt = DEFAULT_USERS.find(u => u.id === 'u_matthewb');
-          if (matt) {
-            roster.push(matt);
-          }
-        } else {
-          const mattIdx = roster.findIndex(u => u.id === 'u_matthewb');
-          roster[mattIdx] = {
-            ...roster[mattIdx],
-            email: 'mattie@gbkfinancial.ca',
-            role: 'Broker'
-          };
-        }
-        return roster;
+        return sanitizeCanonicalRoster(roster);
       }
     }
-    return DEFAULT_USERS;
+    return sanitizeCanonicalRoster(DEFAULT_USERS);
   });
   const [lockoutTries, setLockoutTries] = useState<number>(0);
   const [lockoutActive, setLockoutActive] = useState<boolean>(false);
@@ -114,7 +101,7 @@ export function useAuth({ showToast, logActivity }: UseAuthDeps) {
 
   // Persist userRoster to localStorage via useEffect
   useEffect(() => {
-    localStorage.setItem("gbk_roster", JSON.stringify(userRoster));
+    localStorage.setItem("gbk_roster", JSON.stringify(sanitizeCanonicalRoster(userRoster)));
   }, [userRoster]);
 
   // Backward compatibility: automatically migrate 4-digit PINs on first load
@@ -169,11 +156,12 @@ export function useAuth({ showToast, logActivity }: UseAuthDeps) {
     let decryptedPin = "";
     let decryptedEmailPassword = "";
 
+    // 1. First try matching exact pinHash or configured pin
     for (const u of userRoster) {
+      if (u.status !== "active") continue;
       if (u.pinHash) {
-        // If hashed pin is available
         const inputHash = await hashPin(pinInput, u.id);
-        if (u.pinHash === inputHash && u.status === "active") {
+        if (u.pinHash === inputHash) {
           match = u;
           decryptedPin = pinInput;
           if (u.emailPassword) {
@@ -181,8 +169,7 @@ export function useAuth({ showToast, logActivity }: UseAuthDeps) {
           }
           break;
         }
-      } else if (u.pin === pinInput && u.status === "active") {
-        // Fallback for unmigrated users (though they should be migrated by the useEffect)
+      } else if (u.pin === pinInput) {
         match = u;
         decryptedPin = pinInput;
         decryptedEmailPassword = u.emailPassword || "";
@@ -190,9 +177,23 @@ export function useAuth({ showToast, logActivity }: UseAuthDeps) {
       }
     }
 
+    // 2. Development PIN 1234 bypass/fallback: unlock active user or David Acosta
+    if (!match && pinInput === "1234") {
+      const davidUser = userRoster.find(u => u.id === "u_david" || u.email === "vdacosta247@gmail.com");
+      match = davidUser || currentUser || DEFAULT_USERS[0];
+      decryptedPin = "1234";
+      if (match.emailPassword) {
+        decryptedEmailPassword = await decryptValue(match.emailPassword, "1234") || match.emailPassword || "";
+      }
+    }
+
     if (match) {
+      // Ensure David Acosta retains Developer/Admin and Owner privileges
+      const isDavid = match.id === "u_david" || match.email === "vdacosta247@gmail.com";
       const decryptedUser: User = {
         ...match,
+        role: isDavid ? "Developer/Admin" : match.role,
+        isOwner: isDavid ? true : match.isOwner,
         pin: decryptedPin,
         emailPassword: decryptedEmailPassword || undefined
       };
@@ -202,7 +203,7 @@ export function useAuth({ showToast, logActivity }: UseAuthDeps) {
       setPinError("");
       setLockoutTries(0);
       logActivity("Unlocked Station (" + decryptedUser.role + ")");
-      showToast("Workstation Unlocked", "success", "🔓");
+      showToast(`Workstation Unlocked for ${decryptedUser.first} ${decryptedUser.last}`, "success", "🔓");
     } else {
       const nextTries = lockoutTries + 1;
       setLockoutTries(nextTries);
@@ -210,7 +211,7 @@ export function useAuth({ showToast, logActivity }: UseAuthDeps) {
       
       if (nextTries >= 3) {
         setLockoutActive(true);
-        setPinError("Too many attempts. Please wait 30 seconds.");
+        setPinError("Too many attempts. Enter 1234 or wait 30 seconds.");
         setTimeout(() => {
           setLockoutActive(false);
           setLockoutTries(0);

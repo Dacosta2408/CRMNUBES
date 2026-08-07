@@ -1,121 +1,104 @@
-export interface TypingUser {
-  userId: string;
-  channelId: string;
-  displayName: string;
-  startedAt: string;
-}
+import { TypingUser } from "../types";
 
-type TypingListener = (users: TypingUser[]) => void;
+// In-memory registry for typing users per channel
+const activeTypingMap: Map<string, Map<string, TypingUser>> = new Map();
+const typingTimeouts: Map<string, any> = new Map();
 
-// In-memory store for active typing state
-const activeTypingMap: Map<string, TypingUser[]> = new Map();
-const listenersMap: Map<string, Set<TypingListener>> = new Map();
-const typingTimeoutsMap: Map<string, NodeJS.Timeout> = new Map(); // key: `${channelId}:${userId}`
+export const TYPING_TIMEOUT_MS = 4000;
 
-const TIMEOUT_MS = 4000; // 4 seconds auto-expiry fallback
+export function startTyping(
+  channelId: string,
+  currentUser: { id: string; first?: string; last?: string; displayName?: string }
+) {
+  if (!channelId || !currentUser || !currentUser.id) return;
+  const displayName = currentUser.displayName || `${currentUser.first || ''} ${currentUser.last || ''}`.trim() || currentUser.id;
 
-function notifyChannelListeners(channelId: string) {
-  const channelUsers = activeTypingMap.get(channelId) || [];
-  const listeners = listenersMap.get(channelId);
-  if (listeners) {
-    listeners.forEach(cb => cb([...channelUsers]));
+  if (!activeTypingMap.has(channelId)) {
+    activeTypingMap.set(channelId, new Map());
   }
-}
+  const channelMap = activeTypingMap.get(channelId)!;
+  const now = new Date().toISOString();
 
-/**
-  * Signal that a user has started typing in a specific channel.
-  * Extends/resets the 4-second timeout for this user.
-  */
-export function startTyping(channelId: string, user: { id: string; name: string }) {
-  if (!channelId || !user || !user.id) return;
-
-  const key = `${channelId}:${user.id}`;
-
-  // Clear existing timeout if present
-  if (typingTimeoutsMap.has(key)) {
-    clearTimeout(typingTimeoutsMap.get(key));
-  }
-
-  const currentList = activeTypingMap.get(channelId) || [];
-  const existingIndex = currentList.findIndex(u => u.userId === user.id);
-
-  const updatedUser: TypingUser = {
-    userId: user.id,
+  channelMap.set(currentUser.id, {
+    userId: currentUser.id,
     channelId,
-    displayName: user.name,
-    startedAt: new Date().toISOString()
-  };
+    displayName,
+    startedAt: now
+  });
 
-  let nextList: TypingUser[];
-  if (existingIndex >= 0) {
-    nextList = [...currentList];
-    nextList[existingIndex] = updatedUser;
-  } else {
-    nextList = [...currentList, updatedUser];
+  const timerKey = `${channelId}_${currentUser.id}`;
+  if (typingTimeouts.has(timerKey)) {
+    clearTimeout(typingTimeouts.get(timerKey));
   }
 
-  activeTypingMap.set(channelId, nextList);
+  // Safety fallback timeout to clear typing indicator after inactivity
+  const timeout = setTimeout(() => {
+    stopTyping(channelId, currentUser.id);
+  }, TYPING_TIMEOUT_MS);
+  typingTimeouts.set(timerKey, timeout);
 
-  // Set automatic safety fallback timeout to clear user after 4 seconds
-  const timeoutId = setTimeout(() => {
-    stopTyping(channelId, user.id);
-  }, TIMEOUT_MS);
-
-  typingTimeoutsMap.set(key, timeoutId);
-  notifyChannelListeners(channelId);
+  // Broadcast typing started event
+  window.dispatchEvent(
+    new CustomEvent("user.typingStarted", {
+      detail: { channelId, userId: currentUser.id, displayName }
+    })
+  );
 }
 
-/**
-  * Signal that a user has stopped typing in a channel.
-  */
 export function stopTyping(channelId: string, userId: string) {
   if (!channelId || !userId) return;
+  const channelMap = activeTypingMap.get(channelId);
+  if (channelMap && channelMap.has(userId)) {
+    const user = channelMap.get(userId);
+    channelMap.delete(userId);
+    if (channelMap.size === 0) {
+      activeTypingMap.delete(channelId);
+    }
+    const timerKey = `${channelId}_${userId}`;
+    if (typingTimeouts.has(timerKey)) {
+      clearTimeout(typingTimeouts.get(timerKey));
+      typingTimeouts.delete(timerKey);
+    }
 
-  const key = `${channelId}:${userId}`;
-  if (typingTimeoutsMap.has(key)) {
-    clearTimeout(typingTimeoutsMap.get(key));
-    typingTimeoutsMap.delete(key);
+    // Broadcast typing stopped event
+    window.dispatchEvent(
+      new CustomEvent("user.typingStopped", {
+        detail: { channelId, userId, displayName: user?.displayName }
+      })
+    );
   }
-
-  const currentList = activeTypingMap.get(channelId) || [];
-  const nextList = currentList.filter(u => u.userId !== userId);
-
-  if (nextList.length === 0) {
-    activeTypingMap.delete(channelId);
-  } else {
-    activeTypingMap.set(channelId, nextList);
-  }
-
-  notifyChannelListeners(channelId);
 }
 
-/**
-  * Get list of currently typing users in a channel.
-  */
-export function getTypingUsers(channelId: string): TypingUser[] {
-  return activeTypingMap.get(channelId) || [];
+export function getTypingUsers(channelId: string, excludeUserId?: string): TypingUser[] {
+  const channelMap = activeTypingMap.get(channelId);
+  if (!channelMap) return [];
+  const list = Array.from(channelMap.values());
+  if (excludeUserId) {
+    return list.filter(u => u.userId !== excludeUserId);
+  }
+  return list;
 }
 
-/**
-  * Subscribe to typing changes for a channel. Returns an unsubscribe function.
-  */
-export function subscribeToTyping(channelId: string, callback: TypingListener): () => void {
-  if (!listenersMap.has(channelId)) {
-    listenersMap.set(channelId, new Set());
-  }
+export function subscribeToTyping(
+  channelId: string,
+  onChange: (users: TypingUser[]) => void,
+  excludeUserId?: string
+): () => void {
+  const handler = (e: Event) => {
+    const customEv = e as CustomEvent;
+    if (customEv.detail && customEv.detail.channelId === channelId) {
+      onChange(getTypingUsers(channelId, excludeUserId));
+    }
+  };
 
-  listenersMap.get(channelId)!.add(callback);
+  window.addEventListener("user.typingStarted", handler);
+  window.addEventListener("user.typingStopped", handler);
 
-  // Send initial state immediately
-  callback(getTypingUsers(channelId));
+  // Notify immediately with current active typing users
+  onChange(getTypingUsers(channelId, excludeUserId));
 
   return () => {
-    const listeners = listenersMap.get(channelId);
-    if (listeners) {
-      listeners.delete(callback);
-      if (listeners.size === 0) {
-        listenersMap.delete(channelId);
-      }
-    }
+    window.removeEventListener("user.typingStarted", handler);
+    window.removeEventListener("user.typingStopped", handler);
   };
 }

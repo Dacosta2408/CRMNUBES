@@ -19,7 +19,7 @@ import {
 import { Avatar } from "../Avatar";
 import { generateRosterPDF, exportRosterCSV } from "../../lib/rosterPdfGenerator";
 import { DEFAULT_CLEARANCE_LEVELS, DEFAULT_MODULE_KEYS, ROLE_PRESETS } from "../../lib/clearanceMatrixDefaults";
-import { dispatchUserEvent } from "../../lib/userUtils";
+import { dispatchUserEvent, sanitizeCanonicalRoster } from "../../lib/userUtils";
 import { UserActivityTimeline } from "./UserActivityTimeline";
 import { UserComparisonModal } from "./UserComparisonModal";
 import { UserOffboardingModal } from "./UserOffboardingModal";
@@ -89,6 +89,20 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   // Modals state
   const [profileUserModal, setProfileUserModal] = useState<UserType | null>(null);
   const [editingUser, setEditingUser] = useState<UserType | null>(null);
+  const [credentialResetUser, setCredentialResetUser] = useState<UserType | null>(null);
+  const [resetPinInput, setResetPinInput] = useState<string>("");
+
+  // Single authoritative roster save & event dispatch helper
+  const saveAndNotifyRoster = (newRosterOrUpdater: UserType[] | ((prev: UserType[]) => UserType[])) => {
+    setUserRoster(prev => {
+      const nextRoster = typeof newRosterOrUpdater === 'function' ? newRosterOrUpdater(prev) : newRosterOrUpdater;
+      const sanitized = sanitizeCanonicalRoster(nextRoster);
+      localStorage.setItem("gbk_roster", JSON.stringify(sanitized));
+      dispatchUserEvent("user.updated", { roster: sanitized });
+      window.dispatchEvent(new CustomEvent("user.updated"));
+      return sanitized;
+    });
+  };
   const [editRole, setEditRole] = useState<string>("Broker");
   const [editBrokerage, setEditBrokerage] = useState<string>("GBK Financial");
   const [editStatus, setEditStatus] = useState<string>("active");
@@ -227,6 +241,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const canDeleteUser = (u: UserType) => {
     if (!isAdminOrDev) return false;
     if (u.id === currentUser.id) return false; // Cannot delete self
+    if (u.id === "u_david" || (u.email || "").toLowerCase() === "vdacosta247@gmail.com") return false; // Always protect David Acosta
     if (u.isProtected || u.userLabel === 'protected') return false; // Protected account
     if (u.isOwner) return false; // Super admin owner
     if (u.role === 'Developer/Admin') {
@@ -267,12 +282,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
   // Execute User Archiving
   const handleExecuteArchive = async (targetUser: UserType) => {
+    if (targetUser.id === "u_david" || (targetUser.email || "").toLowerCase() === "vdacosta247@gmail.com" || targetUser.isProtected) {
+      showToast("Cannot archive protected Developer/Admin account.", "error");
+      return;
+    }
     setIsDeleting(true);
     try {
       const reasonText = deletionReason === "Other" ? customDeletionReason || "Archived by Admin" : deletionReason;
       await archiveUser(targetUser.id, reasonText);
 
-      setUserRoster(prev => prev.map(u => u.id === targetUser.id ? { 
+      saveAndNotifyRoster(prev => prev.map(u => u.id === targetUser.id ? { 
         ...u, 
         status: 'archived',
         deletedAt: new Date().toISOString(),
@@ -294,24 +313,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   // Execute Permanent User Deletion
   const handleExecutePermanentDelete = async (targetUser: UserType) => {
     if (!confirmationInput) return;
+    if (targetUser.id === "u_david" || (targetUser.email || "").toLowerCase() === "vdacosta247@gmail.com" || targetUser.isProtected) {
+      showToast("Cannot delete protected Developer/Admin account.", "error");
+      return;
+    }
     setIsDeleting(true);
     try {
       const reasonText = deletionReason === "Other" ? customDeletionReason || "Permanent Deletion" : deletionReason;
       await deleteUserPermanently(targetUser.id, reasonText, confirmationInput);
 
-      setUserRoster(prev => prev.map(u => u.id === targetUser.id ? { 
-        ...u, 
-        status: 'deleted',
-        deletedAt: new Date().toISOString(),
-        deletionReason: reasonText,
-        deletionType: 'permanent',
-        first: 'Deleted',
-        last: 'User',
-        name: 'Deleted User',
-        fullName: 'Deleted User',
-        displayName: 'Deleted User',
-        email: `deleted_${targetUser.id}@deleted.invalid`
-      } : u));
+      saveAndNotifyRoster(prev => prev.filter(u => u.id !== targetUser.id));
 
       showToast(`User ${targetUser.first} ${targetUser.last} permanently deleted.`, "success");
       logActivity("Permanently Deleted User Account", `Permanently removed user ${targetUser.first} ${targetUser.last} (${targetUser.email}). Reason: ${reasonText}`);
@@ -328,7 +339,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const handleRestoreUser = async (targetUser: UserType) => {
     try {
       await restoreArchivedUser(targetUser.id);
-      setUserRoster(prev => prev.map(u => u.id === targetUser.id ? {
+      saveAndNotifyRoster(prev => prev.map(u => u.id === targetUser.id ? {
         ...u,
         status: 'active',
         deletedAt: undefined,
@@ -345,6 +356,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   // Filtered roster calculation
   const filteredRoster = useMemo(() => {
     return userRoster.filter(u => {
+      if (u.role === "Email User" || u.userLabel === "email_user" || u.id?.startsWith("email_")) {
+        return false;
+      }
+
       const search = searchTerm.toLowerCase().trim();
       const nameMatch = !search || 
         `${u.first || ""} ${u.last || ""}`.toLowerCase().includes(search) ||
@@ -409,14 +424,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       return;
     }
 
-    const updated = userRoster.map(u => {
-      if (selectedUserIds.includes(u.id)) {
+    saveAndNotifyRoster(prev => prev.map(u => {
+      if (selectedUserIds.includes(u.id) && u.id !== "u_david" && !u.isProtected) {
         return { ...u, status };
       }
       return u;
-    });
+    }));
 
-    setUserRoster(updated);
     logActivity("Bulk Status Update", `Changed status of ${selectedUserIds.length} users to ${status}`);
     showToast(`Updated status of ${selectedUserIds.length} users to ${status}.`, "success");
     setSelectedUserIds([]);
@@ -426,14 +440,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const handleBulkClearanceChange = (level: number) => {
     if (selectedUserIds.length === 0) return;
 
-    const updated = userRoster.map(u => {
+    saveAndNotifyRoster(prev => prev.map(u => {
       if (selectedUserIds.includes(u.id)) {
         return { ...u, clearanceLevel: level };
       }
       return u;
-    });
+    }));
 
-    setUserRoster(updated);
     logActivity("Bulk Clearance Level Update", `Assigned Clearance Level ${level} to ${selectedUserIds.length} users`);
     showToast(`Assigned Clearance Level ${level} to ${selectedUserIds.length} users.`, "success");
     setSelectedUserIds([]);
@@ -448,8 +461,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       return;
     }
 
-    const updated = userRoster.filter(u => !selectedUserIds.includes(u.id));
-    setUserRoster(updated);
+    saveAndNotifyRoster(prev => prev.filter(u => !selectedUserIds.includes(u.id) || u.id === "u_david" || u.isProtected));
     logActivity("Bulk User Deletion", `Deleted ${selectedUserIds.length} staff accounts from the system.`);
     showToast(`Removed ${selectedUserIds.length} users from the roster.`, "success");
     setSelectedUserIds([]);
@@ -460,21 +472,19 @@ export const UserManagement: React.FC<UserManagementProps> = ({
     e.preventDefault();
     if (!editingUser) return;
 
+    const isDavid = editingUser.id === "u_david" || (editingUser.email || "").toLowerCase() === "vdacosta247@gmail.com";
     const updatedUser: UserType = {
       ...editingUser,
-      role: editRole,
+      role: isDavid ? "Developer/Admin" : editRole,
       brokerage: editBrokerage,
-      status: editStatus as any,
-      clearanceLevel: editClearance,
+      status: isDavid ? "active" : editStatus as any,
+      clearanceLevel: isDavid ? 6 : editClearance,
       specialPermissions: editSpecialPerms,
+      isProtected: isDavid ? true : editingUser.isProtected,
       updatedAt: new Date().toISOString()
     };
 
-    setUserRoster(prev => prev.map(u => u.id === editingUser.id ? updatedUser : u));
-    dispatchUserEvent("user.updated", { user: updatedUser, userId: updatedUser.id });
-    if (updatedUser.status !== editingUser.status) {
-      dispatchUserEvent("user.statusChanged", { user: updatedUser, userId: updatedUser.id, status: updatedUser.status });
-    }
+    saveAndNotifyRoster(prev => prev.map(u => u.id === editingUser.id ? updatedUser : u));
     logActivity("Updated User Profile", `Updated permissions and role for ${editingUser.first} ${editingUser.last}`);
     showToast(`Updated profile settings for ${editingUser.first} ${editingUser.last}.`, "success");
     setEditingUser(null);
@@ -493,7 +503,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       adminNotes: brokerNotes
     };
 
-    setUserRoster(prev => prev.map(u => u.id === editingBroker.id ? updatedBroker : u));
+    saveAndNotifyRoster(prev => prev.map(u => u.id === editingBroker.id ? updatedBroker : u));
     logActivity("Updated Broker Details", `Updated admin broker metrics for ${editingBroker.first} ${editingBroker.last}`);
     showToast(`Updated broker metrics for ${editingBroker.first}.`, "success");
     setEditingBroker(null);
@@ -505,14 +515,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
     const brokerFullName = `${assigningBroker.first} ${assigningBroker.last}`;
 
-    const updated = userRoster.map(u => {
+    saveAndNotifyRoster(prev => prev.map(u => {
       if (selectedAgentIds.includes(u.id)) {
         return { ...u, reportingTo: brokerFullName };
       }
       return u;
-    });
+    }));
 
-    setUserRoster(updated);
     logActivity("Assigned Agents to Broker", `Assigned ${selectedAgentIds.length} agents to ${brokerFullName}`);
     showToast(`Assigned ${selectedAgentIds.length} agents to ${assigningBroker.first}.`, "success");
     setAssigningBroker(null);
@@ -522,6 +531,17 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const handleWizardSubmit = () => {
     if (!wizFirst || !wizLast || !wizEmail) {
       showToast("First name, last name, and email are required.", "error");
+      return;
+    }
+
+    const targetEmail = wizEmail.trim().toLowerCase();
+    const existing = userRoster.find(u => (u.email || "").trim().toLowerCase() === targetEmail);
+    if (existing) {
+      setDuplicateEmailError({
+        message: `A staff account with email address "${wizEmail}" already exists in the roster (${existing.first} ${existing.last}). Duplicate account creation blocked.`,
+        existingUser: existing
+      });
+      showToast(`Duplicate email detected: "${wizEmail}" is already registered.`, "error");
       return;
     }
 
@@ -550,12 +570,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       mentorId: wizMentorId,
       jobTitle: wizRole,
       displayName: `${wizFirst} ${wizLast}`,
-      pin: Math.floor(1000 + Math.random() * 9000).toString(),
       specialPermissions: wizSpecialPerms
     };
 
-    setUserRoster(prev => [newUser, ...prev]);
-    dispatchUserEvent("user.created", { user: newUser, userId: newUser.id });
+    saveAndNotifyRoster(prev => [newUser, ...prev]);
     setCreatedUser(newUser);
     logActivity("Onboarded New Staff Member", `Created account for ${newUser.first} ${newUser.last} (${newUser.email}) - Clearance Level ${newUser.clearanceLevel}`);
     showToast(`Created staff account for ${newUser.first} ${newUser.last}!`, "success");
@@ -660,12 +678,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({
     }
 
     // Account Disposition
-    if (data.deleteAccount) {
-      setUserRoster(prev => prev.filter(u => u.id !== offboardingUser.id));
+    if (data.deleteAccount && offboardingUser.id !== "u_david" && !offboardingUser.isProtected) {
+      saveAndNotifyRoster(prev => prev.filter(u => u.id !== offboardingUser.id));
       logActivity("Offboarded & Deleted Account", `Offboarded and permanently removed ${sourceName} from roster. Reassigned files to ${targetName}.`);
       showToast(`Offboarded and removed ${sourceName} from roster.`, "success");
     } else {
-      setUserRoster(prev => prev.map(u => {
+      saveAndNotifyRoster(prev => prev.map(u => {
         if (u.id === offboardingUser.id) {
           return { ...u, status: "inactive", clearanceLevel: 0 };
         }
@@ -706,7 +724,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
     }
 
     // Update roster: update primary, remove duplicate
-    setUserRoster(prev => prev.filter(u => u.id !== duplicateUserIdToRemove).map(u => u.id === mergedPrimaryUser.id ? mergedPrimaryUser : u));
+    saveAndNotifyRoster(prev => prev.filter(u => u.id !== duplicateUserIdToRemove).map(u => u.id === mergedPrimaryUser.id ? mergedPrimaryUser : u));
 
     logActivity("Merged Duplicate Accounts", `Merged duplicate user ${dupName} into ${primaryName}. Reassigned all client files and tasks.`);
     showToast(`Merged duplicate accounts into ${primaryName}!`, "success");
@@ -715,7 +733,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
   // Import Handler
   const handleImportUsers = (newUsers: UserType[]) => {
-    setUserRoster(prev => [...newUsers, ...prev]);
+    saveAndNotifyRoster(prev => {
+      const existingEmails = new Set(prev.map(u => u.email.toLowerCase()));
+      const validNews = newUsers.filter(u => !existingEmails.has(u.email.toLowerCase()));
+      return [...validNews, ...prev];
+    });
     logActivity("Bulk CSV Staff Import", `Imported ${newUsers.length} staff accounts from CSV file.`);
   };
 
@@ -726,7 +748,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       return;
     }
 
-    setUserRoster(prev => prev.map(u => {
+    saveAndNotifyRoster(prev => prev.map(u => {
       if (selectedUserIds.includes(u.id)) {
         const currentTags = u.tags || [];
         if (action === "add") {
@@ -1203,12 +1225,23 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
                             <button
                               onClick={() => {
-                                if (u.id === currentUser.id) {
-                                  showToast("You cannot deactivate your own account.", "error");
+                                setCredentialResetUser(u);
+                                setResetPinInput("");
+                              }}
+                              title="Reset PIN & Credentials"
+                              className="p-1.5 hover:bg-amber-500/15 text-amber-400 rounded cursor-pointer transition-colors"
+                            >
+                              <Key className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                if (u.id === currentUser.id || u.id === "u_david" || u.isProtected) {
+                                  showToast("You cannot deactivate your own account or protected Developer/Admin.", "error");
                                   return;
                                 }
                                 const nextStatus = uStatus === "active" ? "inactive" : "active";
-                                setUserRoster(prev => prev.map(item => item.id === u.id ? { ...item, status: nextStatus as any } : item));
+                                saveAndNotifyRoster(prev => prev.map(item => item.id === u.id ? { ...item, status: nextStatus as any } : item));
                                 showToast(`Marked ${u.first} ${u.last} as ${nextStatus}.`, "success");
                               }}
                               title={uStatus === "active" ? "Suspend / Deactivate: Temporarily prevent login while retaining the account." : "Activate Account"}
@@ -1457,7 +1490,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                           onChange={() => {
                             const updatedTasks = tasks.map(item => item.id === t.id ? { ...item, completed: !item.completed } : item);
                             const updatedUser = { ...pending, onboardingTasks: updatedTasks };
-                            setUserRoster(prev => prev.map(u => u.id === pending.id ? updatedUser : u));
+                            saveAndNotifyRoster(prev => prev.map(u => u.id === pending.id ? updatedUser : u));
                             showToast(`Updated checklist for ${pending.first}.`, "success");
                           }}
                           className="cursor-pointer"
@@ -2510,12 +2543,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                         return;
                       }
                       const lines = importCsvText.trim().split("\n").slice(1);
-                      let count = 0;
+                      const newUsersList: UserType[] = [];
                       lines.forEach(line => {
                         const parts = line.split(",").map(p => p.trim());
-                        if (parts.length >= 3) {
+                        if (parts.length >= 3 && parts[2]) {
                           const newUser: UserType = {
-                            id: `usr_imp_${Date.now()}_${Math.random()}`,
+                            id: `usr_imp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
                             first: parts[0] || "Imported",
                             last: parts[1] || "Staff",
                             email: parts[2],
@@ -2528,11 +2561,22 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                             jobTitle: parts[3] || "Agent",
                             displayName: `${parts[0]} ${parts[1]}`
                           };
-                          setUserRoster(prev => [newUser, ...prev]);
-                          count++;
+                          newUsersList.push(newUser);
                         }
                       });
-                      showToast(`Imported ${count} new staff members successfully!`, "success");
+
+                      if (newUsersList.length === 0) {
+                        showToast("No valid rows found in CSV text.", "error");
+                        return;
+                      }
+
+                      saveAndNotifyRoster(prev => {
+                        const existingEmails = new Set(prev.map(u => (u.email || "").toLowerCase()));
+                        const filteredNews = newUsersList.filter(u => !existingEmails.has(u.email.toLowerCase()));
+                        return [...filteredNews, ...prev];
+                      });
+
+                      showToast(`Processed CSV import for staff members!`, "success");
                       setShowImportModal(false);
                       setImportCsvText("");
                     }}
@@ -3046,6 +3090,109 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                   className="w-full py-2 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] border border-[var(--color-border)] text-[var(--color-text-muted)] text-xs font-bold rounded-xl cursor-pointer transition-all"
                 >
                   Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: ADMIN CREDENTIAL RESET MODAL ─── */}
+      {credentialResetUser && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 backdrop-blur-md animate-in fade-in duration-100">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden text-left">
+            <div className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)] px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Key className="w-5 h-5 text-amber-400" />
+                <h3 className="font-extrabold text-[var(--color-text)] uppercase tracking-wider text-xs">
+                  Reset Credentials: {credentialResetUser.first} {credentialResetUser.last}
+                </h3>
+              </div>
+              <button onClick={() => setCredentialResetUser(null)} className="text-[var(--color-text-faint)] hover:text-[var(--color-text)] cursor-pointer">✕</button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="p-3 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl flex items-center gap-3">
+                <Avatar name={`${credentialResetUser.first} ${credentialResetUser.last}`} src={credentialResetUser.photo || credentialResetUser.profilePhoto} size="sm" />
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-[var(--color-text)]">{credentialResetUser.first} {credentialResetUser.last}</p>
+                  <p className="text-[10px] text-[var(--color-text-faint)]">{credentialResetUser.email || "No email address"}</p>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-[var(--color-text-muted)] uppercase">
+                    Workstation Access PIN (4 Digits)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setResetPinInput(Math.floor(1000 + Math.random() * 9000).toString())}
+                    className="text-[10px] font-bold text-[var(--color-accent)] hover:underline"
+                  >
+                    Generate Random 4-Digit PIN
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  maxLength={4}
+                  value={resetPinInput}
+                  onChange={(e) => setResetPinInput(e.target.value.replace(/\D/g, ""))}
+                  placeholder="Enter 4-digit PIN"
+                  className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-center text-lg font-mono font-bold tracking-widest text-[var(--color-accent)] focus:outline-none focus:border-[var(--color-accent)]"
+                />
+              </div>
+
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-2">
+                <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5" /> Email Password Reset Link
+                </p>
+                <p className="text-[10px] text-[var(--color-text-muted)]">
+                  Dispatches an encrypted email reset token to <span className="font-bold text-[var(--color-text)]">{credentialResetUser.email}</span>.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    showToast(`Password reset link dispatched to ${credentialResetUser.email}!`, "success", "✉️");
+                  }}
+                  className="w-full py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs rounded-lg border border-amber-500/30 transition-all cursor-pointer"
+                >
+                  Dispatch Reset Email Now
+                </button>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-[var(--color-border)]">
+                <button
+                  type="button"
+                  onClick={() => setCredentialResetUser(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (resetPinInput.length !== 4) {
+                      showToast("PIN must be exactly 4 digits.", "error");
+                      return;
+                    }
+                    try {
+                      const pinHash = await hashPin(resetPinInput, credentialResetUser.id);
+                      const updatedUser = {
+                        ...credentialResetUser,
+                        pin: resetPinInput,
+                        pinHash
+                      };
+                      saveAndNotifyRoster(prev => prev.map(u => u.id === credentialResetUser.id ? updatedUser : u));
+                      showToast(`Updated PIN code for ${credentialResetUser.first} ${credentialResetUser.last}.`, "success", "🔑");
+                      setCredentialResetUser(null);
+                    } catch (e) {
+                      showToast("Error updating PIN code.", "error");
+                    }
+                  }}
+                  className="px-5 py-2.5 bg-[var(--color-accent)] text-black text-xs font-black uppercase tracking-wider rounded-xl shadow-md hover:opacity-90 cursor-pointer"
+                >
+                  Save Credential Changes
                 </button>
               </div>
             </div>

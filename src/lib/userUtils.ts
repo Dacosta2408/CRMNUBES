@@ -1,8 +1,82 @@
 import { User } from "../types";
+import { DEFAULT_USERS } from "../data";
 
 /**
  * Shared User Utilities & Canonical Accessors
  */
+
+export function sanitizeCanonicalRoster(rawRoster: User[] | null | undefined): User[] {
+  const userMap = new Map<string, User>();
+
+  // Base map from DEFAULT_USERS
+  DEFAULT_USERS.forEach(def => {
+    userMap.set(def.id, { ...def });
+  });
+
+  if (Array.isArray(rawRoster)) {
+    rawRoster.forEach(u => {
+      if (!u || !u.id) return;
+
+      // Skip fake email placeholder users
+      if (u.userLabel === "email_user" || u.role === "Email User" || u.id.startsWith("email_")) {
+        return;
+      }
+
+      // Check if canonical
+      const canonicalDef = DEFAULT_USERS.find(d => 
+        d.id === u.id || (d.email && u.email && d.email.trim().toLowerCase() === u.email.trim().toLowerCase())
+      );
+
+      if (canonicalDef) {
+        const existing = userMap.get(canonicalDef.id) || canonicalDef;
+        const isDavid = canonicalDef.id === "u_david" || canonicalDef.email === "vdacosta247@gmail.com";
+        userMap.set(canonicalDef.id, {
+          ...existing,
+          ...u,
+          id: canonicalDef.id,
+          first: u.first || canonicalDef.first,
+          last: u.last || canonicalDef.last,
+          email: canonicalDef.email,
+          role: isDavid ? "Developer/Admin" : (u.role || canonicalDef.role),
+          status: (isDavid ? "active" : (u.status || canonicalDef.status)) as any,
+          isProtected: isDavid ? true : (u.isProtected ?? canonicalDef.isProtected),
+          isOwner: isDavid ? true : (u.isOwner ?? canonicalDef.isOwner),
+          clearanceLevel: isDavid ? 6 : (u.clearanceLevel || canonicalDef.clearanceLevel)
+        });
+      } else {
+        // Non-canonical user
+        const normEmail = (u.email || "").trim().toLowerCase();
+        let isDup = false;
+        if (normEmail) {
+          for (const existingVal of userMap.values()) {
+            if ((existingVal.email || "").trim().toLowerCase() === normEmail) {
+              isDup = true;
+              break;
+            }
+          }
+        }
+        if (!isDup && u.status !== "deleted") {
+          userMap.set(u.id, u);
+        }
+      }
+    });
+  }
+
+  // Ensure David Acosta is strictly protected and active
+  const david = userMap.get("u_david");
+  if (david) {
+    david.first = "David";
+    david.last = "Acosta";
+    david.email = "vdacosta247@gmail.com";
+    david.role = "Developer/Admin";
+    david.status = "active";
+    david.isOwner = true;
+    david.isProtected = true;
+    david.clearanceLevel = 6;
+  }
+
+  return Array.from(userMap.values());
+}
 
 export function getUserFullName(user: Partial<User> | null | undefined): string {
   if (!user) return "Unknown User";

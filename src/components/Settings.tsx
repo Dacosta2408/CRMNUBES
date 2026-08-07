@@ -503,7 +503,7 @@ export const Settings: React.FC<SettingsProps> = ({
 
   // --- 3. SECURITY STATE ---
   // Workstation PIN & MFA
-  const [userPin, setUserPin] = useState(currentUser.pin || "0000");
+  const [userPin, setUserPin] = useState(currentUser.pin || "1234");
   const [showPin, setShowPin] = useState(false);
   const [requirePinForSin, setRequirePinForSin] = useState(() => {
     return localStorage.getItem("gbk_security_pin_sin") === "true";

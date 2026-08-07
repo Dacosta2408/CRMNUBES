@@ -140,7 +140,7 @@ export async function generateNoteApi(purpose: string, clientName: string, detai
 
 import { User, UserAvailability, UserStatus, UserDeletionImpact, UserDeletionAudit } from "../types";
 import { DEFAULT_USERS } from "../data";
-import { dispatchUserEvent } from "./userUtils";
+import { dispatchUserEvent, sanitizeCanonicalRoster } from "./userUtils";
 import { 
   getUserPermissions as calculatePermissions, 
   getChannelMembers as calculateChannelMembers,
@@ -155,15 +155,19 @@ function getLocalRoster(): User[] {
     const saved = localStorage.getItem("gbk_roster");
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const sanitized = sanitizeCanonicalRoster(parsed);
+        if (sanitized.length > 0) return sanitized;
+      }
     }
   } catch {}
-  return DEFAULT_USERS;
+  return sanitizeCanonicalRoster(DEFAULT_USERS);
 }
 
 function saveLocalRoster(roster: User[]): void {
   try {
-    localStorage.setItem("gbk_roster", JSON.stringify(roster));
+    const sanitized = sanitizeCanonicalRoster(roster);
+    localStorage.setItem("gbk_roster", JSON.stringify(sanitized));
   } catch {}
 }
 
@@ -857,12 +861,6 @@ export async function deleteUserPermanently(
         deletedBy: currentUser?.id || 'staff_me',
         deletionReason: reason,
         deletionType: 'permanent' as const,
-        first: 'Deleted',
-        last: 'User',
-        name: 'Deleted User',
-        fullName: 'Deleted User',
-        displayName: 'Deleted User',
-        email: `deleted_${userId}@deleted.invalid`,
         updatedAt: timestamp
       };
     }

@@ -382,6 +382,13 @@ export interface Shortcut {
   actionName?: string;
 }
 
+export interface TypingUser {
+  userId: string;
+  channelId: string;
+  displayName: string;
+  startedAt: string;
+}
+
 export interface MessageAttachment {
   name: string;
   size: string;

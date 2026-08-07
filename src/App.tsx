@@ -41,7 +41,9 @@ const FileReadiness = lazy(() => import("./components/FileReadiness").then(m => 
 const Settings = lazy(() => import("./components/Settings").then(m => ({ default: m.Settings })));
 
 import { KeyboardShortcutsModal } from "./components/KeyboardShortcutsModal";
+import { PasswordResetModal } from "./components/PasswordResetModal";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { sanitizeCanonicalRoster, dispatchUserEvent } from "./lib/userUtils";
 import { ZDrivePanel } from "./components/ZDrivePanel";
 import { logActivityEvent } from "./lib/activityEngine";
 import { useClients } from "./hooks/useClients";
@@ -200,6 +202,7 @@ export default function App() {
   const [auditLoggingEnabled, setAuditLogEnabled] = useState<boolean>(() => {
     return localStorage.getItem("gbk_sec_audit") !== "false";
   });
+  const [showResetModal, setShowResetModal] = useState<boolean>(false);
   // Broadcast Notification Banners
   const [broadcastBanners, setBroadcastBanners] = useState<any[]>(() => {
     const saved = localStorage.getItem("gbk_admin_broadcasts");
@@ -626,7 +629,7 @@ export default function App() {
       if (savedPosts) setPosts(safeJsonParse(savedPosts, []));
       
       const savedRoster = localStorage.getItem("gbk_roster");
-      if (savedRoster) setUserRoster(safeJsonParse(savedRoster, []));
+      if (savedRoster) setUserRoster(sanitizeCanonicalRoster(safeJsonParse(savedRoster, [])));
       
       const savedAudit = localStorage.getItem("gbk_audit_logs");
       if (savedAudit) setAuditLogs(safeJsonParse(savedAudit, []));
@@ -796,7 +799,7 @@ export default function App() {
             <motion.div 
               initial={{ scale: 0.92, y: 15 }}
               animate={{ scale: 1, y: 0 }}
-              className="lock-panel-ring p-8 w-80 text-center shadow-2xl relative"
+              className="lock-panel-ring p-8 w-88 text-center shadow-2xl relative"
               style={{
                 background: "var(--grad-lock-panel)",
                 borderRadius: "20px",
@@ -805,12 +808,32 @@ export default function App() {
             >
               {/* Orb glow halo layer — must be first child */}
               <div className="lock-orb-halo" aria-hidden="true" />
-              <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: "var(--grad-lock-icon)", boxShadow: "0 4px 18px rgba(0, 198, 255, 0.35)" }}>
+              <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: "var(--grad-lock-icon)", boxShadow: "0 4px 18px rgba(0, 198, 255, 0.35)" }}>
                 <Lock className="w-6 h-6 text-[var(--color-text-inverse)]" />
               </div>
               <h3 className="text-sm font-black uppercase tracking-widest text-[var(--color-text)] mb-1">Workstation Locked</h3>
-              <p className="text-[10px] text-[var(--color-text-faint)] font-bold uppercase tracking-wider mb-6">Enter 4-digit security PIN to resume</p>
+              <p className="text-[10px] text-[var(--color-text-faint)] font-bold uppercase tracking-wider mb-4">Enter 4-digit security PIN to resume</p>
               
+              {/* Locked User Info Card */}
+              <div className="mb-4 p-3 rounded-xl bg-[var(--color-surface-2)] border border-[var(--color-border)]/80 text-left flex items-center gap-3 shadow-inner">
+                <Avatar name={`${currentUser.first || "David"} ${currentUser.last || "Acosta"}`} src={currentUser.photo || currentUser.profilePhoto} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-black text-[var(--color-text)] truncate">{currentUser.first} {currentUser.last}</p>
+                    <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-[var(--color-accent)]/20 text-[var(--color-accent)] border border-[var(--color-accent)]/30">
+                      {currentUser.role || "Developer/Admin"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-[var(--color-text-faint)] truncate">{currentUser.email || "vdacosta247@gmail.com"}</p>
+                </div>
+              </div>
+
+              {/* Dev PIN Hint Banner */}
+              <div className="mb-4 px-3 py-1.5 rounded-lg bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 flex items-center justify-between text-[10px]">
+                <span className="text-[var(--color-text-muted)] font-bold">Dev Workstation PIN:</span>
+                <span className="font-mono font-black text-[var(--color-accent)] tracking-widest bg-[var(--color-accent)]/15 px-2 py-0.5 rounded border border-[var(--color-accent)]/30">1234</span>
+              </div>
+
               <input 
                 type="password" 
                 maxLength={4}
@@ -818,7 +841,7 @@ export default function App() {
                 onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))}
                 placeholder="••••"
                 disabled={lockoutActive}
-                className="w-full tracking-widest text-center text-3xl font-mono py-2.5 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl text-[var(--color-accent)] mb-4 focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] disabled:opacity-50 disabled:cursor-not-allowed font-black"
+                className="w-full tracking-widest text-center text-3xl font-mono py-2.5 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl text-[var(--color-accent)] mb-3 focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] disabled:opacity-50 disabled:cursor-not-allowed font-black"
                 onKeyDown={(e) => { if (e.key === "Enter") handleUnlock(); }}
               />
 
@@ -831,13 +854,39 @@ export default function App() {
                 Unlock Workstation
               </button>
 
+              {/* Password / PIN Reset Trigger */}
+              <div className="mt-3.5 pt-2 border-t border-[var(--color-border)]/50">
+                <button
+                  onClick={() => setShowResetModal(true)}
+                  className="text-[11px] font-extrabold text-[var(--color-accent)] hover:underline flex items-center justify-center gap-1.5 mx-auto cursor-pointer"
+                >
+                  <Key className="w-3.5 h-3.5" /> Forgot PIN or Password?
+                </button>
+              </div>
+
               {pinError && (
-                <div className="text-xs text-[var(--color-error)] mt-4 font-bold uppercase tracking-wide">{pinError}</div>
+                <div className="text-xs text-[var(--color-error)] mt-3 font-bold uppercase tracking-wide">{pinError}</div>
               )}
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Password & PIN Reset Modal */}
+      <PasswordResetModal
+        isOpen={showResetModal}
+        onClose={() => setShowResetModal(false)}
+        userRoster={userRoster}
+        setUserRoster={setUserRoster}
+        initialEmail={currentUser.email || "vdacosta247@gmail.com"}
+        showToast={showToast}
+        onSuccessUnlock={(unlockedUser) => {
+          setCurrentUser(unlockedUser);
+          setAppLocked(false);
+          logActivity("Unlocked Workstation via Password Reset");
+          showToast(`Unlocked Workstation for ${unlockedUser.first} ${unlockedUser.last}`, "success", "🔓");
+        }}
+      />
 
       {/* ─── Global Live Toast Alert ─── */}
       <AnimatePresence>
@@ -2078,6 +2127,14 @@ export default function App() {
                       showToast("Please fill out First Name, Last Name, Email, and PIN.", "error");
                       return;
                     }
+
+                    const targetEmail = suEmail.trim().toLowerCase();
+                    const existing = userRoster.find(u => (u.email || "").trim().toLowerCase() === targetEmail);
+                    if (existing) {
+                      showToast(`Account creation failed: "${suEmail}" is already registered (${existing.first} ${existing.last}).`, "error");
+                      return;
+                    }
+
                     const newUserId = `u_${Date.now()}`;
                     const pinHash = await hashPin(suPin, newUserId);
                     const encryptedPin = await encryptValue(suPin, suPin);
@@ -2101,7 +2158,7 @@ export default function App() {
                       emailUsername: suEmail,
                       emailPassword: encryptedEmailPassword
                     };
-                    const newRoster = [...userRoster, newUserRecord];
+                    const newRoster = sanitizeCanonicalRoster([...userRoster, newUserRecord]);
                     setUserRoster(newRoster);
                     localStorage.setItem("gbk_roster", JSON.stringify(newRoster));
                     

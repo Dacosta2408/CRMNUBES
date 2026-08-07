@@ -1,4 +1,4 @@
-export type UserRole = "Broker" | "Underwriter" | "Administrator" | "Agent" | "Compliance Manager";
+export type UserRole = "Broker" | "Underwriter" | "Administrator" | "Admin" | "Developer/Admin" | "Agent" | "Compliance Manager";
 
 export interface UserEntity {
   id: string;

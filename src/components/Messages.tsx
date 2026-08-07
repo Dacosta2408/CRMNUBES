@@ -6,11 +6,11 @@ import {
   ChevronRight, Sparkles, Smile, ShieldAlert, BadgeInfo, Calendar, Eye, Upload,
   Pencil, BookmarkCheck, ExternalLink, RefreshCw, MessageSquare, Star, Wifi, WifiOff, Clock, Filter, Download, Archive
 } from "lucide-react";
-import { Client, Task, Message, SavedMessage, MessageAction, MessagePermission, ChannelInfo, User } from "../types";
+import { Client, Task, Message, SavedMessage, MessageAction, MessagePermission, ChannelInfo, User, TypingUser } from "../types";
 import { Avatar } from "./Avatar";
 import { UserStatusModal } from "./UserStatusModal";
 import { TypingIndicator } from "./TypingIndicator";
-import { startTyping, stopTyping, subscribeToTyping, TypingUser } from "../lib/typingService";
+import { startTyping, stopTyping, subscribeToTyping } from "../lib/typingService";
 import { DEFAULT_USERS } from "../data";
 import { getNotesForClient, saveNotesForClient, logActivityEvent, FileNote } from "../lib/activityEngine";
 import { getUserFullName, getUserPhotoUrl } from "../lib/userUtils";
@@ -322,58 +322,8 @@ export const Messages: React.FC<MessagesProps> = ({
   // Pins Panel toggle
   const [showPinsPanel, setShowPinsPanel] = useState(false);
   const [activeTypingUsers, setActiveTypingUsers] = useState<TypingUser[]>([]);
-  const [activeTouchActionsMsgId, setActiveTouchActionsMsgId] = useState<string | null>(null);
-  const seenMsgIdsRef = useRef<Set<string>>(new Set());
-  const typingDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Pre-populate seenMsgIdsRef when activeChannel or messages change so history does not animate
-  useEffect(() => {
-    const list = messages[activeChannel] || [];
-    list.forEach((m: any) => {
-      if (m?.id) seenMsgIdsRef.current.add(m.id);
-    });
-  }, [activeChannel, messages]);
-
-  // Subscribe to typing state for active channel
-  useEffect(() => {
-    if (!activeChannel || activeChannel === "saved-messages") {
-      setActiveTypingUsers([]);
-      return;
-    }
-
-    const unsubscribe = subscribeToTyping(activeChannel, (users) => {
-      setActiveTypingUsers(users);
-    });
-
-    return () => {
-      if (typingDebounceTimerRef.current) clearTimeout(typingDebounceTimerRef.current);
-      stopTyping(activeChannel, currentUserId);
-      unsubscribe();
-    };
-  }, [activeChannel, currentUserId]);
-
-  // Handle composer input change with debounced typing signal
-  const handleComposerInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    setMsgInputText(val);
-
-    if (activeChannel === "saved-messages") return;
-
-    if (val.trim()) {
-      startTyping(activeChannel, {
-        id: currentUserId,
-        name: currentUser.displayName || `${currentUser.first} ${currentUser.last}`.trim() || "You"
-      });
-
-      if (typingDebounceTimerRef.current) clearTimeout(typingDebounceTimerRef.current);
-      typingDebounceTimerRef.current = setTimeout(() => {
-        stopTyping(activeChannel, currentUserId);
-      }, 3000);
-    } else {
-      if (typingDebounceTimerRef.current) clearTimeout(typingDebounceTimerRef.current);
-      stopTyping(activeChannel, currentUserId);
-    }
-  };
+  const typingDebounceRef = useRef<any>(null);
+  const newlySentMsgIds = useRef<Set<string>>(new Set());
 
   // Close message action menu when clicking outside
   useEffect(() => {
@@ -465,6 +415,7 @@ export const Messages: React.FC<MessagesProps> = ({
     const userMap = new Map<string, User>();
     rawList.forEach(u => {
       if (u && u.id) {
+        if (u.role === "Email User" || u.userLabel === "email_user" || u.id.startsWith("email_")) return;
         userMap.set(u.id, u);
       }
     });
@@ -537,6 +488,27 @@ export const Messages: React.FC<MessagesProps> = ({
         };
       });
   }, [userRoster, currentUser]);
+
+  // Subscribe to real-time typing indicators
+  useEffect(() => {
+    if (!activeChannel || activeChannel === "saved-messages") {
+      setActiveTypingUsers([]);
+      return;
+    }
+
+    const unsubscribe = subscribeToTyping(
+      activeChannel,
+      (users) => {
+        setActiveTypingUsers(users);
+      },
+      currentUserId
+    );
+
+    return () => {
+      unsubscribe();
+      stopTyping(activeChannel, currentUserId);
+    };
+  }, [activeChannel, currentUserId]);
 
   // Mark channel read when opened (Req 1)
   useEffect(() => {
@@ -879,6 +851,13 @@ export const Messages: React.FC<MessagesProps> = ({
       replyCount: 0
     };
 
+    // Track newly sent msg for entrance animation
+    newlySentMsgIds.current.add(tempMsgId);
+
+    // Stop typing state immediately
+    stopTyping(activeChannel, currentUserId);
+    if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
+
     // Append to local state immediately
     setMessages(prev => {
       const currentList = prev[activeChannel] || [];
@@ -888,10 +867,7 @@ export const Messages: React.FC<MessagesProps> = ({
       return updatedObj;
     });
 
-    // Clear composer inputs, typing state & channel draft
-    if (typingDebounceTimerRef.current) clearTimeout(typingDebounceTimerRef.current);
-    stopTyping(activeChannel, currentUserId);
-
+    // Clear composer inputs & channel draft
     setMsgInputText("");
     setAttachedFiles([]);
     setMsgPriority("normal");
@@ -1388,15 +1364,8 @@ export const Messages: React.FC<MessagesProps> = ({
             </h4>
           </div>
           
-          {/* Connection Pill & Mark All Read */}
+          {/* Connection Pill */}
           <div className="flex items-center gap-1.5">
-            <button
-              onClick={handleMarkAllChannelsRead}
-              className="text-[9.5px] font-bold text-[var(--color-text-muted)] hover:text-[var(--color-accent)] px-1.5 py-0.5 rounded bg-[var(--color-surface-2)] border border-[var(--color-border)]/60 transition-all"
-              title="Mark all channels as read"
-            >
-              Read All
-            </button>
             <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-full border ${
               connectionState === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
               connectionState === 'reconnecting' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
@@ -1946,7 +1915,7 @@ export const Messages: React.FC<MessagesProps> = ({
                 </div>
               )}
 
-              {/* Message Blocks (Date Separators + Grouped Messages) */}
+              {/* Message Blocks (Date Separators + Grouped Messages) (Req 6 & Apple Messages Layout) */}
               {groupedMessageBlocks.length > 0 ? (
                 groupedMessageBlocks.map(block => {
                   if (block.type === 'date_separator') {
@@ -1962,297 +1931,281 @@ export const Messages: React.FC<MessagesProps> = ({
                   }
 
                   const msgs = block.messages || [];
-                  if (msgs.length === 0) return null;
 
                   return (
-                    <div key={block.id} className="space-y-1.5">
+                    <div key={block.id} className="space-y-2">
                       {msgs.map((msg, msgIdx) => {
                         const isFirstInGroup = msgIdx === 0;
                         const isEdited = Boolean(msg.editedAt);
                         const isSoftDeleted = Boolean(msg.deletedAt);
                         const isSaved = savedMessages.some(sm => sm.messageId === msg.id);
                         const replyCount = (msg.replies || []).length || msg.replyCount || 0;
-
-                        // STRICT ALIGNMENT CHECK using authorId or senderId
-                        const isOutgoing = msg.authorId ? msg.authorId === currentUserId : msg.senderId === currentUserId;
-
-                        // Entrance animation check (only animate once for new messages)
-                        const isNew = !seenMsgIdsRef.current.has(msg.id);
-                        if (isNew && msg.id) {
-                          seenMsgIdsRef.current.add(msg.id);
-                        }
-                        const animationClass = isNew
-                          ? (isOutgoing ? "animate-msg-enter-outgoing" : "animate-msg-enter-incoming")
-                          : "";
-
                         const escalationUI = ESCALATION_FLAGS[msg.priority || "normal"];
+
+                        // Determine alignment using authenticated currentUser.id
+                        const isCurrentUser = Boolean(
+                          (msg.authorId && msg.authorId === currentUserId) ||
+                          (msg.senderId && msg.senderId === currentUserId) ||
+                          (currentUser.first && msg.author?.includes(currentUser.first))
+                        );
+
+                        const shouldAnimate = newlySentMsgIds.current.has(msg.id);
 
                         return (
                           <div
                             key={msg.id}
                             id={`msg_${msg.id}`}
-                            className={`w-full flex my-1.5 ${isOutgoing ? 'justify-end' : 'justify-start'} group relative select-text`}
+                            className={`group relative w-full flex my-1 px-1 ${
+                              isCurrentUser ? "justify-end" : "justify-start"
+                            }`}
                           >
-                            <div className={`flex items-end gap-2 max-w-[88%] sm:max-w-[75%] lg:max-w-[70%] ${isOutgoing ? 'flex-row-reverse' : 'flex-row'} ${animationClass}`}>
-                              
+                            {/* Inner Row Container with Avatar + Bubble */}
+                            <div
+                              className={`flex items-end gap-2 max-w-[90%] sm:max-w-[85%] md:max-w-[72%] ${
+                                isCurrentUser ? "flex-row-reverse" : "flex-row"
+                              }`}
+                            >
                               {/* Avatar */}
-                              <div className="shrink-0 mb-0.5">
+                              <div className="shrink-0 w-7 h-7 mb-0.5">
                                 {isFirstInGroup ? (
-                                  <Avatar src={msg.authorAvatar} name={msg.author} size="sm" />
+                                  <Avatar
+                                    src={
+                                      msg.authorAvatar ||
+                                      (isCurrentUser
+                                        ? getUserPhotoUrl(currentUser)
+                                        : chatRoster.find(u => u.id === msg.senderId || u.name === msg.author)?.avatar)
+                                    }
+                                    name={msg.author}
+                                    size="sm"
+                                  />
                                 ) : (
                                   <div className="w-7 h-7" />
                                 )}
                               </div>
 
-                              {/* Main Content & Bubble Container */}
-                              <div className={`flex flex-col min-w-0 ${isOutgoing ? 'items-end' : 'items-start'}`}>
+                              {/* Bubble Column */}
+                              <div className={`flex flex-col min-w-0 ${isCurrentUser ? "items-end" : "items-start"}`}>
                                 
-                                {/* Sender label and role (for incoming first message) */}
-                                {isFirstInGroup && !isOutgoing && (
-                                  <div className="flex items-center gap-1.5 mb-1 px-1">
-                                    <span className="text-[11px] font-bold text-[var(--color-text)]">{msg.author}</span>
-                                    {msg.role && (
-                                      <span className="text-[9px] font-semibold text-[var(--color-text-faint)]">· {msg.role}</span>
-                                    )}
+                                {/* Sender Name & Role Label for incoming group header */}
+                                {isFirstInGroup && !isCurrentUser && (
+                                  <div className="flex items-center gap-1.5 mb-1 ml-1 text-left">
+                                    <span className="text-[11px] font-black text-[var(--color-text-muted)] dark:text-slate-300">
+                                      {msg.author}
+                                    </span>
+                                    <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-[var(--color-surface-2)] text-[var(--color-text-faint)] border border-[var(--color-border)]/50">
+                                      {msg.role}
+                                    </span>
                                     {msg.priority && msg.priority !== "normal" && escalationUI && (
-                                      <span className={`text-[8.5px] font-black uppercase px-1.5 py-0.2 rounded border ${escalationUI.color}`}>
+                                      <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded border ${escalationUI.color}`}>
                                         {escalationUI.label}
                                       </span>
                                     )}
                                   </div>
                                 )}
 
-                                {/* Outgoing Header flag if priority escalation */}
-                                {isFirstInGroup && isOutgoing && msg.priority && msg.priority !== "normal" && escalationUI && (
-                                  <div className="flex items-center gap-1 mb-1 px-1">
-                                    <span className={`text-[8.5px] font-black uppercase px-1.5 py-0.2 rounded border ${escalationUI.color}`}>
-                                      {escalationUI.label}
-                                    </span>
-                                  </div>
-                                )}
-
-                                {/* Action Toolbar on Hover/Focus/Touch */}
-                                <div className="relative group/bubble">
-                                  
-                                  {/* Action Bar */}
+                                {/* Message Bubble with hover toolbar */}
+                                <div
+                                  className={`relative group/bubble p-3 rounded-2xl text-xs shadow-sm border transition-all text-left ${
+                                    shouldAnimate ? "animate-msg-entrance" : ""
+                                  } ${
+                                    isCurrentUser
+                                      ? `origin-bottom-right bg-blue-600 text-white border-blue-500/30 rounded-br-xs ${
+                                          isSoftDeleted ? "bg-blue-950/80 text-blue-200 border-blue-700/40" : ""
+                                        }`
+                                      : `origin-bottom-left bg-[var(--color-surface-2)] text-[var(--color-text)] border-[var(--color-border)]/80 rounded-bl-xs ${
+                                          isSoftDeleted ? "bg-rose-500/10 border-rose-500/20 text-rose-300" : ""
+                                        }`
+                                  }`}
+                                  style={{ width: "fit-content" }}
+                                >
+                                  {/* Hover & Focus Action Toolbar */}
                                   <div
-                                    className={`absolute top-0 -translate-y-full mb-1 ${isOutgoing ? 'right-0' : 'left-0'} 
-                                    opacity-0 group-hover/bubble:opacity-100 group-focus-within/bubble:opacity-100 
-                                    ${activeTouchActionsMsgId === msg.id ? 'opacity-100' : ''} 
-                                    flex items-center gap-0.5 bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-1 shadow-lg z-20 transition-opacity`}
+                                    className={`absolute -top-3.5 ${
+                                      isCurrentUser ? "left-2" : "right-2"
+                                    } opacity-0 group-hover/bubble:opacity-100 group-focus-within/bubble:opacity-100 focus-within:opacity-100 flex items-center gap-1 bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-1 shadow-xl z-20 transition-opacity`}
                                   >
-                                    {/* Reply */}
                                     <button
                                       onClick={() => setActiveThreadParentMsg(msg)}
-                                      aria-label="Reply to message"
-                                      className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] text-[var(--color-text-muted)] hover:text-[var(--color-accent)]"
+                                      className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-accent)] focus:outline-none"
                                       title="Reply in thread"
+                                      aria-label="Reply in thread"
                                     >
                                       <MessageSquare className="w-3.5 h-3.5" />
                                     </button>
 
-                                    {/* Bookmark */}
                                     <button
                                       onClick={(e) => handleToggleSaveMessage(msg, e)}
-                                      aria-label={isSaved ? "Remove Bookmark" : "Save Message"}
-                                      className={`p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-amber-400 ${isSaved ? 'text-amber-400' : 'text-[var(--color-text-muted)] hover:text-amber-400'}`}
+                                      className={`p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus:outline-none ${
+                                        isSaved ? "text-amber-400" : "text-[var(--color-text-muted)] hover:text-amber-400"
+                                      }`}
                                       title={isSaved ? "Remove Bookmark" : "Save Message"}
+                                      aria-label={isSaved ? "Remove Bookmark" : "Save Message"}
                                     >
-                                      <Bookmark className={`w-3.5 h-3.5 ${isSaved ? 'fill-amber-400' : ''}`} />
+                                      <Bookmark className={`w-3.5 h-3.5 ${isSaved ? "fill-amber-400" : ""}`} />
                                     </button>
 
-                                    {/* Pin */}
                                     <button
                                       onClick={() => handleTogglePinMessage(msg.id)}
-                                      aria-label={msg.pinned ? "Unpin Message" : "Pin Message"}
-                                      className={`p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${msg.pinned ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)] hover:text-[var(--color-accent)]'}`}
+                                      className={`p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus:outline-none ${
+                                        msg.pinned ? "text-[var(--color-accent)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-accent)]"
+                                      }`}
                                       title={msg.pinned ? "Unpin Message" : "Pin Message"}
+                                      aria-label={msg.pinned ? "Unpin Message" : "Pin Message"}
                                     >
                                       <Pin className="w-3.5 h-3.5" />
                                     </button>
 
-                                    {/* Edit */}
                                     {canEditMessage(msg, currentUser) && !isSoftDeleted && (
                                       <button
                                         onClick={(e) => handleStartEditing(msg, e)}
-                                        aria-label="Edit message"
-                                        className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                                        className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] focus:outline-none"
                                         title="Edit Message"
+                                        aria-label="Edit Message"
                                       >
                                         <Pencil className="w-3.5 h-3.5" />
                                       </button>
                                     )}
 
-                                    {/* Delete */}
                                     {canDeleteMessage(msg, currentUser) && !isSoftDeleted && (
                                       <button
                                         onClick={() => setConfirmDeleteMsgId(msg.id)}
-                                        aria-label="Delete message"
-                                        className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-rose-400 text-rose-400 hover:text-rose-300"
+                                        className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-rose-400 hover:text-rose-300 focus:outline-none"
                                         title="Delete Message"
+                                        aria-label="Delete Message"
                                       >
                                         <Trash2 className="w-3.5 h-3.5" />
                                       </button>
                                     )}
 
-                                    {/* Convert to Task */}
                                     <button
                                       onClick={() => handleOpenTaskWizard(msg)}
-                                      aria-label="Convert message to operational task"
-                                      className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-amber-400 text-amber-400"
-                                      title="Convert to Operational Task"
+                                      className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-amber-400 focus:outline-none"
+                                      title="Convert to Task"
+                                      aria-label="Convert to Task"
                                     >
                                       <Sparkles className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
 
-                                  {/* BUBBLE STYLING */}
+                                  {/* Bubble Content */}
                                   {isSoftDeleted ? (
-                                    <div className="px-3.5 py-2 rounded-2xl bg-[var(--color-surface-2)]/40 border border-dashed border-[var(--color-border)] text-[var(--color-text-faint)] italic text-xs flex items-center gap-2">
-                                      <Trash2 className="w-3.5 h-3.5 shrink-0 opacity-60" />
-                                      <span>[This message was deleted]</span>
-                                    </div>
+                                    <p className="italic text-[11.5px] opacity-80 select-none">
+                                      🚫 This message was deleted.
+                                    </p>
                                   ) : editingMsgId === msg.id ? (
-                                    <div className="p-2.5 rounded-2xl bg-[var(--color-surface-2)] border border-[var(--color-accent)] w-full min-w-[240px]">
+                                    <div className="space-y-2 min-w-[200px]">
                                       <textarea
                                         value={editContent}
                                         onChange={(e) => setEditContent(e.target.value)}
-                                        className="w-full bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl p-2 text-xs text-[var(--color-text)] focus:outline-none"
+                                        className="w-full bg-black/20 border border-white/20 rounded-xl p-2 text-xs text-inherit focus:outline-none resize-none"
                                         rows={2}
                                       />
-                                      <div className="flex items-center justify-end gap-2 mt-2">
+                                      <div className="flex items-center justify-end gap-2">
                                         <button
                                           onClick={() => setEditingMsgId(null)}
-                                          className="px-2.5 py-1 rounded-lg text-xs font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                                          className="px-2 py-1 rounded-lg text-xs font-bold opacity-80 hover:opacity-100"
                                         >
                                           Cancel
                                         </button>
                                         <button
                                           onClick={handleSaveEdit}
                                           disabled={isSavingEdit || !editContent.trim()}
-                                          className="px-3 py-1 rounded-lg bg-[var(--color-accent)] text-black text-xs font-black shadow-md hover:opacity-90"
+                                          className="px-3 py-1 rounded-lg bg-amber-400 text-black text-xs font-black shadow"
                                         >
                                           Save
                                         </button>
                                       </div>
                                     </div>
                                   ) : (
-                                    <div
-                                      onClick={() => setActiveTouchActionsMsgId(prev => prev === msg.id ? null : msg.id)}
-                                      className={`px-3.5 py-2.5 shadow-sm text-xs w-fit ${
-                                        isOutgoing
-                                          ? "bg-blue-600 dark:bg-blue-600 text-white rounded-2xl rounded-br-xs border border-blue-500/30"
-                                          : "bg-[var(--color-surface-2)] text-[var(--color-text)] rounded-2xl rounded-bl-xs border border-[var(--color-border)]"
-                                      }`}
-                                    >
-                                      {/* Text Content */}
-                                      <p className="whitespace-pre-wrap [overflow-wrap:anywhere] break-words leading-relaxed font-normal">
-                                        {renderHighlightedText(msg.text || msg.content || "", searchQuery)}
-                                        {isEdited && (
-                                          <span className={`text-[9px] italic ml-1.5 ${isOutgoing ? 'text-blue-100/70' : 'text-[var(--color-text-faint)]'}`}>
-                                            (edited)
-                                          </span>
-                                        )}
-                                      </p>
+                                    <p className="whitespace-pre-wrap leading-relaxed [overflow-wrap:anywhere] break-words">
+                                      {renderHighlightedText(msg.text, searchQuery)}
+                                    </p>
+                                  )}
 
-                                      {/* Client Link Tag */}
-                                      {msg.clientTag && (
-                                        <div className="mt-1.5 flex items-center gap-1">
-                                          <span
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              if (msg.clientId) onOpenClient(msg.clientId);
-                                            }}
-                                            className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-md cursor-pointer hover:underline flex items-center gap-1 ${
-                                              isOutgoing
-                                                ? "bg-white/15 text-white border border-white/20"
-                                                : "text-[var(--color-accent)] bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20"
-                                            }`}
-                                          >
-                                            <Tag className="w-3 h-3" />
-                                            {msg.clientTag}
-                                          </span>
-                                        </div>
-                                      )}
+                                  {/* Client Tag */}
+                                  {msg.clientTag && !isSoftDeleted && (
+                                    <div className="mt-1.5 flex items-center gap-1">
+                                      <span
+                                        onClick={() => msg.clientId && onOpenClient(msg.clientId)}
+                                        className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-md cursor-pointer hover:underline flex items-center gap-1 ${
+                                          isCurrentUser
+                                            ? "bg-white/20 text-white"
+                                            : "bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20"
+                                        }`}
+                                      >
+                                        <Tag className="w-3 h-3" />
+                                        {msg.clientTag}
+                                      </span>
+                                    </div>
+                                  )}
 
-                                      {/* Attachments */}
-                                      {msg.attachments && msg.attachments.length > 0 && (
-                                        <div className="mt-2 flex flex-wrap gap-1.5">
-                                          {msg.attachments.map((att: any, idx: number) => (
-                                            <div
-                                              key={idx}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleDownloadAttachment(att, msg);
-                                              }}
-                                              className={`rounded-xl p-2 flex items-center gap-2 cursor-pointer transition-all text-xs border ${
-                                                isOutgoing
-                                                  ? "bg-blue-700/60 border-blue-400/40 text-white hover:bg-blue-700"
-                                                  : "bg-[var(--color-panel)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-accent)]/50"
-                                              }`}
-                                            >
-                                              <Paperclip className={`w-3.5 h-3.5 ${isOutgoing ? 'text-blue-100' : 'text-[var(--color-accent)]'}`} />
-                                              <div className="min-w-0">
-                                                <div className="font-bold truncate max-w-[130px]">{att.name}</div>
-                                                <div className={`text-[8.5px] ${isOutgoing ? 'text-blue-200/80' : 'text-[var(--color-text-faint)]'}`}>{att.size}</div>
-                                              </div>
-                                              <Download className="w-3 h-3 ml-1 opacity-80" />
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-
-                                      {/* Thread Reply Badge */}
-                                      {replyCount > 0 && (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setActiveThreadParentMsg(msg);
-                                          }}
-                                          className={`mt-2 flex items-center gap-1.5 text-[10px] font-extrabold px-2.5 py-1 rounded-xl transition-all border ${
-                                            isOutgoing
-                                              ? "bg-white/15 text-white border-white/20 hover:bg-white/25"
-                                              : "text-[var(--color-accent)] bg-[var(--color-accent)]/10 border-[var(--color-accent)]/20 hover:bg-[var(--color-accent)]/20"
+                                  {/* Attachments */}
+                                  {msg.attachments && msg.attachments.length > 0 && !isSoftDeleted && (
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      {msg.attachments.map((att: any, idx: number) => (
+                                        <div
+                                          key={idx}
+                                          onClick={() => handleDownloadAttachment(att, msg)}
+                                          className={`p-2 rounded-xl flex items-center gap-2 cursor-pointer transition-all text-xs border ${
+                                            isCurrentUser
+                                              ? "bg-white/10 border-white/20 text-white hover:bg-white/20"
+                                              : "bg-[var(--color-panel)] border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-accent)]/50"
                                           }`}
                                         >
-                                          <MessageSquare className="w-3 h-3" />
-                                          <span>{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
-                                          <ChevronRight className="w-3 h-3" />
-                                        </button>
-                                      )}
-
+                                          <Paperclip className="w-3.5 h-3.5 shrink-0" />
+                                          <div className="min-w-0">
+                                            <div className="font-bold truncate max-w-[130px]">{att.name}</div>
+                                            <div className="text-[8.5px] opacity-75">{att.size}</div>
+                                          </div>
+                                          <Download className="w-3 h-3 ml-1 shrink-0 opacity-80" />
+                                        </div>
+                                      ))}
                                     </div>
+                                  )}
+
+                                  {/* Thread Replies Badge */}
+                                  {replyCount > 0 && (
+                                    <button
+                                      onClick={() => setActiveThreadParentMsg(msg)}
+                                      className={`mt-2 flex items-center gap-1.5 text-[10px] font-extrabold px-2 py-1 rounded-xl transition-all ${
+                                        isCurrentUser
+                                          ? "bg-white/20 text-white hover:bg-white/30"
+                                          : "bg-[var(--color-accent)]/10 text-[var(--color-accent)] border border-[var(--color-accent)]/20 hover:bg-[var(--color-accent)]/20"
+                                      }`}
+                                    >
+                                      <MessageSquare className="w-3 h-3" />
+                                      <span>{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
+                                      <ChevronRight className="w-3 h-3" />
+                                    </button>
                                   )}
 
                                 </div>
 
-                                {/* Timestamp & Status below bubble */}
-                                <div className={`flex items-center gap-1.5 text-[9.5px] mt-1 px-1 ${
-                                  isOutgoing ? 'text-[var(--color-text-faint)] justify-end' : 'text-[var(--color-text-faint)] justify-start'
-                                }`}>
+                                {/* Timestamp & Status sub-label */}
+                                <div className={`flex items-center gap-1.5 mt-0.5 text-[9.5px] text-[var(--color-text-faint)] ${isCurrentUser ? "justify-end pr-1" : "justify-start pl-1"}`}>
                                   <span>{msg.time}</span>
-                                  {isOutgoing && msg.status === 'sending' && (
-                                    <span className="text-amber-400 flex items-center gap-1 font-bold">
-                                      <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Sending...
-                                    </span>
-                                  )}
-                                  {isOutgoing && msg.status === 'failed' && (
-                                    <button
-                                      onClick={() => handleRetryMessage(msg)}
-                                      className="text-rose-400 font-extrabold underline flex items-center gap-1"
-                                    >
-                                      <AlertCircle className="w-2.5 h-2.5" /> Failed (Retry)
-                                    </button>
-                                  )}
-                                  {msg.pinned && (
-                                    <span className="text-[var(--color-accent)] flex items-center gap-0.5 font-bold">
-                                      <Pin className="w-2.5 h-2.5" /> Pinned
-                                    </span>
+                                  {isEdited && !isSoftDeleted && <span className="italic">(edited)</span>}
+                                  {isCurrentUser && (
+                                    <>
+                                      {msg.status === "sending" && (
+                                        <span className="text-amber-400 flex items-center gap-1 font-bold">
+                                          <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Sending
+                                        </span>
+                                      )}
+                                      {msg.status === "failed" && (
+                                        <button
+                                          onClick={() => handleRetryMessage(msg)}
+                                          className="text-rose-400 font-extrabold underline flex items-center gap-0.5"
+                                        >
+                                          <AlertCircle className="w-2.5 h-2.5" /> Retry
+                                        </button>
+                                      )}
+                                      {msg.status === "sent" && <span className="text-emerald-400 font-bold">✓</span>}
+                                    </>
                                   )}
                                 </div>
 
                               </div>
-
                             </div>
                           </div>
                         );
@@ -2265,6 +2218,16 @@ export const Messages: React.FC<MessagesProps> = ({
                   <MessageSquare className="w-10 h-10 mb-2 opacity-40" />
                   <p className="text-xs font-bold">No messages matching criteria.</p>
                 </div>
+              )}
+
+              {/* Real-Time Typing Indicator Component */}
+              {activeChannel !== "saved-messages" && activeTypingUsers.length > 0 && (
+                <TypingIndicator
+                  typingUsers={activeTypingUsers}
+                  currentUserId={currentUserId}
+                  variant="incoming"
+                  avatarUrl={currentChannelDetails.avatar}
+                />
               )}
 
             </div>
@@ -2298,13 +2261,10 @@ export const Messages: React.FC<MessagesProps> = ({
             )}
 
             {/* ============================================================== */}
-            {/* IMPROVED MESSAGE COMPOSER */}
+            {/* IMPROVED MESSAGE COMPOSER (Req 4) */}
             {/* ============================================================== */}
             <div className="p-3 border-t border-[var(--color-border)] bg-[var(--color-surface)]/60 flex flex-col gap-2 shrink-0">
               
-              {/* Typing Indicator above composer inputs */}
-              <TypingIndicator typingUsers={activeTypingUsers} currentUserId={currentUserId} />
-
               {/* Attached Files List */}
               {attachedFiles.length > 0 && (
                 <div className="flex flex-wrap gap-2 pb-1 border-b border-[var(--color-border)]/40">
@@ -2328,7 +2288,19 @@ export const Messages: React.FC<MessagesProps> = ({
                     maxLength={2000}
                     placeholder={`Message ${currentChannelDetails.name}... (Enter sends, Shift+Enter new line)`}
                     value={msgInputText}
-                    onChange={handleComposerInputChange}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setMsgInputText(val);
+                      if (val.trim().length > 0 && activeChannel !== "saved-messages") {
+                        startTyping(activeChannel, currentUser);
+                        if (typingDebounceRef.current) clearTimeout(typingDebounceRef.current);
+                        typingDebounceRef.current = setTimeout(() => {
+                          stopTyping(activeChannel, currentUserId);
+                        }, 3500);
+                      } else {
+                        stopTyping(activeChannel, currentUserId);
+                      }
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();

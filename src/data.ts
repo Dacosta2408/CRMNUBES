@@ -24,9 +24,11 @@ export const DEFAULT_USERS: User[] = [
     phone: '(705) 555-0192',
     photo: null,
     pin: '1234',
+    clearanceLevel: 6,
     lastLogin: new Date().toISOString(),
     created: '2025-01-15',
-    isOwner: true
+    isOwner: true,
+    isProtected: true
   },
   {
     id: 'u_timb',
@@ -38,6 +40,7 @@ export const DEFAULT_USERS: User[] = [
     phone: '(705) 555-0144',
     photo: null,
     pin: '2222',
+    clearanceLevel: 5,
     lastLogin: new Date().toISOString(),
     created: '2025-01-15'
   },
@@ -51,6 +54,7 @@ export const DEFAULT_USERS: User[] = [
     phone: '(705) 555-0188',
     photo: null,
     pin: '3333',
+    clearanceLevel: 5,
     lastLogin: new Date(Date.now() - 3600000).toISOString(),
     created: '2025-01-15'
   },
@@ -64,6 +68,7 @@ export const DEFAULT_USERS: User[] = [
     phone: '(705) 555-0122',
     photo: null,
     pin: '4444',
+    clearanceLevel: 3,
     lastLogin: new Date(Date.now() - 7200000).toISOString(),
     created: '2025-01-15'
   },
@@ -77,6 +82,7 @@ export const DEFAULT_USERS: User[] = [
     phone: '(705) 555-0155',
     photo: null,
     pin: '5555',
+    clearanceLevel: 3,
     lastLogin: new Date(Date.now() - 86400000).toISOString(),
     created: '2025-01-15'
   },
@@ -84,12 +90,13 @@ export const DEFAULT_USERS: User[] = [
     id: 'u_matthewb',
     first: 'Matt',
     last: 'Brown',
-    email: 'mattie@gbkfinancial.ca',
+    email: 'matthewb@gbkfinancial.ca',
     role: 'Broker',
     status: 'active',
     phone: '(705) 555-0177',
     photo: null,
     pin: '7777',
+    clearanceLevel: 3,
     lastLogin: new Date(Date.now() - 172800000).toISOString(),
     created: '2025-01-15'
   },
@@ -103,6 +110,7 @@ export const DEFAULT_USERS: User[] = [
     phone: '(705) 555-0166',
     photo: null,
     pin: '6666',
+    clearanceLevel: 3,
     lastLogin: new Date(Date.now() - 259200000).toISOString(),
     created: '2025-01-15'
   }

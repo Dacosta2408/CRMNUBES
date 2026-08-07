@@ -1228,66 +1228,40 @@ select {
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
 }
 
-/* ─────────────────────────────────────────────────────────────
-   APPLE MESSAGES-INSPIRED CONVERSATION ANIMATIONS & TYPING DOTS
-   ───────────────────────────────────────────────────────────── */
-
-@keyframes typing-bounce {
+/* ── Apple Messages Inspired Animations ── */
+@keyframes typingDot {
   0%, 60%, 100% {
     transform: translateY(0);
-    opacity: 0.4;
+    opacity: 0.35;
   }
   30% {
-    transform: translateY(-3.5px);
+    transform: translateY(-4px);
     opacity: 1;
   }
 }
 
-.animate-typing-dot-1 {
-  animation: typing-bounce 1.3s infinite ease-in-out;
-  animation-delay: 0s;
-}
-
-.animate-typing-dot-2 {
-  animation: typing-bounce 1.3s infinite ease-in-out;
-  animation-delay: 0.18s;
-}
-
-.animate-typing-dot-3 {
-  animation: typing-bounce 1.3s infinite ease-in-out;
-  animation-delay: 0.36s;
-}
-
-@keyframes msg-enter {
-  from {
+@keyframes msgEntrance {
+  0% {
     opacity: 0;
-    transform: translateY(6px) scale(0.97);
+    transform: translateY(8px) scale(0.97);
   }
-  to {
+  100% {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
 }
 
-.animate-msg-enter-outgoing {
-  animation: msg-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  transform-origin: bottom right;
-}
-
-.animate-msg-enter-incoming {
-  animation: msg-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  transform-origin: bottom left;
+.animate-msg-entrance {
+  animation: msgEntrance 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-msg-enter-outgoing,
-  .animate-msg-enter-incoming,
-  .animate-typing-dot-1,
-  .animate-typing-dot-2,
-  .animate-typing-dot-3 {
+  .animate-msg-entrance,
+  .animate-fade-in,
+  [class*="animate-\[typingDot"] {
     animation: none !important;
     transform: none !important;
-    opacity: 1 !important;
+    transition: none !important;
   }
 }
 
