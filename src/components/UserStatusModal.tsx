@@ -10,14 +10,96 @@ export interface UserStatusModalProps {
   onStatusUpdated?: (newStatus: UserStatus) => void;
 }
 
-const AVAILABILITY_OPTIONS: { id: UserAvailability; label: string; icon: string; colorClass: string }[] = [
-  { id: "available", label: "Available", icon: "🟢", colorClass: "text-emerald-500" },
-  { id: "busy", label: "Busy", icon: "🔴", colorClass: "text-rose-500" },
-  { id: "in_meeting", label: "In a meeting", icon: "📅", colorClass: "text-purple-500" },
-  { id: "on_call", label: "On a call", icon: "📞", colorClass: "text-blue-500" },
-  { id: "do_not_disturb", label: "Do not disturb", icon: "⛔", colorClass: "text-rose-600" },
-  { id: "away", label: "Away", icon: "🟡", colorClass: "text-amber-500" },
-  { id: "offline", label: "Offline", icon: "⚪", colorClass: "text-slate-400" },
+interface AvailabilityOption {
+  id: UserAvailability;
+  label: string;
+  icon: string;
+  colorClass: string;
+  selectedBg: string;
+  selectedBorder: string;
+  selectedText: string;
+  dotBg: string;
+  btnBg: string;
+}
+
+const AVAILABILITY_OPTIONS: AvailabilityOption[] = [
+  { 
+    id: "available", 
+    label: "Available", 
+    icon: "🟢", 
+    colorClass: "text-emerald-400",
+    selectedBg: "bg-emerald-500/15",
+    selectedBorder: "border-emerald-500/40",
+    selectedText: "text-emerald-400 font-bold",
+    dotBg: "bg-emerald-500",
+    btnBg: "bg-emerald-500 hover:bg-emerald-600 text-black font-black"
+  },
+  { 
+    id: "busy", 
+    label: "Busy", 
+    icon: "🔴", 
+    colorClass: "text-rose-400",
+    selectedBg: "bg-rose-500/15",
+    selectedBorder: "border-rose-500/40",
+    selectedText: "text-rose-400 font-bold",
+    dotBg: "bg-rose-500",
+    btnBg: "bg-rose-500 hover:bg-rose-600 text-white font-black"
+  },
+  { 
+    id: "in_meeting", 
+    label: "In a meeting", 
+    icon: "📅", 
+    colorClass: "text-purple-400",
+    selectedBg: "bg-purple-500/15",
+    selectedBorder: "border-purple-500/40",
+    selectedText: "text-purple-400 font-bold",
+    dotBg: "bg-purple-500",
+    btnBg: "bg-purple-500 hover:bg-purple-600 text-white font-black"
+  },
+  { 
+    id: "on_call", 
+    label: "On a call", 
+    icon: "📞", 
+    colorClass: "text-blue-400",
+    selectedBg: "bg-blue-500/15",
+    selectedBorder: "border-blue-500/40",
+    selectedText: "text-blue-400 font-bold",
+    dotBg: "bg-blue-500",
+    btnBg: "bg-blue-500 hover:bg-blue-600 text-white font-black"
+  },
+  { 
+    id: "do_not_disturb", 
+    label: "Do not disturb", 
+    icon: "⛔", 
+    colorClass: "text-rose-500",
+    selectedBg: "bg-rose-600/15",
+    selectedBorder: "border-rose-600/40",
+    selectedText: "text-rose-400 font-bold",
+    dotBg: "bg-rose-600",
+    btnBg: "bg-rose-600 hover:bg-rose-700 text-white font-black"
+  },
+  { 
+    id: "away", 
+    label: "Away", 
+    icon: "🟡", 
+    colorClass: "text-amber-400",
+    selectedBg: "bg-amber-500/15",
+    selectedBorder: "border-amber-500/40",
+    selectedText: "text-amber-400 font-bold",
+    dotBg: "bg-amber-500",
+    btnBg: "bg-amber-500 hover:bg-amber-600 text-black font-black"
+  },
+  { 
+    id: "offline", 
+    label: "Offline", 
+    icon: "⚪", 
+    colorClass: "text-slate-400",
+    selectedBg: "bg-slate-500/15",
+    selectedBorder: "border-slate-500/40",
+    selectedText: "text-slate-300 font-bold",
+    dotBg: "bg-slate-400",
+    btnBg: "bg-slate-600 hover:bg-slate-700 text-white font-black"
+  },
 ];
 
 const EXPIRATION_OPTIONS = [
@@ -130,17 +212,17 @@ export const UserStatusModal: React.FC<UserStatusModalProps> = ({
                 key={opt.id}
                 type="button"
                 onClick={() => setAvailability(opt.id)}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all border ${
                   isSelected
-                    ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)] border border-[var(--color-accent)]/30"
-                    : "hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                    ? `${opt.selectedBg} ${opt.selectedBorder} ${opt.selectedText} shadow-sm`
+                    : "border-transparent hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                 }`}
               >
                 <div className="flex items-center gap-2.5">
                   <span className="text-sm">{opt.icon}</span>
-                  <span>{opt.label}</span>
+                  <span className={isSelected ? opt.selectedText : ""}>{opt.label}</span>
                 </div>
-                {isSelected && <Check className="w-4 h-4 text-[var(--color-accent)]" />}
+                {isSelected && <Check className={`w-4 h-4 ${opt.colorClass}`} />}
               </button>
             );
           })}
@@ -179,33 +261,38 @@ export const UserStatusModal: React.FC<UserStatusModalProps> = ({
         </div>
 
         {/* Modal Action Buttons */}
-        <div className="flex items-center justify-between gap-3 pt-2 border-t border-[var(--color-border)]">
-          <button
-            type="button"
-            onClick={handleClear}
-            disabled={saving}
-            className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-500 hover:bg-rose-500/10 transition-colors"
-          >
-            Clear Status
-          </button>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-semibold bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="px-5 py-2 rounded-xl text-xs font-bold bg-[var(--color-accent)] text-white hover:opacity-90 shadow-sm transition-all"
-            >
-              {saving ? "Saving..." : "Save Status"}
-            </button>
-          </div>
-        </div>
+        {(() => {
+          const activeOpt = AVAILABILITY_OPTIONS.find(o => o.id === availability) || AVAILABILITY_OPTIONS[0];
+          return (
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-[var(--color-border)]">
+              <button
+                type="button"
+                onClick={handleClear}
+                disabled={saving}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+              >
+                Clear Status
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className={`px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider shadow-md transition-all cursor-pointer disabled:opacity-50 ${activeOpt.btnBg}`}
+                >
+                  {saving ? "Saving..." : "Save Status"}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

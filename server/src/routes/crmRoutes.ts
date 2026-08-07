@@ -1,11 +1,54 @@
 import { Router } from "express";
 import { crmController } from "../controllers/crmController.js";
+import { authController } from "../controllers/authController.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 
 export const crmRouter = Router();
 
 // Health Check
 crmRouter.get("/health", asyncHandler(crmController.getHealth));
+
+// ─── AUTHENTICATION ENDPOINTS (Requirement 9) ───
+crmRouter.post("/auth/login", asyncHandler(authController.login));
+crmRouter.post("/auth/logout", asyncHandler(authController.logout));
+crmRouter.get("/auth/me", asyncHandler(authController.getCurrentUser));
+crmRouter.post("/auth/forgot-password", asyncHandler(authController.forgotPassword));
+crmRouter.get("/auth/reset-password/validate", asyncHandler(async (req, res) => {
+  const token = req.query.token as string;
+  req.body = { token };
+  return authController.validateResetToken(req, res);
+}));
+crmRouter.post("/auth/reset-password/validate", asyncHandler(authController.validateResetToken));
+crmRouter.post("/auth/reset-password", asyncHandler(authController.executeResetPassword));
+
+// ─── USER & CREDENTIAL MANAGEMENT ENDPOINTS (Requirement 9) ───
+crmRouter.post("/users/:id/password-reset", asyncHandler(async (req, res) => {
+  const targetUserId = req.params.id;
+  const { temporaryPassword, forceChangeOnNextLogin, sendEmail, revokeExistingSessions, author_name } = req.body;
+  req.body = { targetUserId, temporaryPassword, forceChangeOnNextLogin, sendEmail, revokeExistingSessions, authorName: author_name };
+  return authController.adminResetPassword(req, res);
+}));
+
+crmRouter.post("/users/:id/pin-reset", asyncHandler(async (req, res) => {
+  const targetUserId = req.params.id;
+  const { newPin, author_name } = req.body;
+  req.body = { targetUserId, newPin, authorName: author_name };
+  return authController.adminResetPin(req, res);
+}));
+
+crmRouter.post("/users/:id/revoke-sessions", asyncHandler(async (req, res) => {
+  const targetUserId = req.params.id;
+  const { author_name } = req.body;
+  req.body = { targetUserId, authorName: author_name };
+  return authController.adminRevokeSessions(req, res);
+}));
+
+crmRouter.post("/users/:id/unlock", asyncHandler(async (req, res) => {
+  const targetUserId = req.params.id;
+  const { author_name } = req.body;
+  req.body = { targetUserId, authorName: author_name };
+  return authController.adminUnlockUser(req, res);
+}));
 
 // Users
 crmRouter.get("/users", asyncHandler(crmController.getUsers));
@@ -18,8 +61,6 @@ crmRouter.get("/users/:id/deletion-impact", asyncHandler(crmController.getUserDe
 crmRouter.post("/users/:id/archive", asyncHandler(crmController.archiveUser));
 crmRouter.delete("/users/:id/permanent", asyncHandler(crmController.deleteUserPermanently));
 crmRouter.post("/users/:id/restore", asyncHandler(crmController.restoreUser));
-crmRouter.post("/users/:id/password-reset", asyncHandler(crmController.resetUserPassword));
-crmRouter.post("/users/:id/revoke-sessions", asyncHandler(crmController.revokeUserSessions));
 crmRouter.get("/users/:id", asyncHandler(crmController.getUserById));
 crmRouter.post("/users", asyncHandler(crmController.createUser));
 crmRouter.put("/users/:id", asyncHandler(crmController.updateUser));

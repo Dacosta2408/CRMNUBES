@@ -111,6 +111,24 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [credentialResetUser, setCredentialResetUser] = useState<UserType | null>(null);
   const [resetPinInput, setResetPinInput] = useState<string>("");
 
+  // Handle body lock & Escape key when Edit User modal is open
+  useEffect(() => {
+    if (editingUser) {
+      const originalStyle = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          setEditingUser(null);
+        }
+      };
+      window.addEventListener("keydown", handleKeyDown);
+      return () => {
+        document.body.style.overflow = originalStyle;
+        window.removeEventListener("keydown", handleKeyDown);
+      };
+    }
+  }, [editingUser]);
+
   // Ensure roster is always sanitized against blocked accounts and invalid records
   useEffect(() => {
     const sanitized = sanitizeCanonicalRoster(userRoster);
@@ -1975,65 +1993,111 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
       {/* ─── MODAL 2: EXTENDED MULTI-TAB EDIT USER MODAL ─── */}
       {editingUser && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 overflow-y-auto backdrop-blur-sm animate-in fade-in duration-100">
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden text-left flex flex-col max-h-[90vh]">
-            
-            {/* Header */}
-            <div className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)] px-6 py-4 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[var(--color-accent)]/15 border border-[var(--color-accent)]/30 flex items-center justify-center text-[var(--color-accent)] font-bold">
-                  {getUserFullName(editingUser).charAt(0)}
+        <div 
+          className="fixed inset-0 bg-black/60 z-50 overflow-y-auto backdrop-blur-sm animate-in fade-in duration-100 p-2 sm:p-4 md:p-6"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setEditingUser(null);
+          }}
+        >
+          <div className="min-h-full flex items-center justify-center">
+            <div 
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="edit-user-modal-title"
+              className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-5xl lg:max-w-6xl shadow-2xl overflow-hidden text-left flex flex-col max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3rem)] my-auto"
+            >
+              
+              {/* Header */}
+              <div className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)] px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-[var(--color-accent)]/15 border border-[var(--color-accent)]/30 flex items-center justify-center text-[var(--color-accent)] font-bold shrink-0">
+                    {getUserFullName(editingUser).charAt(0)}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 id="edit-user-modal-title" className="font-extrabold text-[var(--color-text)] text-sm sm:text-base flex items-center gap-2 truncate">
+                      <span>Manage User Account: {getUserFullName(editingUser)}</span>
+                      {editingUser.id === "u_david" && (
+                        <span className="bg-purple-500/20 text-purple-300 text-[10px] px-2 py-0.5 rounded border border-purple-500/30 uppercase font-black shrink-0">Protected Developer</span>
+                      )}
+                    </h3>
+                    <p className="text-[11px] text-[var(--color-text-faint)] truncate">
+                      ID: <code className="font-mono text-[var(--color-accent)]">{editingUser.id}</code> • Email: {editingUser.email}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-extrabold text-[var(--color-text)] text-sm flex items-center gap-2">
-                    Manage User Account: {getUserFullName(editingUser)}
-                    {editingUser.id === "u_david" && (
-                      <span className="bg-purple-500/20 text-purple-300 text-[10px] px-2 py-0.5 rounded border border-purple-500/30 uppercase font-black">Protected Developer</span>
-                    )}
-                  </h3>
-                  <p className="text-[11px] text-[var(--color-text-faint)]">
-                    ID: <code className="font-mono text-[var(--color-accent)]">{editingUser.id}</code> • Email: {editingUser.email}
-                  </p>
-                </div>
+                <button 
+                  onClick={() => setEditingUser(null)} 
+                  aria-label="Close dialog"
+                  className="w-8 h-8 rounded-lg hover:bg-[var(--color-surface-3)] flex items-center justify-center text-[var(--color-text-faint)] hover:text-[var(--color-text)] transition-colors cursor-pointer shrink-0 ml-2"
+                >
+                  ✕
+                </button>
               </div>
-              <button 
-                onClick={() => setEditingUser(null)} 
-                className="w-8 h-8 rounded-lg hover:bg-[var(--color-surface-3)] flex items-center justify-center text-[var(--color-text-faint)] hover:text-[var(--color-text)] transition-colors cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
 
-            {/* Navigation Tabs */}
-            <div className="flex items-center gap-1 sm:gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)]/50 px-4 sm:px-6 pt-2 shrink-0 overflow-x-auto min-w-full">
-              {[
-                { id: 'profile', label: '1. Profile Info', icon: User },
-                { id: 'roles', label: '2. Role & Permissions', icon: Shield },
-                { id: 'credentials', label: '3. Security & Password', icon: Key },
-                { id: 'status', label: '4. Account Status', icon: ToggleRight },
-                { id: 'activity', label: '5. Audit Timeline', icon: Clock }
-              ].map(tab => {
-                const IconComp = tab.icon;
-                const isActive = editActiveTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setEditActiveTab(tab.id as any)}
-                    className={`flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-[11px] sm:text-xs font-extrabold uppercase tracking-wide border-b-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                      isActive
-                        ? "border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-surface)]"
-                        : "border-transparent text-[var(--color-text-faint)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-3)]/30"
-                    }`}
-                  >
-                    <IconComp className="w-3.5 h-3.5 shrink-0" />
-                    <span>{tab.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+              {/* Navigation Tabs with Custom Section Title Colors */}
+              <div className="flex items-center gap-1 sm:gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)]/50 px-2 sm:px-6 pt-2 shrink-0 overflow-x-auto w-full">
+                {[
+                  { 
+                    id: 'profile', 
+                    label: '1. Profile Info', 
+                    icon: User, 
+                    activeClass: 'border-sky-400 text-sky-400 bg-sky-500/10 shadow-sm', 
+                    inactiveClass: 'border-transparent text-[var(--color-text-faint)] hover:text-sky-300 hover:bg-sky-500/5',
+                    iconClass: 'text-sky-400'
+                  },
+                  { 
+                    id: 'roles', 
+                    label: '2. Role & Permissions', 
+                    icon: Shield, 
+                    activeClass: 'border-purple-400 text-purple-400 bg-purple-500/10 shadow-sm', 
+                    inactiveClass: 'border-transparent text-[var(--color-text-faint)] hover:text-purple-300 hover:bg-purple-500/5',
+                    iconClass: 'text-purple-400'
+                  },
+                  { 
+                    id: 'credentials', 
+                    label: '3. Security & Password', 
+                    icon: Key, 
+                    activeClass: 'border-amber-400 text-amber-400 bg-amber-500/10 shadow-sm', 
+                    inactiveClass: 'border-transparent text-[var(--color-text-faint)] hover:text-amber-300 hover:bg-amber-500/5',
+                    iconClass: 'text-amber-400'
+                  },
+                  { 
+                    id: 'status', 
+                    label: '4. Account Status', 
+                    icon: ToggleRight, 
+                    activeClass: 'border-emerald-400 text-emerald-400 bg-emerald-500/10 shadow-sm', 
+                    inactiveClass: 'border-transparent text-[var(--color-text-faint)] hover:text-emerald-300 hover:bg-emerald-500/5',
+                    iconClass: 'text-emerald-400'
+                  },
+                  { 
+                    id: 'activity', 
+                    label: '5. Audit Timeline', 
+                    icon: Clock, 
+                    activeClass: 'border-rose-400 text-rose-400 bg-rose-500/10 shadow-sm', 
+                    inactiveClass: 'border-transparent text-[var(--color-text-faint)] hover:text-rose-300 hover:bg-rose-500/5',
+                    iconClass: 'text-rose-400'
+                  }
+                ].map(tab => {
+                  const IconComp = tab.icon;
+                  const isActive = editActiveTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setEditActiveTab(tab.id as any)}
+                      className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 text-[11px] sm:text-xs font-extrabold uppercase tracking-wide border-b-2 transition-all cursor-pointer whitespace-nowrap shrink-0 sm:flex-1 ${
+                        isActive ? tab.activeClass : tab.inactiveClass
+                      }`}
+                    >
+                      <IconComp className={`w-3.5 h-3.5 shrink-0 ${tab.iconClass}`} />
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
 
-            {/* Modal Body with Scrollable Area */}
-            <div className="p-6 overflow-y-auto space-y-5 flex-1">
+              {/* Modal Body with Scrollable Area */}
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1 min-h-0">
 
               {/* TAB 1: PROFILE INFO */}
               {editActiveTab === 'profile' && (
@@ -2586,30 +2650,33 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             </div>
 
             {/* Modal Footer */}
-            <div className="bg-[var(--color-surface-2)] border-t border-[var(--color-border)] px-6 py-3.5 flex items-center justify-between shrink-0">
+            <div className="bg-[var(--color-surface-2)] border-t border-[var(--color-border)] px-4 sm:px-6 py-3.5 flex flex-col-reverse sm:flex-row items-center justify-between gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => {
                   setProfileUserModal(editingUser);
                   setEditingUser(null);
                 }}
-                className="text-xs text-[var(--color-accent)] font-bold uppercase hover:underline cursor-pointer flex items-center gap-1"
+                className="text-xs text-[var(--color-accent)] font-bold uppercase hover:underline cursor-pointer flex items-center gap-1 self-start sm:self-auto"
               >
                 <Eye className="w-3.5 h-3.5" /> View Full Dossier
               </button>
 
-              <button
-                type="button"
-                onClick={() => setEditingUser(null)}
-                className="px-5 py-2 bg-[var(--color-surface-3)] hover:bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] text-xs font-bold uppercase tracking-wider rounded-lg cursor-pointer transition-colors"
-              >
-                Done
-              </button>
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  className="px-5 py-2 bg-[var(--color-surface-3)] hover:bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] text-xs font-bold uppercase tracking-wider rounded-lg cursor-pointer transition-colors w-full sm:w-auto"
+                >
+                  Done
+                </button>
+              </div>
             </div>
 
           </div>
         </div>
-      )}
+      </div>
+    )}
 
       {/* ─── MODAL 3: EDIT BROKER DETAILS ─── */}
       {editingBroker && (

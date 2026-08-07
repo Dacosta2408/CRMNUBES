@@ -4,11 +4,12 @@ import {
   X, Pin, Plus, AlertCircle, CheckCircle, Check, ArrowRight, 
   Trash2, Bell, Tag, Link2, Paperclip, Phone, MoreHorizontal,
   ChevronRight, Sparkles, Smile, ShieldAlert, BadgeInfo, Calendar, Eye, Upload,
-  Pencil, BookmarkCheck, ExternalLink, RefreshCw, MessageSquare, Star, Wifi, WifiOff, Clock, Filter, Download, Archive
+  Pencil, BookmarkCheck, ExternalLink, RefreshCw, MessageSquare, Star, Wifi, WifiOff, Clock, Filter, Download, Archive, StickyNote
 } from "lucide-react";
 import { Client, Task, Message, SavedMessage, MessageAction, MessagePermission, ChannelInfo, User, TypingUser } from "../types";
 import { Avatar } from "./Avatar";
 import { UserStatusModal } from "./UserStatusModal";
+import { AddClientNoteModal } from "./AddClientNoteModal";
 import { TypingIndicator } from "./TypingIndicator";
 import { startTyping, stopTyping, subscribeToTyping } from "../lib/typingService";
 import { DEFAULT_USERS } from "../data";
@@ -319,6 +320,10 @@ export const Messages: React.FC<MessagesProps> = ({
     assignedTo: string;
   } | null>(null);
 
+  // Add Client Note modal
+  const [isAddNoteModalOpen, setIsAddNoteModalOpen] = useState(false);
+  const [addNoteTargetMsg, setAddNoteTargetMsg] = useState<any>(null);
+
   // Pins Panel toggle
   const [showPinsPanel, setShowPinsPanel] = useState(false);
   const [activeTypingUsers, setActiveTypingUsers] = useState<TypingUser[]>([]);
@@ -378,6 +383,11 @@ export const Messages: React.FC<MessagesProps> = ({
     // Refresh on component mount
     refreshTeamRoster();
 
+    // Periodic roster & availability status refresh so all clients stay synchronized
+    const statusInterval = setInterval(() => {
+      refreshTeamRoster();
+    }, 4000);
+
     // Refresh on window focus
     const handleFocus = () => {
       refreshTeamRoster();
@@ -397,6 +407,7 @@ export const Messages: React.FC<MessagesProps> = ({
     window.addEventListener("user.changed", handleUserChangeEvent);
 
     return () => {
+      clearInterval(statusInterval);
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("user.created", handleUserChangeEvent);
       window.removeEventListener("user.updated", handleUserChangeEvent);
@@ -1477,7 +1488,6 @@ export const Messages: React.FC<MessagesProps> = ({
           <div>
             <div className="px-1.5 text-[9.5px] font-extrabold text-[var(--color-text-faint)] uppercase tracking-widest mb-1.5 flex items-center justify-between">
               <span>Team Channels</span>
-              <span className="text-[8.5px] font-semibold text-[var(--color-text-faint)] opacity-70">Central Roster</span>
             </div>
 
             <div className="space-y-0.5 animate-fade-in">
@@ -1564,34 +1574,79 @@ export const Messages: React.FC<MessagesProps> = ({
         </div>
 
         {/* Current User Session Overview */}
-        <div 
-          onClick={() => setIsStatusModalOpen(true)}
-          className="p-3 border-t border-[var(--color-border)] bg-[var(--color-panel)]/30 flex items-center justify-between gap-2 shrink-0 cursor-pointer hover:bg-[var(--color-surface-2)]/60 transition-colors group"
-          title="Click to change availability status"
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Avatar
-              src={getUserPhotoUrl(currentUser) || (currentUser as any)?.avatar}
-              first={currentUser.first}
-              last={currentUser.last}
-              name={currentUser.displayName || getUserFullName(currentUser)}
-              availability={(currentUser.availability || (currentUser as any)?.userStatus?.availability || 'available') as any}
-              showStatus={true}
-              size="sm"
-            />
-            <div className="min-w-0">
-              <div className="text-[11px] font-black text-[var(--color-text)] truncate leading-tight group-hover:text-[var(--color-accent)] transition-colors">
-                {currentUser.first} {currentUser.last}
+        {(() => {
+          const currentAvail = (currentUser.availability || (currentUser as any)?.userStatus?.availability || 'available') as string;
+          
+          let statusLabel = "Available";
+          let dotBg = "bg-emerald-500";
+          let pillStyle = "bg-emerald-500/15 border-emerald-500/35 text-emerald-400";
+
+          if (currentAvail === 'busy') {
+            statusLabel = "Busy";
+            dotBg = "bg-rose-500";
+            pillStyle = "bg-rose-500/15 border-rose-500/35 text-rose-400";
+          } else if (currentAvail === 'in_meeting') {
+            statusLabel = "In Meeting";
+            dotBg = "bg-purple-500";
+            pillStyle = "bg-purple-500/15 border-purple-500/35 text-purple-400";
+          } else if (currentAvail === 'on_call') {
+            statusLabel = "On Call";
+            dotBg = "bg-blue-500";
+            pillStyle = "bg-blue-500/15 border-blue-500/35 text-blue-400";
+          } else if (currentAvail === 'do_not_disturb') {
+            statusLabel = "Do Not Disturb";
+            dotBg = "bg-rose-600";
+            pillStyle = "bg-rose-600/15 border-rose-600/35 text-rose-400";
+          } else if (currentAvail === 'away') {
+            statusLabel = "Away";
+            dotBg = "bg-amber-500";
+            pillStyle = "bg-amber-500/15 border-amber-500/35 text-amber-400";
+          } else if (currentAvail === 'offline') {
+            statusLabel = "Offline";
+            dotBg = "bg-slate-400";
+            pillStyle = "bg-slate-500/15 border-slate-500/35 text-slate-300";
+          }
+
+          const customMsg = currentUser.userStatus?.customMessage || (currentUser as any)?.customMessage;
+
+          return (
+            <div 
+              onClick={() => setIsStatusModalOpen(true)}
+              className="p-3 border-t border-[var(--color-border)] bg-[var(--color-panel)]/30 flex items-center justify-between gap-2 shrink-0 cursor-pointer hover:bg-[var(--color-surface-2)]/60 transition-colors group"
+              title="Click to change availability status"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Avatar
+                  src={getUserPhotoUrl(currentUser) || (currentUser as any)?.avatar}
+                  first={currentUser.first}
+                  last={currentUser.last}
+                  name={currentUser.displayName || getUserFullName(currentUser)}
+                  availability={currentAvail as any}
+                  showStatus={true}
+                  size="sm"
+                />
+                <div className="min-w-0">
+                  <div className="text-[11px] font-black text-[var(--color-text)] truncate leading-tight group-hover:text-[var(--color-accent)] transition-colors">
+                    {currentUser.first} {currentUser.last}
+                  </div>
+                  {customMsg ? (
+                    <div className="text-[8.5px] text-[var(--color-accent)] truncate font-semibold italic">
+                      "{customMsg}"
+                    </div>
+                  ) : (
+                    <div className="text-[8.5px] text-[var(--color-text-muted)] truncate font-semibold uppercase">
+                      {currentUser.role || "Mortgage Broker (Owner)"}
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="text-[8.5px] text-[var(--color-text-muted)] truncate font-semibold uppercase">
-                {currentUser.role || "Mortgage Broker (Owner)"}
-              </div>
+              <span className={`text-[9.5px] font-extrabold px-2 py-1 rounded-lg border flex items-center gap-1.5 shrink-0 transition-all ${pillStyle}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${dotBg} shrink-0 animate-pulse`} />
+                <span>{statusLabel}</span>
+              </span>
             </div>
-          </div>
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[var(--color-accent)] shrink-0 group-hover:border-[var(--color-accent)]/50 transition-colors">
-            Set Status
-          </span>
-        </div>
+          );
+        })()}
 
       </div>
 
@@ -1684,30 +1739,6 @@ export const Messages: React.FC<MessagesProps> = ({
                 <option value="lender_pending">🏦 Lender Pending</option>
                 <option value="client_pending">📝 Client Pending</option>
                 <option value="compliance">⚖️ Compliance Audit</option>
-              </select>
-
-              {/* Quick client linking filter */}
-              <select
-                value={selectedClientSearch || linkedChatClientId || ""}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSelectedClientSearch(val);
-                  if (setLinkedChatClientId) {
-                    setLinkedChatClientId(val || null);
-                  }
-                }}
-                className="bg-[var(--color-panel)] border border-[var(--color-border)] rounded-xl px-2.5 py-1.5 text-[10.5px] text-[var(--color-text-muted)] focus:outline-none font-bold shrink-0 max-w-[190px] sm:max-w-[210px] truncate"
-                title="Link to Client / Filter messages by deal file"
-              >
-                <option value="">📎 All Clients</option>
-                {clients.map(c => {
-                  const tagDetail = c.stage || c.status || c.lender || "Active";
-                  return (
-                    <option key={c.id} value={c.id}>
-                      {c.first} {c.last} ({tagDetail})
-                    </option>
-                  );
-                })}
               </select>
 
               {/* Toggle pins panel button */}
@@ -2084,6 +2115,18 @@ export const Messages: React.FC<MessagesProps> = ({
                                       aria-label="Convert to Task"
                                     >
                                       <Sparkles className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    <button
+                                      onClick={() => {
+                                        setAddNoteTargetMsg(msg);
+                                        setIsAddNoteModalOpen(true);
+                                      }}
+                                      className="p-1 rounded-lg hover:bg-[var(--color-surface-2)] text-emerald-400 hover:text-emerald-300 focus:outline-none"
+                                      title="Add Note to Client File"
+                                      aria-label="Add Note to Client File"
+                                    >
+                                      <StickyNote className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
 
@@ -2503,6 +2546,21 @@ export const Messages: React.FC<MessagesProps> = ({
           </div>
         </div>
       )}
+
+      {/* Add Note to Client File Modal */}
+      <AddClientNoteModal
+        isOpen={isAddNoteModalOpen}
+        onClose={() => {
+          setIsAddNoteModalOpen(false);
+          setAddNoteTargetMsg(null);
+        }}
+        message={addNoteTargetMsg}
+        clients={clients}
+        setClients={setClients}
+        currentUser={currentUser}
+        showToast={showToast}
+        defaultClientId={linkedChatClientId || selectedClientSearch}
+      />
 
       {/* User Status Selector Modal */}
       <UserStatusModal

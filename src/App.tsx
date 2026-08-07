@@ -812,7 +812,7 @@ export default function App() {
                 <Lock className="w-6 h-6 text-[var(--color-text-inverse)]" />
               </div>
               <h3 className="text-sm font-black uppercase tracking-widest text-[var(--color-text)] mb-1">Workstation Locked</h3>
-              <p className="text-[10px] text-[var(--color-text-faint)] font-bold uppercase tracking-wider mb-4">Enter 4-digit security PIN to resume</p>
+              <p className="text-[10px] text-[var(--color-text-faint)] font-bold uppercase tracking-wider mb-4">Enter security PIN or account password</p>
               
               {/* Locked User Info Card */}
               <div className="mb-4 p-3 rounded-xl bg-[var(--color-surface-2)] border border-[var(--color-border)]/80 text-left flex items-center gap-3 shadow-inner">
@@ -828,20 +828,14 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Dev PIN Hint Banner */}
-              <div className="mb-4 px-3 py-1.5 rounded-lg bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 flex items-center justify-between text-[10px]">
-                <span className="text-[var(--color-text-muted)] font-bold">Dev Workstation PIN:</span>
-                <span className="font-mono font-black text-[var(--color-accent)] tracking-widest bg-[var(--color-accent)]/15 px-2 py-0.5 rounded border border-[var(--color-accent)]/30">1234</span>
-              </div>
-
               <input 
                 type="password" 
-                maxLength={4}
+                maxLength={64}
                 value={pinInput}
-                onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))}
-                placeholder="••••"
+                onChange={(e) => setPinInput(e.target.value)}
+                placeholder="PIN or Password"
                 disabled={lockoutActive}
-                className="w-full tracking-widest text-center text-3xl font-mono py-2.5 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl text-[var(--color-accent)] mb-3 focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] disabled:opacity-50 disabled:cursor-not-allowed font-black"
+                className="w-full tracking-widest text-center text-xl font-mono py-2.5 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl text-[var(--color-accent)] mb-3 focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] disabled:opacity-50 disabled:cursor-not-allowed font-black"
                 onKeyDown={(e) => { if (e.key === "Enter") handleUnlock(); }}
               />
 

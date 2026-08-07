@@ -1,11 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { 
-  KeyRound, Mail, Lock, ShieldCheck, CheckCircle2, ArrowRight, X, AlertCircle, RefreshCw, Sparkles, User as UserIcon 
+  KeyRound, Mail, ShieldCheck, CheckCircle2, ArrowRight, X, AlertCircle, RefreshCw, Lock
 } from "lucide-react";
 import { User } from "../types";
-import { hashPin } from "../hooks/useAuth";
-import { encryptValue } from "../lib/cryptoUtils";
-import { Avatar } from "./Avatar";
 
 interface PasswordResetModalProps {
   isOpen: boolean;
@@ -20,30 +17,30 @@ interface PasswordResetModalProps {
 export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
   isOpen,
   onClose,
-  userRoster,
-  setUserRoster,
   initialEmail = "vdacosta247@gmail.com",
   showToast,
   onSuccessUnlock
 }) => {
   const [step, setStep] = useState<"request" | "verify" | "success">("request");
   const [emailInput, setEmailInput] = useState(initialEmail);
-  const [targetUser, setTargetUser] = useState<User | null>(null);
   const [isSending, setIsSending] = useState(false);
-  const [verificationCode, setVerificationCode] = useState("");
-  const [newPin, setNewPin] = useState("1234");
+  const [resetToken, setResetToken] = useState("");
+  const [newPin, setNewPin] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [infoMsg, setInfoMsg] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
+  const [updatedUser, setUpdatedUser] = useState<User | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setStep("request");
       setEmailInput(initialEmail || "vdacosta247@gmail.com");
       setErrorMsg("");
-      setVerificationCode("");
-      setNewPin("1234");
+      setInfoMsg("");
+      setResetToken("");
+      setNewPin("");
       setNewPassword("");
       setConfirmPassword("");
     }
@@ -51,81 +48,115 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Find user by email
-  const handleRequestReset = (e: React.FormEvent) => {
+  // Step 1: Request Reset Token via backend API
+  const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
+    setInfoMsg("");
 
-    const matched = userRoster.find(
-      u => (u.email || "").toLowerCase() === emailInput.trim().toLowerCase()
-    );
-
-    if (!matched) {
-      setErrorMsg("No active user found with that email address. Please check your spelling.");
+    if (!emailInput.trim()) {
+      setErrorMsg("Please enter a valid email address.");
       return;
     }
 
     setIsSending(true);
-    setTargetUser(matched);
 
-    setTimeout(() => {
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailInput.trim() })
+      });
+
+      const data = await res.json();
       setIsSending(false);
-      setVerificationCode("123456"); // Simulated code dispatch
+
+      // Secure handling: always show generic message regardless of whether email exists
+      setInfoMsg(data.message || "If an account with that email exists, a password reset email has been sent.");
+      
+      if (data.simulationToken) {
+        setResetToken(data.simulationToken);
+      }
+
       setStep("verify");
-      showToast(`Security reset verification code sent to ${matched.email}`, "success", "✉️");
-    }, 800);
+      showToast("Password reset request processed.", "info", "✉️");
+    } catch {
+      setIsSending(false);
+      setErrorMsg("Failed to reach authentication server. Please try again.");
+    }
   };
 
+  // Step 2: Validate token and update credentials via backend API
   const handleConfirmReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
 
-    if (!targetUser) return;
-
-    if (verificationCode !== "123456" && verificationCode.length < 6) {
-      setErrorMsg("Please enter a valid 6-digit verification code.");
+    if (!resetToken.trim()) {
+      setErrorMsg("Please enter your password reset token.");
       return;
     }
 
-    if (newPin.length !== 4 || isNaN(Number(newPin))) {
-      setErrorMsg("Workstation PIN must be exactly 4 digits (e.g., 1234).");
-      return;
+    if (newPassword) {
+      if (newPassword.length < 8) {
+        setErrorMsg("Password must be at least 8 characters long.");
+        return;
+      }
+      if (!/[A-Z]/.test(newPassword)) {
+        setErrorMsg("Password must contain at least one uppercase letter.");
+        return;
+      }
+      if (!/[0-9]/.test(newPassword)) {
+        setErrorMsg("Password must contain at least one number.");
+        return;
+      }
+      if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newPassword)) {
+        setErrorMsg("Password must contain at least one special character (!@#$%^&* etc.).");
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setErrorMsg("Passwords do not match. Please re-enter.");
+        return;
+      }
     }
 
-    if (newPassword.length > 0 && newPassword.length < 6) {
-      setErrorMsg("Password must be at least 6 characters long.");
-      return;
+    if (newPin) {
+      if (!/^\d{4,6}$/.test(newPin)) {
+        setErrorMsg("Security PIN must be 4 to 6 numeric digits.");
+        return;
+      }
     }
 
-    if (newPassword !== confirmPassword) {
-      setErrorMsg("Passwords do not match. Please verify.");
+    if (!newPassword && !newPin) {
+      setErrorMsg("Please provide a new password or new security PIN.");
       return;
     }
 
     setIsUpdating(true);
 
     try {
-      const pinHash = await hashPin(newPin, targetUser.id);
-      const encryptedPin = await encryptValue(newPin, newPin);
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: resetToken.trim(),
+          newPassword: newPassword || undefined,
+          newPin: newPin || undefined
+        })
+      });
 
-      const updatedUser: User = {
-        ...targetUser,
-        pin: encryptedPin,
-        pinHash,
-        ...(newPassword ? { emailPassword: newPassword } : {})
-      };
-
-      // Update user roster
-      const updatedRoster = userRoster.map(u => u.id === targetUser.id ? updatedUser : u);
-      setUserRoster(updatedRoster);
-      localStorage.setItem("gbk_roster", JSON.stringify(updatedRoster));
-
+      const data = await res.json();
       setIsUpdating(false);
+
+      if (!res.ok || !data.success) {
+        setErrorMsg(data.message || "Failed to reset credentials.");
+        return;
+      }
+
       setStep("success");
-      showToast(`Credentials updated for ${targetUser.first} ${targetUser.last}!`, "success", "🔐");
-    } catch (err) {
+      showToast("Security credentials successfully updated!", "success", "🔐");
+    } catch {
       setIsUpdating(false);
-      setErrorMsg("An error occurred while updating credentials. Please try again.");
+      setErrorMsg("An error occurred while saving credentials. Please try again.");
     }
   };
 
@@ -144,7 +175,7 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
                 Workstation Password Reset
               </h3>
               <p className="text-[10px] text-[var(--color-text-faint)] font-bold">
-                Secure Account Recovery & Credential Management
+                Backend-Authoritative Credential Recovery
               </p>
             </div>
           </div>
@@ -179,27 +210,10 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
                     required
                     value={emailInput}
                     onChange={(e) => setEmailInput(e.target.value)}
-                    placeholder="e.g. vdacosta247@gmail.com"
+                    placeholder="Enter registered email address"
                     className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl pl-9 pr-3 py-2.5 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
                   />
                 </div>
-              </div>
-
-              {/* Developer / Admin Quick Options */}
-              <div className="p-3 bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 rounded-xl space-y-1 text-xs">
-                <div className="flex items-center justify-between font-bold text-[var(--color-accent)]">
-                  <span>Main Developer Account:</span>
-                  <button
-                    type="button"
-                    onClick={() => setEmailInput("vdacosta247@gmail.com")}
-                    className="underline text-[10px] hover:opacity-80 cursor-pointer"
-                  >
-                    Select David Acosta
-                  </button>
-                </div>
-                <p className="text-[10px] text-[var(--color-text-muted)]">
-                  David Acosta (vdacosta247@gmail.com) • Developer/Admin
-                </p>
               </div>
 
               <div className="pt-2 flex items-center gap-2 justify-end">
@@ -217,11 +231,11 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
                 >
                   {isSending ? (
                     <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Dispatching Reset Email...
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Requesting Reset...
                     </>
                   ) : (
                     <>
-                      Send Reset Verification <ArrowRight className="w-3.5 h-3.5" />
+                      Send Reset Request <ArrowRight className="w-3.5 h-3.5" />
                     </>
                   )}
                 </button>
@@ -229,88 +243,63 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
             </form>
           )}
 
-          {/* STEP 2: VERIFY CODE & SET NEW CREDENTIALS */}
-          {step === "verify" && targetUser && (
+          {/* STEP 2: VERIFY TOKEN & SET NEW CREDENTIALS */}
+          {step === "verify" && (
             <form onSubmit={handleConfirmReset} className="space-y-4">
-              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-start gap-3">
-                <Avatar name={`${targetUser.first} ${targetUser.last}`} src={targetUser.photo || targetUser.profilePhoto} size="sm" />
-                <div className="min-w-0 text-xs">
-                  <p className="font-extrabold text-[var(--color-text)]">{targetUser.first} {targetUser.last}</p>
-                  <p className="text-[10px] text-[var(--color-text-muted)]">{targetUser.email} • {targetUser.role}</p>
-                  <p className="text-[10px] text-emerald-400 font-bold mt-1">
-                    ✓ Reset verification token dispatched to inbox!
-                  </p>
+              {infoMsg && (
+                <div className="p-3 bg-sky-500/10 border border-sky-500/30 rounded-xl text-xs text-sky-300 font-medium">
+                  {infoMsg}
                 </div>
-              </div>
+              )}
 
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-bold text-[var(--color-text-muted)] uppercase">
-                    6-Digit Verification Code
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setVerificationCode("123456")}
-                    className="text-[10px] font-bold text-[var(--color-accent)] hover:underline"
-                  >
-                    Auto-fill (123456)
-                  </button>
-                </div>
+                <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase mb-1">
+                  Reset Verification Token
+                </label>
                 <input
                   type="text"
-                  maxLength={6}
-                  value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ""))}
-                  placeholder="123456"
-                  className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-center text-lg font-mono font-bold tracking-widest text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
+                  required
+                  value={resetToken}
+                  onChange={(e) => setResetToken(e.target.value)}
+                  placeholder="Paste security token"
+                  className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs font-mono text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
                 />
               </div>
 
-              {/* NEW WORKSTATION PIN CODE */}
+              {/* NEW SECURITY PIN */}
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-bold text-[var(--color-text-muted)] uppercase">
-                    New Workstation Access PIN (4 Digits)
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setNewPin("1234")}
-                    className="text-[10px] font-bold text-[var(--color-accent)] hover:underline flex items-center gap-1"
-                  >
-                    <Sparkles className="w-3 h-3" /> Set Dev PIN (1234)
-                  </button>
-                </div>
+                <label className="block text-xs font-bold text-[var(--color-text-muted)] uppercase mb-1">
+                  New Security PIN (4–6 Digits)
+                </label>
                 <input
-                  type="text"
-                  maxLength={4}
+                  type="password"
+                  maxLength={6}
                   value={newPin}
                   onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ""))}
-                  placeholder="1234"
+                  placeholder="••••"
                   className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-center text-lg font-mono font-bold tracking-widest text-[var(--color-accent)] focus:outline-none focus:border-[var(--color-accent)]"
                 />
               </div>
 
-              {/* NEW PASSWORD OPTIONAL */}
+              {/* NEW PASSWORD */}
               <div className="space-y-2 pt-1 border-t border-[var(--color-border)]/50">
                 <label className="text-xs font-bold text-[var(--color-text-muted)] uppercase block">
-                  New Account Password (Optional)
+                  New Password (Min 8 chars, 1 uppercase, 1 number, 1 special char)
                 </label>
                 <input
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Enter new account password"
+                  placeholder="Enter new strong password"
                   className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
                 />
-                {newPassword.length > 0 && (
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Confirm new account password"
-                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
-                  />
-                )}
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
+                />
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-2">
@@ -328,11 +317,11 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
                 >
                   {isUpdating ? (
                     <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving...
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Updating...
                     </>
                   ) : (
                     <>
-                      Save & Update Credentials <ShieldCheck className="w-3.5 h-3.5" />
+                      Update Credentials <ShieldCheck className="w-3.5 h-3.5" />
                     </>
                   )}
                 </button>
@@ -341,7 +330,7 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
           )}
 
           {/* STEP 3: SUCCESS CONFIRMATION */}
-          {step === "success" && targetUser && (
+          {step === "success" && (
             <div className="text-center py-4 space-y-4 animate-fade-in">
               <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto shadow-lg">
                 <CheckCircle2 className="w-6 h-6" />
@@ -349,40 +338,19 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
 
               <div>
                 <h4 className="text-sm font-black text-[var(--color-text)] uppercase tracking-wider">
-                  Credentials Successfully Reset!
+                  Credentials Updated Successfully!
                 </h4>
                 <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                  Account <span className="font-bold text-[var(--color-text)]">{targetUser.first} {targetUser.last}</span> has been updated with PIN code <span className="font-mono font-bold text-[var(--color-accent)]">{newPin}</span>.
+                  Your new security PIN and password have been saved on the server.
                 </p>
               </div>
 
-              <div className="p-3 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl text-xs text-[var(--color-text-muted)] text-left space-y-1">
-                <p className="font-bold text-[var(--color-text)]">Summary of Updates:</p>
-                <p>• Account Email: <span className="text-[var(--color-text)]">{targetUser.email}</span></p>
-                <p>• Workstation PIN Code: <span className="font-mono font-bold text-[var(--color-accent)]">{newPin}</span></p>
-                {newPassword && <p>• Password: <span className="text-emerald-400 font-bold">Updated</span></p>}
-              </div>
-
               <div className="pt-2 flex items-center justify-center gap-3">
-                {onSuccessUnlock && (
-                  <button
-                    onClick={() => {
-                      onSuccessUnlock({
-                        ...targetUser,
-                        pin: newPin
-                      });
-                      onClose();
-                    }}
-                    className="px-5 py-2.5 bg-[var(--color-accent)] text-black text-xs font-black uppercase tracking-wider rounded-xl shadow-lg hover:opacity-90 cursor-pointer"
-                  >
-                    Unlock Station Now
-                  </button>
-                )}
                 <button
                   onClick={onClose}
-                  className="px-4 py-2.5 bg-[var(--color-surface-2)] text-[var(--color-text)] text-xs font-bold rounded-xl border border-[var(--color-border)] hover:bg-[var(--color-surface-3)] cursor-pointer"
+                  className="px-5 py-2.5 bg-[var(--color-accent)] text-black text-xs font-black uppercase tracking-wider rounded-xl shadow-lg hover:opacity-90 cursor-pointer"
                 >
-                  Close
+                  Return to Login
                 </button>
               </div>
             </div>
