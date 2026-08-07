@@ -256,8 +256,8 @@ export const Retention: React.FC<RetentionProps> = ({
       // Search term filter
       const s = searchTerm.toLowerCase();
       return (
-        c.first.toLowerCase().includes(s) ||
-        c.last.toLowerCase().includes(s) ||
+        (c.first || "").toLowerCase().includes(s) ||
+        (c.last || "").toLowerCase().includes(s) ||
         (c.email && c.email.toLowerCase().includes(s)) ||
         (c.lender && c.lender.toLowerCase().includes(s))
       );

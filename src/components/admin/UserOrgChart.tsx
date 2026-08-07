@@ -37,8 +37,9 @@ export const UserOrgChart: React.FC<UserOrgChartProps> = ({
     // Map by full name or ID for reportingTo
     const nameToUser = new Map<string, UserType>();
     users.forEach(u => {
-      nameToUser.set(`${u.first} ${u.last}`.toLowerCase(), u);
-      nameToUser.set(u.first.toLowerCase(), u);
+      const full = `${u.first || ""} ${u.last || ""}`.trim().toLowerCase();
+      if (full) nameToUser.set(full, u);
+      if (u.first) nameToUser.set(u.first.toLowerCase(), u);
     });
 
     const childrenMap = new Map<string, UserType[]>();
@@ -70,13 +71,13 @@ export const UserOrgChart: React.FC<UserOrgChartProps> = ({
 
   // Helper to calculate client count
   const getClientCount = (u: UserType) => {
-    const uId = u.id.toLowerCase();
-    const uName = `${u.first} ${u.last}`.toLowerCase();
+    const uId = (u.id || "").toLowerCase();
+    const uName = `${u.first || ""} ${u.last || ""}`.trim().toLowerCase();
     return clients.filter(c => {
       const owner = (c.retentionOwner || "").toLowerCase();
       const agent = (c.agent || "").toLowerCase();
       const assignedBroker = (c.assignedBroker || "").toLowerCase();
-      return owner === uId || agent === uId || assignedBroker === uId || owner === uName || agent === uName;
+      return owner === uId || agent === uId || assignedBroker === uId || (uName && (owner === uName || agent === uName));
     }).length;
   };
 
@@ -89,7 +90,7 @@ export const UserOrgChart: React.FC<UserOrgChartProps> = ({
     // Filter check
     if (searchTerm.trim()) {
       const query = searchTerm.toLowerCase();
-      const nameMatch = `${user.first} ${user.last}`.toLowerCase().includes(query) || user.role.toLowerCase().includes(query);
+      const nameMatch = `${user.first || ""} ${user.last || ""}`.toLowerCase().includes(query) || (user.role || "").toLowerCase().includes(query);
       if (!nameMatch && reports.length === 0) return null;
     }
 

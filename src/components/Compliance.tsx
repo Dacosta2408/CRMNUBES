@@ -295,7 +295,8 @@ export const Compliance: React.FC<ComplianceProps> = ({
     return "Restricted to Own Files";
   };
 
-  const getUserMetrics = (u: SystemUser) => {
+  const getUserMetrics = (u: SystemUser | null | undefined) => {
+    if (!u) return { clientCount: 0, taskCount: 0, lastActivity: "No activity logged" };
     const fullName = `${u.first || ""}` + (u.last ? ` ${u.last}` : "");
     const trimmedFullName = fullName.trim();
     const lowerName = trimmedFullName.toLowerCase();
@@ -413,16 +414,16 @@ export const Compliance: React.FC<ComplianceProps> = ({
   const clientComplianceList = useMemo(() => {
     return clients.filter(c => {
       const agentId = c.assignedBroker || c.retentionOwner || c.agent || c.assignedTo;
-      const agentUser = agentId ? userRoster.find(u => `${u.first} ${u.last}` === agentId || u.id === agentId || u.first === agentId) : null;
-      const owner = agentUser ? `${agentUser.first} ${agentUser.last}` : agentId || `${currentUser.first} ${currentUser.last}`;
+      const agentUser = agentId ? userRoster.find(u => `${u.first || ""} ${u.last || ""}`.trim() === agentId || u.id === agentId || (u.first && u.first === agentId)) : null;
+      const owner = agentUser ? `${agentUser.first || ""} ${agentUser.last || ""}`.trim() : agentId || `${currentUser.first || ""} ${currentUser.last || ""}`.trim();
       const matchesAgent = activeAgentFilter === "All" || owner.toLowerCase().includes(activeAgentFilter.toLowerCase()) || activeAgentFilter.toLowerCase().includes(owner.toLowerCase()) || activeAgentFilter.toLowerCase().includes(owner.toLowerCase().split(' ')[0]);
       
       if (!matchesAgent) return false;
 
       const s = searchTerm.toLowerCase();
       return (
-        c.first.toLowerCase().includes(s) ||
-        c.last.toLowerCase().includes(s) ||
+        (c.first || "").toLowerCase().includes(s) ||
+        (c.last || "").toLowerCase().includes(s) ||
         (c.email && c.email.toLowerCase().includes(s)) ||
         (c.lender && c.lender.toLowerCase().includes(s)) ||
         (c.status && c.status.toLowerCase().includes(s))
@@ -445,8 +446,8 @@ export const Compliance: React.FC<ComplianceProps> = ({
 
     clients.forEach(c => {
       const agentId = c.assignedBroker || c.retentionOwner || c.agent || c.assignedTo;
-      const agentUser = agentId ? userRoster.find(u => `${u.first} ${u.last}` === agentId || u.id === agentId || u.first === agentId) : null;
-      const owner = agentUser ? `${agentUser.first} ${agentUser.last}` : agentId || `${currentUser.first} ${currentUser.last}`;
+      const agentUser = agentId ? userRoster.find(u => `${u.first || ""} ${u.last || ""}`.trim() === agentId || u.id === agentId || (u.first && u.first === agentId)) : null;
+      const owner = agentUser ? `${agentUser.first || ""} ${agentUser.last || ""}`.trim() : agentId || `${currentUser.first || ""} ${currentUser.last || ""}`.trim();
       const docStats = getClientDocStats(c.id);
 
       // Exception 1: In lender status but missing key documents
@@ -713,9 +714,9 @@ export const Compliance: React.FC<ComplianceProps> = ({
     const docStats = getClientDocStats(c.id);
     const clientDocs = docVault[c.id] || {};
     const agentId = c.retentionOwner || c.agent || c.assignedTo;
-    const agentUser = agentId ? userRoster.find(u => `${u.first} ${u.last}` === agentId || u.id === agentId || u.first === agentId) : null;
-    const owner = agentUser ? `${agentUser.first} ${agentUser.last}` : agentId || `${currentUser.first} ${currentUser.last}`;
-    const printedBy = `${currentUser.first} ${currentUser.last}`;
+    const agentUser = agentId ? userRoster.find(u => `${u.first || ""} ${u.last || ""}`.trim() === agentId || u.id === agentId || (u.first && u.first === agentId)) : null;
+    const owner = agentUser ? `${agentUser.first || ""} ${agentUser.last || ""}`.trim() : agentId || `${currentUser.first || ""} ${currentUser.last || ""}`.trim();
+    const printedBy = `${currentUser.first || ""} ${currentUser.last || ""}`.trim() || currentUser.email;
     const printedAt = new Date().toLocaleString();
     // GDS/TDS Calculations
     const income = Number(c.income || 0);
@@ -1119,8 +1120,8 @@ export const Compliance: React.FC<ComplianceProps> = ({
                       clientComplianceList.map(c => {
                         const docStats = getClientDocStats(c.id);
                         const agentId = c.assignedBroker || c.retentionOwner || c.agent || c.assignedTo;
-                        const agentUser = agentId ? userRoster.find(u => `${u.first} ${u.last}` === agentId || u.id === agentId || u.first === agentId) : null;
-                        const owner = agentUser ? `${agentUser.first} ${agentUser.last}` : agentId || `${currentUser.first} ${currentUser.last}`;
+                        const agentUser = agentId ? userRoster.find(u => `${u.first || ""} ${u.last || ""}`.trim() === agentId || u.id === agentId || (u.first && u.first === agentId)) : null;
+                        const owner = agentUser ? `${agentUser.first || ""} ${agentUser.last || ""}`.trim() : agentId || `${currentUser.first || ""} ${currentUser.last || ""}`.trim();
                         const verifiedScore = Math.round((docStats.totalVerified / docStats.totalRequired) * 100);
 
                         let indexColor = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";

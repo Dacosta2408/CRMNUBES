@@ -652,24 +652,25 @@ export const EmailView: React.FC<EmailViewProps> = ({
     
     // First match by exact email fields
     const directMatch = clients.find(c => 
-      c.email.toLowerCase() === testEmail || 
-      c.coEmail?.toLowerCase() === testEmail
+      (c.email || "").toLowerCase() === testEmail || 
+      (c.coEmail || "").toLowerCase() === testEmail
     );
     if (directMatch) return directMatch;
 
     // Fallback match on client match label
     if (email.clientMatch) {
+      const matchLabel = email.clientMatch.toLowerCase();
       const labelMatch = clients.find(c => 
-        c.last.toLowerCase().includes(email.clientMatch!.toLowerCase()) ||
-        c.first.toLowerCase().includes(email.clientMatch!.toLowerCase())
+        (c.last && c.last.toLowerCase().includes(matchLabel)) ||
+        (c.first && c.first.toLowerCase().includes(matchLabel))
       );
       if (labelMatch) return labelMatch;
     }
 
     // Match on content containing first/last names
     const wordMatch = clients.find(c => 
-      testName.includes(c.first.toLowerCase()) || 
-      testName.includes(c.last.toLowerCase())
+      (c.first && testName.includes(c.first.toLowerCase())) || 
+      (c.last && testName.includes(c.last.toLowerCase()))
     );
     return wordMatch;
   };
@@ -1921,9 +1922,9 @@ export const EmailView: React.FC<EmailViewProps> = ({
                             const q = clientSearchQuery.toLowerCase().trim();
                             if (!q) return true;
                             return (
-                              cl.first.toLowerCase().includes(q) ||
-                              cl.last.toLowerCase().includes(q) ||
-                              cl.email.toLowerCase().includes(q)
+                              (cl.first || "").toLowerCase().includes(q) ||
+                              (cl.last || "").toLowerCase().includes(q) ||
+                              (cl.email || "").toLowerCase().includes(q)
                             );
                           })
                           .map(cl => (
@@ -1931,10 +1932,10 @@ export const EmailView: React.FC<EmailViewProps> = ({
                               key={cl.id}
                               onClick={() => {
                                 setSelectedClientLink(cl.id);
-                                setClientSearchQuery(`${cl.first} ${cl.last}`);
+                                setClientSearchQuery(`${cl.first || ""} ${cl.last || ""}`.trim());
                                 setShowClientDropdown(false);
-                                if (!composeTo) setComposeTo(`${cl.first} ${cl.last}`);
-                                if (!composeToEmail) setComposeToEmail(cl.email);
+                                if (!composeTo) setComposeTo(`${cl.first || ""} ${cl.last || ""}`.trim());
+                                if (!composeToEmail) setComposeToEmail(cl.email || "");
                               }}
                               className="p-2 hover:bg-[var(--color-surface-2)] cursor-pointer text-xs flex items-center justify-between transition-colors"
                             >
@@ -1951,9 +1952,9 @@ export const EmailView: React.FC<EmailViewProps> = ({
                           const q = clientSearchQuery.toLowerCase().trim();
                           if (!q) return true;
                           return (
-                            cl.first.toLowerCase().includes(q) ||
-                            cl.last.toLowerCase().includes(q) ||
-                            cl.email.toLowerCase().includes(q)
+                            (cl.first || "").toLowerCase().includes(q) ||
+                            (cl.last || "").toLowerCase().includes(q) ||
+                            (cl.email || "").toLowerCase().includes(q)
                           );
                         }).length === 0 && (
                           <div className="p-2.5 text-xs text-[var(--color-text-muted)] italic">

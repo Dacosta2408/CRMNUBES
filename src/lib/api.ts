@@ -782,14 +782,18 @@ export async function archiveUser(userId: string, reason: string): Promise<{ suc
   const timestamp = new Date().toISOString();
   const currentUser = await getCurrentUser();
 
+  const roster = getLocalRoster();
+  const idx = roster.findIndex(u => u.id === userId);
+  if (idx >= 0 && (roster[idx].id === 'u_david' || (roster[idx].email || '').toLowerCase() === 'vdacosta247@gmail.com' || roster[idx].isProtected)) {
+    throw new Error("Cannot archive David Acosta — protected system administrator account.");
+  }
+
   const apiRes = await safeFetchJson<{ success: boolean; user: User }>(`/api/users/${encodeURIComponent(userId)}/archive`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reason, deletedBy: currentUser?.id })
   }, null);
 
-  const roster = getLocalRoster();
-  const idx = roster.findIndex(u => u.id === userId);
   let updatedUser: User;
 
   if (idx >= 0) {

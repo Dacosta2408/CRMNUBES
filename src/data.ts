@@ -116,6 +116,8 @@ export const DEFAULT_USERS: User[] = [
   }
 ];
 
+export const DEVELOPMENT_CANONICAL_USERS: User[] = DEFAULT_USERS;
+
 export const DEFAULT_TEMPLATES: EmailTemplate[] = [
   {
     id: 't-welcome',

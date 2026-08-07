@@ -111,3 +111,13 @@ export async function decryptValue(encryptedString: string, pin: string): Promis
     return null;
   }
 }
+
+/**
+ * Hashes a PIN code using SHA-256 with user salt.
+ */
+export async function hashPin(pin: string, salt: string = "gbkcrm-salt"): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pin + ":" + salt);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  return arrayBufferToBase64(hashBuffer);
+}

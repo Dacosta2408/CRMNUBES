@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { User } from "../types";
-import { DEFAULT_USERS } from "../data";
+import { DEFAULT_USERS, DEVELOPMENT_CANONICAL_USERS } from "../data";
 import { encryptValue, decryptValue } from "../lib/cryptoUtils";
 import { safeJsonParse } from "../lib/json";
-import { sanitizeCanonicalRoster } from "../lib/userUtils";
+import { sanitizeCanonicalRoster, normalizeUserRoster, ROSTER_SCHEMA_VERSION } from "../lib/userUtils";
 
 /**
  * ─── ENCRYPTION SCHEME FOR SECURE USER ROSTER STORAGE ───
@@ -54,14 +54,19 @@ export function useAuth({ showToast, logActivity }: UseAuthDeps) {
   const [pinInput, setPinInput] = useState<string>("");
   const [pinError, setPinError] = useState<string>("");
   const [userRoster, setUserRoster] = useState<User[]>(() => {
+    const storedVersion = localStorage.getItem("crm_roster_schema_version");
     const saved = localStorage.getItem("gbk_roster");
-    if (saved) {
+    if (saved && storedVersion === ROSTER_SCHEMA_VERSION) {
       const roster = safeJsonParse<User[]>(saved, []);
       if (Array.isArray(roster) && roster.length > 0) {
         return sanitizeCanonicalRoster(roster);
       }
     }
-    return sanitizeCanonicalRoster(DEFAULT_USERS);
+    const rawRoster = saved ? safeJsonParse<User[]>(saved, DEVELOPMENT_CANONICAL_USERS) : DEVELOPMENT_CANONICAL_USERS;
+    const normalized = sanitizeCanonicalRoster(rawRoster);
+    localStorage.setItem("gbk_roster", JSON.stringify(normalized));
+    localStorage.setItem("crm_roster_schema_version", ROSTER_SCHEMA_VERSION);
+    return normalized;
   });
   const [lockoutTries, setLockoutTries] = useState<number>(0);
   const [lockoutActive, setLockoutActive] = useState<boolean>(false);

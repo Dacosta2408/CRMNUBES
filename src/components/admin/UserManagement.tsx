@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { 
   Users, UserPlus, Search, Filter, Edit3, Shield, Key, Eye, 
   Trash2, ToggleLeft, ToggleRight, Check, X, Mail, Phone, Clock,
@@ -19,7 +19,8 @@ import {
 import { Avatar } from "../Avatar";
 import { generateRosterPDF, exportRosterCSV } from "../../lib/rosterPdfGenerator";
 import { DEFAULT_CLEARANCE_LEVELS, DEFAULT_MODULE_KEYS, ROLE_PRESETS } from "../../lib/clearanceMatrixDefaults";
-import { dispatchUserEvent, sanitizeCanonicalRoster } from "../../lib/userUtils";
+import { dispatchUserEvent, sanitizeCanonicalRoster, normalizeUserRoster, getRosterDiagnostics, DEVELOPMENT_CANONICAL_USERS, ROSTER_SCHEMA_VERSION, getUserFullName } from "../../lib/userUtils";
+import { hashPin } from "../../lib/cryptoUtils";
 import { UserActivityTimeline } from "./UserActivityTimeline";
 import { UserComparisonModal } from "./UserComparisonModal";
 import { UserOffboardingModal } from "./UserOffboardingModal";
@@ -81,6 +82,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [showComparisonModal, setShowComparisonModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [showTagsModal, setShowTagsModal] = useState(false);
+  const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false);
+  const [confirmResetRoster, setConfirmResetRoster] = useState(false);
   const [offboardingUser, setOffboardingUser] = useState<UserType | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([
     "Senior Broker", "GTA East", "Commercial", "High Performer", "VIP Handler", "Needs Renewal", "Probation"
@@ -91,6 +94,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [editingUser, setEditingUser] = useState<UserType | null>(null);
   const [credentialResetUser, setCredentialResetUser] = useState<UserType | null>(null);
   const [resetPinInput, setResetPinInput] = useState<string>("");
+
+  // Ensure roster is always sanitized against blocked accounts and invalid records
+  useEffect(() => {
+    const sanitized = sanitizeCanonicalRoster(userRoster);
+    if (sanitized.length !== userRoster.length) {
+      setUserRoster(sanitized);
+    }
+  }, [userRoster, setUserRoster]);
 
   // Single authoritative roster save & event dispatch helper
   const saveAndNotifyRoster = (newRosterOrUpdater: UserType[] | ((prev: UserType[]) => UserType[])) => {
@@ -356,12 +367,19 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   // Filtered roster calculation
   const filteredRoster = useMemo(() => {
     return userRoster.filter(u => {
+      const email = (u.email || "").trim().toLowerCase();
+      if (email === "dacosta@gbkfinancial.ca" || email === "sjenkins@gbkfinancial.ca") {
+        return false;
+      }
+
       if (u.role === "Email User" || u.userLabel === "email_user" || u.id?.startsWith("email_")) {
         return false;
       }
 
       const search = searchTerm.toLowerCase().trim();
+      const fullName = getUserFullName(u);
       const nameMatch = !search || 
+        fullName.toLowerCase().includes(search) ||
         `${u.first || ""} ${u.last || ""}`.toLowerCase().includes(search) ||
         (u.email || "").toLowerCase().includes(search) ||
         (u.brokerage || "").toLowerCase().includes(search) ||
@@ -1019,6 +1037,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
               </button>
 
               <button
+                onClick={() => setShowDiagnosticsModal(true)}
+                className="px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" /> Diagnostics
+              </button>
+
+              <button
                 onClick={() => setShowExportModal(true)}
                 className="px-3 py-1.5 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] border border-[var(--color-border)] text-[var(--color-text)] rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
               >
@@ -1150,9 +1175,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
                         <td className="p-3">
                           <div className="flex items-center gap-3">
-                            <Avatar name={`${u.first || ""} ${u.last || ""}`} src={u.photo || u.profilePhoto} size="md" />
+                            <Avatar name={getUserFullName(u)} src={u.photo || u.profilePhoto} size="md" />
                             <div>
-                              <p className="font-bold text-[var(--color-text)]">{u.first} {u.last}</p>
+                              <p className="font-bold text-[var(--color-text)]">{getUserFullName(u)}</p>
                               <p className="text-[10px] text-[var(--color-text-faint)]">{u.email}</p>
                             </div>
                           </div>
@@ -1330,9 +1355,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                   <div>
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
-                        <Avatar name={`${b.first} ${b.last}`} src={b.photo || b.profilePhoto} size="lg" />
+                        <Avatar name={getUserFullName(b)} src={b.photo || b.profilePhoto} size="lg" />
                         <div>
-                          <h4 className="font-extrabold text-sm text-[var(--color-text)]">{b.first} {b.last}</h4>
+                          <h4 className="font-extrabold text-sm text-[var(--color-text)]">{getUserFullName(b)}</h4>
                           <span className="text-[10px] bg-[var(--color-accent)]/15 text-[var(--color-accent)] border border-[var(--color-accent)]/20 px-2 py-0.5 rounded font-black uppercase">
                             {b.brokerTier || "Tier 1 - Managing Broker"}
                           </span>
@@ -1457,9 +1482,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                 <div key={pending.id} className="bg-[var(--color-surface)] border border-[var(--color-border)]/70 rounded-xl p-5 shadow-lg space-y-4">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <Avatar name={`${pending.first} ${pending.last}`} src={pending.photo || pending.profilePhoto} size="md" />
+                      <Avatar name={getUserFullName(pending)} src={pending.photo || pending.profilePhoto} size="md" />
                       <div>
-                        <h4 className="font-bold text-sm text-[var(--color-text)]">{pending.first} {pending.last}</h4>
+                        <h4 className="font-bold text-sm text-[var(--color-text)]">{getUserFullName(pending)}</h4>
                         <p className="text-[10px] text-[var(--color-text-faint)]">{pending.email} • {pending.role}</p>
                       </div>
                     </div>
@@ -1640,9 +1665,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             <div className="p-6 space-y-6">
               {/* Header Info */}
               <div className="flex items-center gap-4 bg-[var(--color-surface-2)] p-4 rounded-xl border border-[var(--color-border)]/50">
-                <Avatar name={`${profileUserModal.first} ${profileUserModal.last}`} src={profileUserModal.photo || profileUserModal.profilePhoto} size="lg" />
+                <Avatar name={getUserFullName(profileUserModal)} src={profileUserModal.photo || profileUserModal.profilePhoto} size="lg" />
                 <div>
-                  <h3 className="text-base font-extrabold text-[var(--color-text)]">{profileUserModal.first} {profileUserModal.last}</h3>
+                  <h3 className="text-base font-extrabold text-[var(--color-text)]">{getUserFullName(profileUserModal)}</h3>
                   <p className="text-xs text-[var(--color-text-faint)]">{profileUserModal.email} • {profileUserModal.phone || "No phone registered"}</p>
                   <div className="flex items-center gap-2 mt-2">
                     <span className="text-[10px] bg-[var(--color-accent)]/15 text-[var(--color-accent)] border border-[var(--color-accent)]/20 px-2 py-0.5 rounded font-black uppercase">
@@ -1973,7 +1998,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                           }}
                           className="cursor-pointer"
                         />
-                        <span className="font-bold text-[var(--color-text)]">{u.first} {u.last}</span>
+                        <span className="font-bold text-[var(--color-text)]">{getUserFullName(u)}</span>
                         <span className="text-[10px] text-[var(--color-text-faint)]">({u.role})</span>
                       </div>
                       <span className="text-[10px] text-[var(--color-text-faint)]">{u.email}</span>
@@ -2272,7 +2297,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                       >
                         <option value="">-- Choose Senior Mentor --</option>
                         {userRoster.map(u => (
-                          <option key={u.id} value={u.id}>{u.first} {u.last} ({u.role})</option>
+                          <option key={u.id} value={u.id}>{getUserFullName(u)} ({u.role})</option>
                         ))}
                       </select>
                     </div>
@@ -2711,9 +2736,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                       <tr key={u.id} className="hover:bg-[var(--color-surface-2)]/30 transition-colors">
                         <td className="p-3.5">
                           <div className="flex items-center gap-3">
-                            <Avatar name={`${u.first || ""} ${u.last || ""}`} src={u.photo || u.profilePhoto} size="md" />
+                            <Avatar name={getUserFullName(u)} src={u.photo || u.profilePhoto} size="md" />
                             <div>
-                              <p className="font-bold text-[var(--color-text)]">{u.first} {u.last}</p>
+                              <p className="font-bold text-[var(--color-text)]">{getUserFullName(u)}</p>
                               <p className="text-[10px] text-[var(--color-text-faint)]">{u.email}</p>
                             </div>
                           </div>
@@ -2845,9 +2870,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             <div className="p-6 space-y-5">
               {/* User Profile Summary */}
               <div className="flex items-center gap-4 bg-[var(--color-surface-2)] p-4 rounded-xl border border-[var(--color-border)]/50">
-                <Avatar name={`${deletingUser.first} ${deletingUser.last}`} src={deletingUser.photo || deletingUser.profilePhoto} size="lg" />
+                <Avatar name={getUserFullName(deletingUser)} src={deletingUser.photo || deletingUser.profilePhoto} size="lg" />
                 <div>
-                  <h4 className="font-extrabold text-sm text-[var(--color-text)]">{deletingUser.first} {deletingUser.last}</h4>
+                  <h4 className="font-extrabold text-sm text-[var(--color-text)]">{getUserFullName(deletingUser)}</h4>
                   <p className="text-xs text-[var(--color-text-faint)]">{deletingUser.email}</p>
                   <div className="flex items-center gap-2 mt-1.5">
                     <span className="text-[10px] bg-[var(--color-accent)]/15 text-[var(--color-accent)] border border-[var(--color-accent)]/20 px-2 py-0.5 rounded font-black uppercase">
@@ -3105,7 +3130,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
               <div className="flex items-center gap-2">
                 <Key className="w-5 h-5 text-amber-400" />
                 <h3 className="font-extrabold text-[var(--color-text)] uppercase tracking-wider text-xs">
-                  Reset Credentials: {credentialResetUser.first} {credentialResetUser.last}
+                  Reset Credentials: {getUserFullName(credentialResetUser)}
                 </h3>
               </div>
               <button onClick={() => setCredentialResetUser(null)} className="text-[var(--color-text-faint)] hover:text-[var(--color-text)] cursor-pointer">✕</button>
@@ -3113,9 +3138,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
             <div className="p-6 space-y-4">
               <div className="p-3 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl flex items-center gap-3">
-                <Avatar name={`${credentialResetUser.first} ${credentialResetUser.last}`} src={credentialResetUser.photo || credentialResetUser.profilePhoto} size="sm" />
+                <Avatar name={getUserFullName(credentialResetUser)} src={credentialResetUser.photo || credentialResetUser.profilePhoto} size="sm" />
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-[var(--color-text)]">{credentialResetUser.first} {credentialResetUser.last}</p>
+                  <p className="text-xs font-black text-[var(--color-text)]">{getUserFullName(credentialResetUser)}</p>
                   <p className="text-[10px] text-[var(--color-text-faint)]">{credentialResetUser.email || "No email address"}</p>
                 </div>
               </div>
@@ -3153,7 +3178,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    showToast(`Password reset link dispatched to ${credentialResetUser.email}!`, "success", "✉️");
+                    showToast(`Password reset link dispatched to ${credentialResetUser.email}!`, "success");
                   }}
                   className="w-full py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs rounded-lg border border-amber-500/30 transition-all cursor-pointer"
                 >
@@ -3184,7 +3209,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                         pinHash
                       };
                       saveAndNotifyRoster(prev => prev.map(u => u.id === credentialResetUser.id ? updatedUser : u));
-                      showToast(`Updated PIN code for ${credentialResetUser.first} ${credentialResetUser.last}.`, "success", "🔑");
+                      showToast(`Updated PIN code for ${credentialResetUser.first} ${credentialResetUser.last}.`, "success");
                       setCredentialResetUser(null);
                     } catch (e) {
                       showToast("Error updating PIN code.", "error");
@@ -3199,6 +3224,165 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           </div>
         </div>
       )}
+
+      {/* ─── ROSTER DIAGNOSTICS & AUDIT MODAL ─── */}
+      {showDiagnosticsModal && (() => {
+        const rawRosterFromStorage = (function() {
+          try {
+            return JSON.parse(localStorage.getItem("gbk_roster") || "[]");
+          } catch (e) {
+            return [];
+          }
+        })();
+        const diag = getRosterDiagnostics(rawRosterFromStorage, "localStorage ('gbk_roster')");
+        const schemaVer = localStorage.getItem("crm_roster_schema_version") || "v1";
+
+        return (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[var(--color-surface)] border border-cyan-500/30 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="p-5 border-b border-[var(--color-border)] flex items-center justify-between bg-cyan-950/20">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-[var(--color-text)]">Roster Diagnostics &amp; Audit</h3>
+                    <p className="text-xs text-[var(--color-text-muted)]">Live inspection of canonical roster &amp; persistence layer</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowDiagnosticsModal(false)}
+                  className="p-2 hover:bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] rounded-xl transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-6">
+                {/* Meta Banner */}
+                <div className="grid grid-cols-2 gap-3 bg-[var(--color-surface-2)] p-4 rounded-xl border border-[var(--color-border)] text-xs">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-[var(--color-text-faint)] block">Data Source</span>
+                    <span className="font-mono text-[var(--color-accent)] font-bold">{diag.source}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-[var(--color-text-faint)] block">Schema Version</span>
+                    <span className="font-mono text-cyan-400 font-bold">{schemaVer}</span>
+                  </div>
+                </div>
+
+                {/* Metrics Breakdown */}
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-[var(--color-text-muted)] mb-3">Normalization Metrics</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-[var(--color-surface-2)] p-3 rounded-xl border border-[var(--color-border)]">
+                      <span className="text-[10px] font-bold text-[var(--color-text-faint)] block uppercase">Raw Loaded</span>
+                      <span className="text-lg font-black text-[var(--color-text)]">{diag.rawCount}</span>
+                    </div>
+                    <div className="bg-[var(--color-surface-2)] p-3 rounded-xl border border-[var(--color-border)]">
+                      <span className="text-[10px] font-bold text-emerald-400 block uppercase">Active Roster</span>
+                      <span className="text-lg font-black text-emerald-400">{diag.activeCount}</span>
+                    </div>
+                    <div className="bg-[var(--color-surface-2)] p-3 rounded-xl border border-[var(--color-border)]">
+                      <span className="text-[10px] font-bold text-amber-400 block uppercase">Duplicate IDs/Emails</span>
+                      <span className="text-lg font-black text-amber-400">{diag.duplicateIdsRemoved + diag.duplicateEmailsRemoved}</span>
+                    </div>
+                    <div className="bg-[var(--color-surface-2)] p-3 rounded-xl border border-[var(--color-border)]">
+                      <span className="text-[10px] font-bold text-purple-400 block uppercase">Archived / Deleted</span>
+                      <span className="text-lg font-black text-purple-400">{diag.archivedCount + diag.deletedCount}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Active Roster List */}
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-[var(--color-text-muted)] mb-3">
+                    Active Development Roster ({diag.users.filter(u => u.status === 'active').length})
+                  </h4>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {diag.users.filter(u => u.status === 'active').map(u => (
+                      <div key={u.id} className="flex items-center justify-between p-2.5 rounded-xl bg-[var(--color-surface-2)] border border-[var(--color-border)] text-xs">
+                        <div className="flex items-center gap-2.5">
+                          <Avatar name={getUserFullName(u)} src={u.photo} size="sm" />
+                          <div>
+                            <span className="font-bold text-[var(--color-text)] block">{getUserFullName(u)}</span>
+                            <span className="text-[10px] text-[var(--color-text-muted)] font-mono">{u.email}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[var(--color-accent)]/15 text-[var(--color-accent)] uppercase block">
+                            {u.role}
+                          </span>
+                          <span className="text-[9px] text-[var(--color-text-faint)] font-mono">{u.id}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Development Reset Option */}
+                <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-xl space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <h5 className="text-xs font-bold text-amber-300 uppercase">Reset Roster to Canonical 7</h5>
+                      <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
+                        Restores the exact 7 approved development accounts (David Acosta, Tim Brown, Wayne MacLeod, Jeff Brown, Jamey Brown, Matt Brown, Jason Myszkowski) and purges any stale persistent entries.
+                      </p>
+                    </div>
+                  </div>
+
+                  {confirmResetRoster ? (
+                    <div className="flex items-center justify-between bg-amber-950/40 p-3 rounded-lg border border-amber-500/40">
+                      <span className="text-xs font-bold text-amber-200">Confirm Reset Development Roster?</span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setConfirmResetRoster(false)}
+                          className="px-3 py-1.5 bg-[var(--color-surface-2)] text-[var(--color-text)] text-xs font-bold rounded-lg hover:bg-[var(--color-surface-3)] cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => {
+                            localStorage.setItem("gbk_roster", JSON.stringify(DEVELOPMENT_CANONICAL_USERS));
+                            localStorage.setItem("crm_roster_schema_version", ROSTER_SCHEMA_VERSION);
+                            saveAndNotifyRoster(DEVELOPMENT_CANONICAL_USERS);
+                            showToast("Roster reset to Canonical 7 Development Users!", "success");
+                            setConfirmResetRoster(false);
+                            setShowDiagnosticsModal(false);
+                          }}
+                          className="px-3 py-1.5 bg-amber-500 text-black text-xs font-black uppercase rounded-lg hover:bg-amber-400 cursor-pointer"
+                        >
+                          Yes, Reset Now
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmResetRoster(true)}
+                      className="w-full py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                    >
+                      Reset Roster to Canonical 7
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-[var(--color-border)] flex justify-end bg-[var(--color-surface-2)]">
+                <button
+                  onClick={() => setShowDiagnosticsModal(false)}
+                  className="px-5 py-2 bg-[var(--color-surface-3)] text-[var(--color-text)] text-xs font-bold uppercase rounded-xl hover:opacity-90 cursor-pointer"
+                >
+                  Close Diagnostics
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );
