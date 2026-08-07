@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { crmController } from "../controllers/crmController.js";
 import { authController } from "../controllers/authController.js";
+import { integrationController } from "../controllers/integrationController.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 
 export const crmRouter = Router();
@@ -89,3 +90,39 @@ crmRouter.get("/audit-logs", asyncHandler(crmController.getAuditLogs));
 // AI Backend Routes
 crmRouter.post("/ai/summarize-client", asyncHandler(crmController.summarizeClient));
 crmRouter.post("/ai/generate-note", asyncHandler(crmController.generateNote));
+
+// ─── INTEGRATIONS & CONNECTIONS ENDPOINTS ───
+crmRouter.get("/integrations/definitions", asyncHandler(integrationController.getDefinitions));
+crmRouter.get("/integrations/connections", asyncHandler(integrationController.getConnections));
+crmRouter.get("/integrations/:id/health", asyncHandler(integrationController.getConnectionHealth));
+crmRouter.post("/integrations/:id/connect", asyncHandler(integrationController.connectIntegration));
+crmRouter.post("/integrations/:id/disconnect", asyncHandler(integrationController.disconnectIntegration));
+crmRouter.post("/integrations/:id/test", asyncHandler(integrationController.testIntegration));
+
+// ─── APPLICATION API KEYS ENDPOINTS ───
+crmRouter.get("/api-keys", asyncHandler(integrationController.getApiKeys));
+crmRouter.post("/api-keys", asyncHandler(integrationController.createApiKey));
+crmRouter.post("/api-keys/:id/revoke", asyncHandler(integrationController.revokeApiKey));
+crmRouter.post("/api-keys/:id/rotate", asyncHandler(integrationController.rotateApiKey));
+crmRouter.get("/api-keys/:id/audit", asyncHandler(integrationController.getApiKeyAudit));
+
+// ─── AI PROVIDER CREDENTIALS & ABSTRACTION ───
+crmRouter.get("/ai/providers", asyncHandler(integrationController.getAIProviders));
+crmRouter.post("/ai/providers/:id/configure", asyncHandler(integrationController.configureAIProvider));
+crmRouter.post("/ai/providers/:id/test", asyncHandler(integrationController.testAIProvider));
+crmRouter.post("/ai/providers/:id/rotate", asyncHandler(integrationController.rotateAIProviderCredential));
+crmRouter.post("/ai/providers/:id/disconnect", asyncHandler(integrationController.disconnectAIProvider));
+crmRouter.post("/ai/completion", asyncHandler(integrationController.generateAICompletion));
+
+// ─── WEBHOOK MANAGEMENT ENDPOINTS ───
+crmRouter.get("/webhooks", asyncHandler(integrationController.getWebhooks));
+crmRouter.post("/webhooks", asyncHandler(integrationController.createWebhook));
+crmRouter.put("/webhooks/:id", asyncHandler(integrationController.updateWebhook));
+crmRouter.delete("/webhooks/:id", asyncHandler(integrationController.deleteWebhook));
+crmRouter.post("/webhooks/:id/test", asyncHandler(integrationController.testWebhook));
+crmRouter.post("/webhooks/:id/rotate-secret", asyncHandler(integrationController.rotateWebhookSecret));
+crmRouter.get("/webhooks/:id/deliveries", asyncHandler(integrationController.getWebhookDeliveries));
+
+// ─── INTEGRATION LOGS ENDPOINTS ───
+crmRouter.get("/integrations/logs", asyncHandler(integrationController.getIntegrationLogs));
+

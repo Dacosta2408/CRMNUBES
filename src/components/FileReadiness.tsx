@@ -209,8 +209,15 @@ export const FileReadiness: React.FC<FileReadinessProps> = ({
       }
 
       // Broker
-      if (brokerFilter !== "all" && item.client.agent !== brokerFilter) {
-        return false;
+      if (brokerFilter !== "all") {
+        const bLower = brokerFilter.toLowerCase();
+        const matches =
+          item.client.assignedBrokerId === brokerFilter ||
+          (item.client.assignedBrokerName && item.client.assignedBrokerName.toLowerCase() === bLower) ||
+          (item.client.assignedBroker && item.client.assignedBroker.toLowerCase() === bLower) ||
+          (item.client.agent && item.client.agent.toLowerCase() === bLower) ||
+          (item.client.assignedTo && item.client.assignedTo.toLowerCase() === bLower);
+        if (!matches) return false;
       }
 
       // File Type

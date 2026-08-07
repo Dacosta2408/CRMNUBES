@@ -149,31 +149,51 @@ export const ClientsList: React.FC<ClientsListProps> = memo(({
 
           <button 
             onClick={onOpenAIIntake}
-            className="gradient-card nature ocean-btn-edge rounded-lg px-4 py-2 text-xs flex items-center gap-2 cursor-pointer transition-all duration-200"
+            className="rounded-full px-4 py-2 text-xs flex items-center gap-2 cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
             style={{
-              background: "var(--grad-nature)",
-              color: "white",
+              background: "rgba(0, 114, 255, 0.08)",
+              color: "#ffffff",
               fontWeight: "600",
-              border: "1px solid rgba(86, 171, 47, 0.35)",
-              boxShadow: "0 0 16px rgba(86, 171, 47, 0.20)"
+              border: "1.5px solid #0072FF",
+              boxShadow: "0 0 12px rgba(0, 114, 255, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.15)",
+              backdropFilter: "blur(10px)",
+              WebkitBackdropFilter: "blur(10px)"
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLElement).style.background = "rgba(0, 114, 255, 0.18)";
+              (e.currentTarget as HTMLElement).style.boxShadow = "0 0 18px rgba(0, 114, 255, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.25)";
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLElement).style.background = "rgba(0, 114, 255, 0.08)";
+              (e.currentTarget as HTMLElement).style.boxShadow = "0 0 12px rgba(0, 114, 255, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.15)";
             }}
           >
-            <Sparkles className="w-4 h-4" />
+            <Sparkles className="w-4 h-4 text-[#0072FF]" />
             <span>AI Extraction</span>
           </button>
 
           <button 
             onClick={onAddClient}
-            className="gradient-card nature ocean-btn-edge rounded-lg px-4 py-2 text-xs flex items-center gap-2 cursor-pointer transition-all duration-200"
+            className="rounded-full px-4 py-2 text-xs flex items-center gap-2 cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
             style={{
-              background: "var(--grad-nature)",
-              color: "white",
+              background: "rgba(0, 114, 255, 0.08)",
+              color: "#ffffff",
               fontWeight: "600",
-              border: "1px solid rgba(86, 171, 47, 0.35)",
-              boxShadow: "0 0 16px rgba(86, 171, 47, 0.20)"
+              border: "1.5px solid #0072FF",
+              boxShadow: "0 0 12px rgba(0, 114, 255, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.15)",
+              backdropFilter: "blur(10px)",
+              WebkitBackdropFilter: "blur(10px)"
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLElement).style.background = "rgba(0, 114, 255, 0.18)";
+              (e.currentTarget as HTMLElement).style.boxShadow = "0 0 18px rgba(0, 114, 255, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.25)";
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLElement).style.background = "rgba(0, 114, 255, 0.08)";
+              (e.currentTarget as HTMLElement).style.boxShadow = "0 0 12px rgba(0, 114, 255, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.15)";
             }}
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4 text-[#0072FF]" />
             <span>+ Add Client</span>
           </button>
         </div>

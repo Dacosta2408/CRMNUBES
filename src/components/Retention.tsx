@@ -226,16 +226,18 @@ export const Retention: React.FC<RetentionProps> = ({
     };
   }, [clients]);
 
-  // Match owner by checking assignedBroker, retentionOwner and agent fields
+  // Match owner by checking assignedBrokerId, assignedBrokerName, assignedBroker, retentionOwner and agent fields
   const matchesAgent = useMemo(() => {
     return (c: Client) => {
       if (activeAgentFilter === "All") return true;
+      if (c.assignedBrokerId === activeAgentFilter) return true;
       const target = activeAgentFilter.toLowerCase();
+      const brokerName = c.assignedBrokerName ? c.assignedBrokerName.toLowerCase() : "";
       const broker = c.assignedBroker ? c.assignedBroker.toLowerCase() : "";
       const owner = c.retentionOwner ? c.retentionOwner.toLowerCase() : "";
       const ag = c.agent ? c.agent.toLowerCase() : "";
-      if (broker === target || owner === target || ag === target) return true;
-      if (!c.assignedBroker && !c.retentionOwner && !c.agent && c.source && c.source.toLowerCase().includes(target)) {
+      if (brokerName === target || broker === target || owner === target || ag === target) return true;
+      if (!c.assignedBrokerId && !c.assignedBroker && !c.retentionOwner && !c.agent && c.source && c.source.toLowerCase().includes(target)) {
         return true;
       }
       return false;

@@ -2,6 +2,8 @@ export interface Client {
   id: string;
   first: string;
   last: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   cell?: string;
   dob?: string;
@@ -33,11 +35,16 @@ export interface Client {
   referredBy?: string; // id of Partner
   appData?: Record<string, any>;
   aiSummary?: string;
-  // Retention Fields (7.2)
+  // Assignment Fields (Authoritative relationship: assignedBrokerId)
+  assignedBrokerId?: string;
+  assignedBrokerName?: string;
+  assignedBrokerUpdatedAt?: string;
+  assignedBrokerUpdatedBy?: string;
+  // Retention & Historical Fields
   assignedBroker?: string;
-  /** @deprecated Use assignedBroker instead */
+  /** @deprecated Use assignedBrokerId instead */
   assignedTo?: string;
-  /** @deprecated Use assignedBroker instead */
+  /** @deprecated Use assignedBrokerId instead */
   retentionOwner?: string;
   lastContactedDate?: string;
   nextFollowUpDate?: string;

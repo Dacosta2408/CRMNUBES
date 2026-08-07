@@ -272,17 +272,25 @@ export const DeploymentPanel: React.FC<DeploymentPanelProps> = ({
       const token = (import.meta as any).env?.VITE_BRIDGE_TOKEN || "gbk-local-secret-2024";
       const res = await fetch(`${BRIDGE_URL}/api/health`, {
         method: "GET",
-        headers: { "x-gbk-token": token },
+        headers: { "x-gbk-token": token, "Accept": "application/json" },
         signal: AbortSignal.timeout(2000)
       });
       if (res.ok) {
-        const data = await res.json();
-        setPathValid(data.pathValid === true);
+        const text = await res.text();
+        if (text && text.trim().startsWith("{")) {
+          try {
+            const data = JSON.parse(text.trim());
+            setPathValid(data.pathValid === true || data.ok === true || data.status === "ok");
+          } catch {
+            setPathValid(false);
+          }
+        } else {
+          setPathValid(false);
+        }
       } else {
         setPathValid(false);
       }
-    } catch (err) {
-      console.error("Path check error:", err);
+    } catch {
       setPathValid(false);
     } finally {
       setPathValidLoading(false);
@@ -303,17 +311,28 @@ export const DeploymentPanel: React.FC<DeploymentPanelProps> = ({
         const token = (import.meta as any).env?.VITE_BRIDGE_TOKEN || "gbk-local-secret-2024";
         const verRes = await fetch(`${BRIDGE_URL}/api/version`, {
           method: "GET",
-          headers: { "x-gbk-token": token }
+          headers: { "x-gbk-token": token, "Accept": "application/json" }
         });
         if (verRes.ok) {
-          const verData = await verRes.json();
-          setBridgeVersionState(verData.version);
-          setVersionMismatchState(verData.version !== currentVersion);
+          const verText = await verRes.text();
+          if (verText && verText.trim().startsWith("{")) {
+            try {
+              const verData = JSON.parse(verText.trim());
+              setBridgeVersionState(verData.version);
+              setVersionMismatchState(verData.version !== currentVersion);
+            } catch {
+              setBridgeVersionState(null);
+              setVersionMismatchState(true);
+            }
+          } else {
+            setBridgeVersionState(null);
+            setVersionMismatchState(true);
+          }
         } else {
           setBridgeVersionState(null);
           setVersionMismatchState(true);
         }
-      } catch (err) {
+      } catch {
         setBridgeVersionState(null);
         setVersionMismatchState(true);
       }

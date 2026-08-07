@@ -89,6 +89,35 @@ export async function updateClientApi(id: string, updates: any): Promise<any | n
   }, null);
 }
 
+export async function updateClientAssignmentApi(
+  clientId: string,
+  assignmentDataOrBrokerId: {
+    assignedBrokerId?: string | null;
+    assignedBrokerName?: string;
+    updatedBy?: string;
+  } | string | null,
+  assignedBrokerNameOrUpdatedBy?: string,
+  updatedByParam?: string
+): Promise<any | null> {
+  let bodyObj: Record<string, any> = {};
+
+  if (typeof assignmentDataOrBrokerId === "object" && assignmentDataOrBrokerId !== null) {
+    bodyObj = assignmentDataOrBrokerId;
+  } else {
+    bodyObj = {
+      assignedBrokerId: assignmentDataOrBrokerId || null,
+      assignedBrokerName: assignedBrokerNameOrUpdatedBy,
+      updatedBy: updatedByParam
+    };
+  }
+
+  return safeFetchJson<any>(`/api/clients/${encodeURIComponent(clientId)}/assignment`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(bodyObj)
+  }, null);
+}
+
 // Tasks API
 export async function fetchTasksApi(): Promise<any[] | null> {
   return safeFetchJson<any[]>("/api/tasks", undefined, null);
@@ -182,16 +211,42 @@ export async function getCurrentUser(): Promise<User | null> {
 
 export async function getActiveUsers(): Promise<User[]> {
   const serverUsers = await safeFetchJson<User[]>("/api/users/active", undefined, null);
+  const statuses = getLocalUserStatuses();
+
   if (Array.isArray(serverUsers) && serverUsers.length > 0) {
-    return serverUsers.filter(u => (u.status || '').toLowerCase() === 'active');
+    return serverUsers
+      .filter(u => (u.status || '').toLowerCase() === 'active')
+      .map(u => {
+        const st = statuses[u.id];
+        if (st && st.availability) {
+          return {
+            ...u,
+            availability: st.availability,
+            userStatus: st
+          };
+        }
+        return u;
+      });
   }
 
   // Adapter fallback: filter active users from local roster
   const roster = getLocalRoster();
-  return roster.filter(u => {
-    const st = (u.status || '').toLowerCase();
-    return st === 'active' || st === 'online';
-  });
+  return roster
+    .filter(u => {
+      const st = (u.status || '').toLowerCase();
+      return st === 'active' || st === 'online';
+    })
+    .map(u => {
+      const st = statuses[u.id];
+      if (st && st.availability) {
+        return {
+          ...u,
+          availability: st.availability,
+          userStatus: st
+        };
+      }
+      return u;
+    });
 }
 export const getActiveUsersApi = getActiveUsers;
 
@@ -1201,5 +1256,151 @@ export async function recoverProtectedDeveloperAccount(): Promise<{ success: boo
 
   return { success: true, user: devUser };
 }
+
+// ─── INTEGRATIONS API HELPERS ───
+
+export async function fetchIntegrationDefinitions(): Promise<any[]> {
+  return safeFetchJson<any[]>("/api/integrations/definitions", undefined, []);
+}
+
+export async function fetchActiveConnections(): Promise<any[]> {
+  return safeFetchJson<any[]>("/api/integrations/connections", undefined, []);
+}
+
+export async function fetchIntegrationHealth(id: string): Promise<any> {
+  return safeFetchJson<any>(`/api/integrations/${encodeURIComponent(id)}/health`, undefined, { status: "unknown" });
+}
+
+export async function connectIntegrationApi(id: string, data: { accountLabel?: string; credentials?: any; connectedBy?: string }): Promise<any> {
+  return safeFetchJson<any>(`/api/integrations/${encodeURIComponent(id)}/connect`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  }, null);
+}
+
+export async function disconnectIntegrationApi(id: string): Promise<any> {
+  return safeFetchJson<any>(`/api/integrations/${encodeURIComponent(id)}/disconnect`, {
+    method: "POST"
+  }, null);
+}
+
+export async function testIntegrationApi(id: string): Promise<any> {
+  return safeFetchJson<any>(`/api/integrations/${encodeURIComponent(id)}/test`, {
+    method: "POST"
+  }, null);
+}
+
+export async function fetchApiKeys(): Promise<any[]> {
+  return safeFetchJson<any[]>("/api/api-keys", undefined, []);
+}
+
+export async function createApiKeyApi(data: { name: string; scopes: string[]; expirationDate?: string; rateLimit?: number; createdBy?: string }): Promise<any> {
+  return safeFetchJson<any>("/api/api-keys", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  }, null);
+}
+
+export async function revokeApiKeyApi(id: string): Promise<any> {
+  return safeFetchJson<any>(`/api/api-keys/${encodeURIComponent(id)}/revoke`, {
+    method: "POST"
+  }, null);
+}
+
+export async function rotateApiKeyApi(id: string): Promise<any> {
+  return safeFetchJson<any>(`/api/api-keys/${encodeURIComponent(id)}/rotate`, {
+    method: "POST"
+  }, null);
+}
+
+export async function fetchApiKeyAudit(id: string): Promise<any> {
+  return safeFetchJson<any>(`/api/api-keys/${encodeURIComponent(id)}/audit`, undefined, null);
+}
+
+export async function fetchAIProviders(): Promise<any[]> {
+  return safeFetchJson<any[]>("/api/ai/providers", undefined, []);
+}
+
+export async function configureAIProviderApi(id: string, data: { enabled?: boolean; selectedModel?: string; credential?: string }): Promise<any> {
+  return safeFetchJson<any>(`/api/ai/providers/${encodeURIComponent(id)}/configure`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  }, null);
+}
+
+export async function testAIProviderApi(id: string): Promise<any> {
+  return safeFetchJson<any>(`/api/ai/providers/${encodeURIComponent(id)}/test`, {
+    method: "POST"
+  }, null);
+}
+
+export async function rotateAIProviderApi(id: string, newCredential: string): Promise<any> {
+  return safeFetchJson<any>(`/api/ai/providers/${encodeURIComponent(id)}/rotate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ newCredential })
+  }, null);
+}
+
+export async function disconnectAIProviderApi(id: string): Promise<any> {
+  return safeFetchJson<any>(`/api/ai/providers/${encodeURIComponent(id)}/disconnect`, {
+    method: "POST"
+  }, null);
+}
+
+export async function fetchWebhooks(): Promise<any[]> {
+  return safeFetchJson<any[]>("/api/webhooks", undefined, []);
+}
+
+export async function createWebhookApi(data: { name: string; targetUrl: string; events: string[]; createdBy?: string }): Promise<any> {
+  return safeFetchJson<any>("/api/webhooks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  }, null);
+}
+
+export async function updateWebhookApi(id: string, data: { name?: string; targetUrl?: string; events?: string[]; status?: string }): Promise<any> {
+  return safeFetchJson<any>(`/api/webhooks/${encodeURIComponent(id)}/`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  }, null);
+}
+
+export async function deleteWebhookApi(id: string): Promise<any> {
+  return safeFetchJson<any>(`/api/webhooks/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  }, null);
+}
+
+export async function testWebhookApi(id: string): Promise<any> {
+  return safeFetchJson<any>(`/api/webhooks/${encodeURIComponent(id)}/test`, {
+    method: "POST"
+  }, null);
+}
+
+export async function rotateWebhookSecretApi(id: string): Promise<any> {
+  return safeFetchJson<any>(`/api/webhooks/${encodeURIComponent(id)}/rotate-secret`, {
+    method: "POST"
+  }, null);
+}
+
+export async function fetchWebhookDeliveries(id: string): Promise<any[]> {
+  return safeFetchJson<any[]>(`/api/webhooks/${encodeURIComponent(id)}/deliveries`, undefined, []);
+}
+
+export async function fetchIntegrationLogs(queryParams?: Record<string, string>): Promise<any[]> {
+  let url = "/api/integrations/logs";
+  if (queryParams) {
+    const sp = new URLSearchParams(queryParams).toString();
+    if (sp) url += `?${sp}`;
+  }
+  return safeFetchJson<any[]>(url, undefined, []);
+}
+
 
 

@@ -191,6 +191,35 @@ router.put("/:id", (req, res) => {
   }
 });
 
+// PATCH /api/clients/:id/assignment - updates assigned broker
+router.patch("/:id/assignment", (req, res) => {
+  try {
+    const id = req.params.id;
+    const { assignedBrokerId, assignedBrokerName, updatedBy } = req.body;
+    const existing = findClientFolderPathAndDataById(id);
+    if (!existing) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+    const clientData = existing.data || {};
+    clientData.assignedBrokerId = assignedBrokerId || null;
+    if (assignedBrokerName !== undefined) {
+      clientData.assignedBrokerName = assignedBrokerName;
+      clientData.assignedBroker = assignedBrokerName;
+      clientData.agent = assignedBrokerName;
+    }
+    clientData.assignedBrokerUpdatedAt = new Date().toISOString();
+    if (updatedBy) clientData.assignedBrokerUpdatedBy = updatedBy;
+    clientData.updatedAt = new Date().toISOString();
+
+    const jsonPath = path.join(existing.folderPath, "client.json");
+    safeWriteJsonFile(jsonPath, clientData);
+    res.json({ ok: true, client: clientData });
+  } catch (err) {
+    console.error("Error updating client assignment:", err);
+    res.status(500).json({ error: "Failed to update client assignment", details: err.message });
+  }
+});
+
 // DELETE /api/clients/:id - deletes a client's entire folder
 router.delete("/:id", (req, res) => {
   try {

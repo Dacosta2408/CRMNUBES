@@ -219,7 +219,15 @@ export const filterDatabaseClients = (
   }
 
   if (agentFilter) {
-    list = list.filter(c => (c.assignedBroker || c.agent || c.assignedTo || c.retentionOwner) === agentFilter);
+    const filterLower = agentFilter.toLowerCase();
+    list = list.filter(c => 
+      c.assignedBrokerId === agentFilter ||
+      (c.assignedBrokerName && c.assignedBrokerName.toLowerCase() === filterLower) ||
+      (c.assignedBroker && c.assignedBroker.toLowerCase() === filterLower) ||
+      (c.agent && c.agent.toLowerCase() === filterLower) ||
+      (c.assignedTo && c.assignedTo.toLowerCase() === filterLower) ||
+      (c.retentionOwner && c.retentionOwner.toLowerCase() === filterLower)
+    );
   }
 
   if (searchQuery.trim()) {
@@ -246,7 +254,15 @@ export const filterPipelineClients = (
   let list = [...clients];
 
   if (agentFilter) {
-    list = list.filter(c => (c.assignedBroker || c.agent || c.assignedTo || c.retentionOwner) === agentFilter);
+    const filterLower = agentFilter.toLowerCase();
+    list = list.filter(c => 
+      c.assignedBrokerId === agentFilter ||
+      (c.assignedBrokerName && c.assignedBrokerName.toLowerCase() === filterLower) ||
+      (c.assignedBroker && c.assignedBroker.toLowerCase() === filterLower) ||
+      (c.agent && c.agent.toLowerCase() === filterLower) ||
+      (c.assignedTo && c.assignedTo.toLowerCase() === filterLower) ||
+      (c.retentionOwner && c.retentionOwner.toLowerCase() === filterLower)
+    );
   }
 
   if (searchQuery.trim()) {

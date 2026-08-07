@@ -1,4 +1,4 @@
-import { User } from "../types";
+import { User, Client } from "../types";
 import { DEFAULT_USERS } from "../data";
 
 export const DEVELOPMENT_CANONICAL_USERS: User[] = DEFAULT_USERS;
@@ -312,3 +312,329 @@ export function dispatchUserEvent(eventType: UserEventType, payload: { user?: Us
     window.dispatchEvent(new CustomEvent("user.changed", { detail: { type: eventType, ...payload } }));
   }
 }
+
+// ─── CLIENT ASSIGNMENT PERMISSION & ROSTER HELPERS ───
+
+export function canAssignClient(currentUser: User | null | undefined): boolean {
+  if (!currentUser) return false;
+  const role = (currentUser.role || "").toLowerCase();
+  if (
+    currentUser.isOwner ||
+    currentUser.isProtected ||
+    role.includes("developer") ||
+    role.includes("admin") ||
+    role.includes("manager") ||
+    role.includes("owner") ||
+    (currentUser.clearanceLevel !== undefined && currentUser.clearanceLevel >= 4) ||
+    (currentUser.permissions as any)?.canAssignClients === true ||
+    (currentUser.specialPermissions && currentUser.specialPermissions.canAssignClients === true)
+  ) {
+    return true;
+  }
+  if (currentUser.permOverrides && currentUser.permOverrides["assign_clients"] === true) {
+    return true;
+  }
+  return false;
+}
+
+export function canAssignUserToClient(
+  currentUser: User | null | undefined,
+  targetUser: User | null | undefined
+): boolean {
+  if (!canAssignClient(currentUser)) return false;
+  if (!targetUser || !targetUser.id) return false;
+  const status = (targetUser.status || "active").toLowerCase();
+  if (status === "deleted" || status === "archived") return false;
+  if (status === "inactive" || status === "suspended") return false;
+  return true;
+}
+
+export function canViewClientAssignment(
+  currentUser: User | null | undefined,
+  client: Client | null | undefined
+): boolean {
+  return !!currentUser;
+}
+
+export function getAssignableStaff(
+  currentUser: User | null | undefined,
+  userRoster: User[] | null | undefined,
+  currentAssignedBrokerId?: string
+): User[] {
+  const normalizedRoster = normalizeUserRoster(userRoster || DEFAULT_USERS, { includeArchived: true });
+  const seenIds = new Set<string>();
+
+  const assignable = normalizedRoster.filter(u => {
+    if (!u || !u.id) return false;
+    if (seenIds.has(u.id)) return false;
+
+    const status = (u.status || "active").toLowerCase();
+
+    // Always exclude deleted accounts or email users
+    if (status === "deleted" || u.userLabel === "email_user" || u.role === "Email User" || u.id.startsWith("email_")) {
+      return false;
+    }
+
+    // Always exclude archived
+    if (status === "archived") return false;
+
+    // Inactive / suspended users excluded UNLESS they currently own the assignment
+    if (status === "inactive" || status === "suspended") {
+      if (currentAssignedBrokerId && u.id === currentAssignedBrokerId) {
+        seenIds.add(u.id);
+        return true;
+      }
+      return false;
+    }
+
+    // Include Brokers, Agents, Admins, Developers, Underwriters, Advisors
+    const role = (u.role || "").toLowerCase();
+    const isBrokerRole =
+      role.includes("broker") ||
+      role.includes("agent") ||
+      role.includes("advisor") ||
+      role.includes("sales") ||
+      role.includes("underwriter") ||
+      role.includes("originator");
+
+    const isAdminRole = role.includes("admin") || role.includes("manager") || role.includes("owner");
+    const isDevRole = role.includes("developer");
+
+    const clearance = u.clearanceLevel || 1;
+    const isEligible = isBrokerRole || (isAdminRole && clearance >= 3) || isDevRole;
+
+    if (isEligible) {
+      seenIds.add(u.id);
+      return true;
+    }
+
+    return false;
+  });
+
+  return assignable.sort((a, b) => getUserFullName(a).localeCompare(getUserFullName(b)));
+}
+
+export interface ResolvedBrokerAssignment {
+  assignedBrokerId: string | null;
+  assignedBrokerName: string;
+  isFallback: boolean;
+  isMissing: boolean;
+  isInactive: boolean;
+  user: User | null;
+}
+
+export function resolveClientBrokerAssignment(client: Client, userRoster: User[]): ResolvedBrokerAssignment {
+  const normalized = normalizeUserRoster(userRoster || DEFAULT_USERS, { includeArchived: true });
+
+  // 1. Primary Check: assignedBrokerId
+  if (client.assignedBrokerId) {
+    const matchedUser = normalized.find(u => u.id === client.assignedBrokerId);
+    if (matchedUser) {
+      const status = (matchedUser.status || "active").toLowerCase();
+      const isInactive = status === "inactive" || status === "suspended" || status === "archived" || status === "deleted";
+      return {
+        assignedBrokerId: matchedUser.id,
+        assignedBrokerName: getUserFullName(matchedUser),
+        isFallback: false,
+        isMissing: false,
+        isInactive,
+        user: matchedUser
+      };
+    } else {
+      return {
+        assignedBrokerId: client.assignedBrokerId,
+        assignedBrokerName: client.assignedBrokerName || client.assignedBroker || "Assigned broker unavailable",
+        isFallback: false,
+        isMissing: true,
+        isInactive: true,
+        user: null
+      };
+    }
+  }
+
+  // 2. Legacy Name Matching Fallback
+  const candidateName = (
+    client.assignedBroker ||
+    client.assignedBrokerName ||
+    client.agent ||
+    client.retentionOwner ||
+    client.assignedTo ||
+    ""
+  ).trim();
+
+  if (candidateName) {
+    const candidateLower = candidateName.toLowerCase();
+
+    let match = normalized.find(u => u.id.toLowerCase() === candidateLower);
+
+    if (!match) {
+      match = normalized.find(u => getUserFullName(u).toLowerCase() === candidateLower);
+    }
+
+    if (!match) {
+      match = normalized.find(u => {
+        const full = `${u.first || ""} ${u.last || ""}`.trim().toLowerCase();
+        return full && (full.includes(candidateLower) || candidateLower.includes(full));
+      });
+    }
+
+    if (match) {
+      const status = (match.status || "active").toLowerCase();
+      const isInactive = status === "inactive" || status === "suspended" || status === "archived" || status === "deleted";
+      return {
+        assignedBrokerId: match.id,
+        assignedBrokerName: getUserFullName(match),
+        isFallback: true,
+        isMissing: false,
+        isInactive,
+        user: match
+      };
+    }
+  }
+
+  return {
+    assignedBrokerId: null,
+    assignedBrokerName: candidateName || "Unassigned",
+    isFallback: true,
+    isMissing: !!candidateName,
+    isInactive: false,
+    user: null
+  };
+}
+
+export interface ClientMigrationReport {
+  totalClients: number;
+  alreadyHadId: number;
+  successfullyMappedByName: number;
+  unassignedCount: number;
+  missingOrInactiveBrokerCount: number;
+  ambiguousCount: number;
+  details: Array<{
+    clientId: string;
+    clientName: string;
+    prevBroker: string;
+    resolvedId: string | null;
+    resolvedName: string;
+    status: string;
+  }>;
+}
+
+export function migrateClientBrokerAssignments(
+  clients: Client[],
+  userRoster: User[]
+): { clients: Client[]; report: ClientMigrationReport } {
+  let alreadyHadId = 0;
+  let successfullyMappedByName = 0;
+  let unassignedCount = 0;
+  let missingOrInactiveBrokerCount = 0;
+  let ambiguousCount = 0;
+  const details: ClientMigrationReport["details"] = [];
+
+  const migratedClients = clients.map(client => {
+    const rawBroker = client.assignedBroker || client.agent || client.retentionOwner || client.assignedTo || "";
+    const resolved = resolveClientBrokerAssignment(client, userRoster);
+
+    if (client.assignedBrokerId) {
+      alreadyHadId++;
+      if (resolved.isInactive || resolved.isMissing) {
+        missingOrInactiveBrokerCount++;
+      }
+      details.push({
+        clientId: client.id,
+        clientName: `${client.first} ${client.last}`,
+        prevBroker: rawBroker,
+        resolvedId: resolved.assignedBrokerId,
+        resolvedName: resolved.assignedBrokerName,
+        status: resolved.isMissing ? "missing_broker" : resolved.isInactive ? "inactive_broker" : "valid_id"
+      });
+      return {
+        ...client,
+        assignedBrokerId: resolved.assignedBrokerId || client.assignedBrokerId,
+        assignedBrokerName: resolved.assignedBrokerName,
+        assignedBroker: resolved.assignedBrokerName,
+        agent: resolved.assignedBrokerName,
+        retentionOwner: resolved.assignedBrokerName
+      };
+    }
+
+    if (resolved.assignedBrokerId) {
+      successfullyMappedByName++;
+      if (resolved.isInactive) missingOrInactiveBrokerCount++;
+      details.push({
+        clientId: client.id,
+        clientName: `${client.first} ${client.last}`,
+        prevBroker: rawBroker,
+        resolvedId: resolved.assignedBrokerId,
+        resolvedName: resolved.assignedBrokerName,
+        status: resolved.isInactive ? "mapped_inactive" : "mapped_name"
+      });
+      return {
+        ...client,
+        assignedBrokerId: resolved.assignedBrokerId,
+        assignedBrokerName: resolved.assignedBrokerName,
+        assignedBroker: resolved.assignedBrokerName,
+        agent: resolved.assignedBrokerName,
+        retentionOwner: resolved.assignedBrokerName
+      };
+    }
+
+    if (!rawBroker) {
+      unassignedCount++;
+      details.push({
+        clientId: client.id,
+        clientName: `${client.first} ${client.last}`,
+        prevBroker: "",
+        resolvedId: null,
+        resolvedName: "Unassigned",
+        status: "unassigned"
+      });
+    } else {
+      ambiguousCount++;
+      missingOrInactiveBrokerCount++;
+      details.push({
+        clientId: client.id,
+        clientName: `${client.first} ${client.last}`,
+        prevBroker: rawBroker,
+        resolvedId: null,
+        resolvedName: rawBroker,
+        status: "ambiguous_or_missing"
+      });
+    }
+
+    return client;
+  });
+
+  const report: ClientMigrationReport = {
+    totalClients: clients.length,
+    alreadyHadId,
+    successfullyMappedByName,
+    unassignedCount,
+    missingOrInactiveBrokerCount,
+    ambiguousCount,
+    details
+  };
+
+  return { clients: migratedClients, report };
+}
+
+export function dispatchClientAssignmentEvent(clientId: string, assignedBrokerId: string | null, updatedBy: User, client: Client) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("client.updated", {
+        detail: { client }
+      })
+    );
+    window.dispatchEvent(
+      new CustomEvent("client-assigned", {
+        detail: {
+          clientId,
+          assignedBrokerId,
+          assignedBrokerName: client.assignedBrokerName,
+          updatedBy: updatedBy.id,
+          timestamp: new Date().toISOString()
+        }
+      })
+    );
+  }
+}
+

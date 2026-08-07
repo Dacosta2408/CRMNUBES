@@ -1634,6 +1634,7 @@ export default function App() {
       <ClientDetailPanel
         currentClient={activeTab === "clients" ? currentClient : null}
         currentUser={currentUser}
+        userRoster={userRoster}
         clients={clients}
         lenders={lenders}
         docVault={docVault}

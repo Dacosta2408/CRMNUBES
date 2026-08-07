@@ -1,6 +1,6 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Sparkles, ShieldCheck, ShieldAlert, Download, Trash2, FileText, ChevronDown, Calendar } from "lucide-react";
+import { Sparkles, ShieldCheck, ShieldAlert, Download, Trash2, FileText, ChevronDown, Calendar, AlertTriangle, UserCheck } from "lucide-react";
 import { Client, User, Lender, Task, Event } from "../types";
 import { ApplicationDetailsForm } from "./ApplicationDetailsForm";
 import { DocumentManager } from "./DocumentManager";
@@ -10,10 +10,20 @@ import { getClientDocuments } from "../lib/bridgeService";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { CHECKLIST_RULES } from "./document/constants";
+import {
+  getAssignableStaff,
+  canAssignClient,
+  resolveClientBrokerAssignment,
+  dispatchClientAssignmentEvent,
+  getUserFullName
+} from "../lib/userUtils";
+import { updateClientAssignmentApi } from "../lib/api";
+import { logActivityEvent } from "../lib/activityEngine";
 
 export interface ClientDetailPanelProps {
   currentClient: Client | null;
   currentUser: User;
+  userRoster?: User[];
   clients: Client[];
   lenders: Lender[];
   docVault: Record<string, any>;
@@ -60,6 +70,7 @@ function cPmt(P: number, rPct: number, yrs: number) {
 export function ClientDetailPanel({
   currentClient,
   currentUser,
+  userRoster,
   clients,
   lenders,
   docVault,
@@ -87,6 +98,59 @@ export function ClientDetailPanel({
   if (!currentClient) return null;
 
   const isAdmin = ["Developer/Admin", "Admin"].includes(currentUser.role) || currentUser.isOwner === true;
+  const canAssign = canAssignClient(currentUser);
+  const resolvedAssignment = resolveClientBrokerAssignment(currentClient, userRoster || []);
+  const assignableStaff = getAssignableStaff(currentUser, userRoster, resolvedAssignment.assignedBrokerId || undefined);
+
+  const handleAssignmentChange = async (selectedUserId: string) => {
+    if (!canAssign) {
+      showToast("You do not have permission to reassign clients.", "error");
+      return;
+    }
+
+    let selectedUser = assignableStaff.find(u => u.id === selectedUserId);
+    if (!selectedUser && userRoster) {
+      selectedUser = userRoster.find(u => u.id === selectedUserId);
+    }
+
+    const newBrokerName = selectedUser ? getUserFullName(selectedUser) : (selectedUserId ? selectedUserId : "Unassigned");
+    const updatedClient: Client = {
+      ...currentClient,
+      assignedBrokerId: selectedUserId || undefined,
+      assignedBrokerName: newBrokerName,
+      assignedBroker: newBrokerName,
+      agent: newBrokerName,
+      retentionOwner: newBrokerName,
+      assignedBrokerUpdatedAt: new Date().toISOString(),
+      assignedBrokerUpdatedBy: currentUser.id || currentUser.email
+    };
+
+    handleUpdateClient(updatedClient);
+
+    try {
+      await updateClientAssignmentApi(currentClient.id, {
+        assignedBrokerId: selectedUserId || null,
+        assignedBrokerName: newBrokerName,
+        updatedBy: currentUser.id || currentUser.email
+      });
+    } catch (err) {
+      console.warn("Backend assignment sync deferred or offline:", err);
+    }
+
+    dispatchClientAssignmentEvent(currentClient.id, selectedUserId || null, currentUser, updatedClient);
+
+    logActivityEvent({
+      clientId: currentClient.id,
+      clientName: `${currentClient.first} ${currentClient.last}`,
+      eventType: 'broker_assigned',
+      user: getUserFullName(currentUser),
+      timestamp: new Date().toISOString(),
+      description: `Assigned broker updated to ${newBrokerName}`,
+      details: `Reassigned by ${getUserFullName(currentUser)} (${currentUser.email || currentUser.id})`
+    });
+
+    showToast(`Assigned broker updated to ${newBrokerName}`, "success", "✓");
+  };
 
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = React.useState(false);
   const [deleteConfirmInput, setDeleteConfirmInput] = React.useState("");
@@ -546,31 +610,43 @@ export function ClientDetailPanel({
             <div className="flex items-center gap-2">
               {/* Assigned Broker / Lead Advisor Field */}
               <div 
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm"
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm ${
+                  resolvedAssignment.isInactive || resolvedAssignment.isMissing
+                    ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
+                    : ""
+                }`}
                 style={{
-                  background: "var(--glass-bg)",
-                  borderColor: "var(--glass-border)"
+                  background: resolvedAssignment.isInactive || resolvedAssignment.isMissing ? undefined : "var(--glass-bg)",
+                  borderColor: resolvedAssignment.isInactive || resolvedAssignment.isMissing ? undefined : "var(--glass-border)"
                 }}
               >
                 <span className="text-[9px] text-[var(--color-text-muted)] uppercase font-black tracking-widest leading-none">Broker:</span>
-                {isAdmin ? (
+                {canAssign ? (
                   <select
-                    value={currentClient.assignedBroker || currentClient.agent || currentClient.assignedTo || currentClient.retentionOwner || ""}
-                    onChange={(e) => {
-                      const updated = { ...currentClient, assignedBroker: e.target.value, agent: e.target.value };
-                      handleUpdateClient(updated);
-                      showToast(`Assigned broker updated to ${e.target.value || "Unassigned"}`, "success", "✓");
-                    }}
-                    className="bg-transparent border-none text-[10px] font-black uppercase text-[var(--color-accent)] focus:outline-none cursor-pointer pr-1"
+                    value={resolvedAssignment.assignedBrokerId || ""}
+                    onChange={(e) => handleAssignmentChange(e.target.value)}
+                    className="bg-transparent border-none text-[10px] font-black uppercase text-[var(--color-accent)] focus:outline-none cursor-pointer pr-1 max-w-[170px] truncate"
                   >
-                    <option value="" className="bg-[var(--color-surface)] text-[var(--color-text)]">Unassigned</option>
-                    {getAgentNames().map(name => (
-                      <option key={name} value={name} className="bg-[var(--color-surface)] text-[var(--color-text)] font-bold uppercase">{name}</option>
-                    ))}
+                    <option value="" className="bg-[var(--color-surface)] text-[var(--color-text)] font-bold">Unassigned</option>
+                    {assignableStaff.map(s => {
+                      const sName = getUserFullName(s);
+                      const isInactive = (s.status || "active").toLowerCase() === "inactive" || (s.status || "active").toLowerCase() === "suspended";
+                      return (
+                        <option key={s.id} value={s.id} className="bg-[var(--color-surface)] text-[var(--color-text)] font-bold uppercase">
+                          {sName} ({s.role || "Broker"}){isInactive ? " [INACTIVE]" : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                 ) : (
                   <span className="text-[10px] font-black uppercase text-[var(--color-text)] px-1">
-                    {currentClient.assignedBroker || currentClient.agent || currentClient.assignedTo || currentClient.retentionOwner || "Unassigned"}
+                    {resolvedAssignment.assignedBrokerName || "Unassigned"}
+                  </span>
+                )}
+                {(resolvedAssignment.isInactive || resolvedAssignment.isMissing) && (
+                  <span className="flex items-center gap-1 text-[9px] font-bold text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded-full border border-amber-600/40 shrink-0" title="Assigned broker is inactive or missing. Reassignment recommended.">
+                    <AlertTriangle className="w-3 h-3 text-amber-400" />
+                    {resolvedAssignment.isMissing ? "Missing" : "Inactive"}
                   </span>
                 )}
               </div>

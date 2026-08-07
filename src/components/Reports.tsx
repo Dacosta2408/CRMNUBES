@@ -296,8 +296,14 @@ export const Reports: React.FC<ReportsProps> = ({
   const agentPerformance = useMemo(() => {
     return userRoster.map(u => {
       const fullName = `${u.first} ${u.last}`;
+      const fullNameLower = fullName.toLowerCase();
       const brokerClients = clients.filter(c => 
-        c.assignedTo === fullName || c.retentionOwner === fullName
+        c.assignedBrokerId === u.id ||
+        (c.assignedBrokerName && c.assignedBrokerName.toLowerCase() === fullNameLower) ||
+        (c.assignedBroker && c.assignedBroker.toLowerCase() === fullNameLower) ||
+        (c.agent && c.agent.toLowerCase() === fullNameLower) ||
+        (c.assignedTo && c.assignedTo.toLowerCase() === fullNameLower) ||
+        (c.retentionOwner && c.retentionOwner.toLowerCase() === fullNameLower)
       );
 
       const funded = brokerClients.filter(c => c.status === "funded");

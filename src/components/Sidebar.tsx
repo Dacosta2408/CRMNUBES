@@ -485,7 +485,7 @@ export const Sidebar: React.FC<SidebarProps> = memo(({
                   }}
                   className="w-full px-3 py-2 text-left rounded-xl hover:bg-white/10 text-white/90 hover:text-white flex items-center gap-2.5 transition-colors cursor-pointer font-medium"
                 >
-                  <UserIcon className="w-4 h-4 text-[#00C6FF]" />
+                  <UserIcon className="w-4 h-4 text-white/80" />
                   <span>My Profile & Avatar</span>
                 </button>
 
@@ -563,21 +563,21 @@ export const Sidebar: React.FC<SidebarProps> = memo(({
             onClick={() => setIsProfileMenuOpen(prev => !prev)}
             className={`cursor-pointer flex items-center ${effectiveCollapsed ? "justify-center p-2" : "gap-2.5 p-2.5"} rounded-2xl select-none relative group transition-all duration-200`}
             style={{
-              background: "rgba(255, 255, 255, 0.06)",
-              border: "1px solid rgba(255, 255, 255, 0.15)",
-              backdropFilter: "var(--glass-blur)",
-              WebkitBackdropFilter: "var(--glass-blur)",
-              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1)"
+              background: "rgba(255, 255, 255, 0.04)",
+              border: "1px solid rgba(255, 255, 255, 0.18)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+              boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12)"
             }}
             onMouseEnter={e => {
-              (e.currentTarget as HTMLElement).style.background = "rgba(255, 255, 255, 0.12)";
-              (e.currentTarget as HTMLElement).style.borderColor = "rgba(255, 255, 255, 0.28)";
-              (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 16px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.2)";
+              (e.currentTarget as HTMLElement).style.background = "rgba(255, 255, 255, 0.08)";
+              (e.currentTarget as HTMLElement).style.borderColor = "rgba(255, 255, 255, 0.32)";
+              (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 20px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2)";
             }}
             onMouseLeave={e => {
-              (e.currentTarget as HTMLElement).style.background = "rgba(255, 255, 255, 0.06)";
-              (e.currentTarget as HTMLElement).style.borderColor = "rgba(255, 255, 255, 0.15)";
-              (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1)";
+              (e.currentTarget as HTMLElement).style.background = "rgba(255, 255, 255, 0.04)";
+              (e.currentTarget as HTMLElement).style.borderColor = "rgba(255, 255, 255, 0.18)";
+              (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12)";
             }}
             title={effectiveCollapsed ? `${currentUser.displayName || currentUser.name} - Profile & Options` : undefined}
           >

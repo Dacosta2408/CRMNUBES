@@ -1,12 +1,46 @@
+/**
+ * ARCHITECTURE DECISION REFERENCE:
+ * For a comprehensive comparison between PostgreSQL and Supabase,
+ * please consult /SUPABASE_EVALUATION.md in the project root directory.
+ * Standard GBK Financial CRM architecture preserves the dedicated PostgreSQL database
+ * and Node.js Express server backend for offline desktop compliance and data integrity.
+ */
+
 import React, { useState, useEffect, useMemo } from "react";
 import { 
   Layers, Globe, Key, Webhook, Activity, CheckCircle2, AlertTriangle, X, 
   RefreshCw, Plus, Trash2, Copy, Check, Eye, EyeOff, Play, Send, Search, 
   Filter, Settings, Power, Lock, Shield, Sliders, BarChart3, Clock, 
   Zap, CreditCard, FileText, MessageSquare, Building, Database, Sparkles, 
-  Download, ArrowUpRight, HelpCircle, AlertCircle
+  Download, ArrowUpRight, HelpCircle, AlertCircle, Cpu, Radio, ShieldCheck
 } from "lucide-react";
 import { User } from "../../types";
+import {
+  fetchIntegrationDefinitions,
+  fetchActiveConnections,
+  fetchIntegrationHealth,
+  connectIntegrationApi,
+  disconnectIntegrationApi,
+  testIntegrationApi,
+  fetchApiKeys,
+  createApiKeyApi,
+  revokeApiKeyApi,
+  rotateApiKeyApi,
+  fetchApiKeyAudit,
+  fetchAIProviders,
+  configureAIProviderApi,
+  testAIProviderApi,
+  rotateAIProviderApi,
+  disconnectAIProviderApi,
+  fetchWebhooks,
+  createWebhookApi,
+  updateWebhookApi,
+  deleteWebhookApi,
+  testWebhookApi,
+  rotateWebhookSecretApi,
+  fetchWebhookDeliveries,
+  fetchIntegrationLogs
+} from "../../lib/api";
 
 interface IntegrationsViewProps {
   currentUser: User;
@@ -14,22 +48,50 @@ interface IntegrationsViewProps {
   logActivity?: (action: string, details: string) => void;
 }
 
-// Data Interfaces
-export interface IntegrationApp {
+// ─── DOMAIN TYPES ───
+
+export type IntegrationCategory = 
+  | "CRM & Pipeline" 
+  | "Document Signing" 
+  | "Payments & Billing" 
+  | "Lender Exchanges" 
+  | "Credit & Scoring" 
+  | "Communication & Messaging" 
+  | "Automation & Sync";
+
+export type IntegrationStatus = 
+  | "available" 
+  | "not_configured" 
+  | "pending" 
+  | "connected" 
+  | "error" 
+  | "disconnected" 
+  | "coming_soon";
+
+export interface IntegrationDefinition {
   id: string;
+  provider: string;
   name: string;
-  category: "CRM & Pipeline" | "Document Signing" | "Payments & Billing" | "Lender Exchanges" | "Credit & Scoring" | "Communication & Messaging" | "Automation & Sync";
   description: string;
-  icon: string; // Emoji or visual representation
-  status: "connected" | "disconnected" | "error";
-  lastSyncTime?: string;
-  syncFrequency: string;
-  apiVersion: string;
-  apiKeyName?: string;
-  webhookUrl?: string;
-  environment: "production" | "sandbox";
-  docsUrl: string;
-  settingsFields?: { key: string; label: string; value: string; type: "text" | "password" | "select" }[];
+  category: IntegrationCategory;
+  connectionMethod: 'oauth' | 'api_key' | 'webhook' | 'manual';
+  status: IntegrationStatus;
+  requiredScopes?: string[];
+  supportedModules?: string[];
+  documentationUrl?: string;
+  icon?: string;
+}
+
+export interface IntegrationConnection {
+  id: string;
+  integrationId: string;
+  status: 'pending' | 'connected' | 'error' | 'disconnected';
+  accountLabel?: string;
+  connectedBy?: string;
+  connectedAt?: string;
+  lastHealthCheckAt?: string;
+  lastError?: string;
+  metadata?: Record<string, any>;
 }
 
 export interface ApiKeyRecord {
@@ -38,22 +100,45 @@ export interface ApiKeyRecord {
   prefix: string;
   maskedKey: string;
   scopes: string[];
+  expirationDate?: string;
+  rateLimit: number;
   createdAt: string;
-  lastUsedAt: string;
+  lastUsedAt?: string;
   status: "active" | "revoked";
-  createdReason?: string;
+  createdBy?: string;
+}
+
+export interface AIProviderConfig {
+  id: string;
+  name: string;
+  provider: "google_gemini" | "openai" | "anthropic" | "deepseek";
+  status: "configured" | "not_configured" | "error";
+  enabled: boolean;
+  selectedModel: string;
+  availableModels: string[];
+  capabilities: string[];
+  lastHealthCheckAt?: string;
+  lastError?: string;
+  monthlyUsage?: {
+    requestsThisMonth: number;
+    tokensThisMonth: number;
+    estimatedCostUsd: number;
+  };
+  maskedCredential?: string;
 }
 
 export interface WebhookRecord {
   id: string;
   name: string;
   targetUrl: string;
-  secret: string;
   status: "active" | "paused";
   events: string[];
   createdAt: string;
+  createdBy?: string;
   totalDelivered: number;
   failureCount: number;
+  lastDeliveryStatus?: number;
+  lastDeliveryAt?: string;
 }
 
 export interface WebhookDeliveryLog {
@@ -74,360 +159,36 @@ export interface IntegrationLog {
   id: string;
   timestamp: string;
   source: string;
-  type: "sync" | "api_call" | "webhook" | "auth" | "settings";
+  integrationId?: string;
+  type: "oauth" | "sync" | "api_call" | "webhook" | "auth" | "settings" | "credential_rotate";
   status: "success" | "warning" | "error";
   action: string;
   details: string;
-  ipAddress?: string;
+  actingUser?: string;
+  severity?: "info" | "warning" | "error" | "critical";
 }
 
-// Initial Mock Seed Data
-const INITIAL_INTEGRATIONS: IntegrationApp[] = [
-  {
-    id: "int_docusign",
-    name: "DocuSign eSignature",
-    category: "Document Signing",
-    description: "Automate digital signatures, disclosures, and borrower consent packages.",
-    icon: "✍️",
-    status: "connected",
-    lastSyncTime: new Date(Date.now() - 25 * 60000).toISOString(),
-    syncFrequency: "Real-time (Webhooks)",
-    apiVersion: "v2.1 REST API",
-    apiKeyName: "DocuSign Production OAuth Client",
-    environment: "production",
-    docsUrl: "https://developers.docusign.com",
-    settingsFields: [
-      { key: "accountId", label: "Account ID", value: "98a4f210-449e-4a11", type: "text" },
-      { key: "clientId", label: "Integration Key (Client ID)", value: "3a88c7f9-2210-490b", type: "text" },
-      { key: "rsaKey", label: "RSA Private Key", value: "••••••••••••••••••••", type: "password" }
-    ]
-  },
-  {
-    id: "int_filogix",
-    name: "Filogix Expert / Lender Exchange",
-    category: "Lender Exchanges",
-    description: "Direct mortgage application transmission to Canadian Tier-1 banks & monoline lenders.",
-    icon: "🏦",
-    status: "connected",
-    lastSyncTime: new Date(Date.now() - 2 * 3600000).toISOString(),
-    syncFrequency: "On Demand / Automated",
-    apiVersion: "v4.0 XML Protocol",
-    apiKeyName: "Filogix Gateway Broker ID",
-    environment: "production",
-    docsUrl: "https://www.finastra.com/filogix",
-    settingsFields: [
-      { key: "brokerCode", label: "Brokerage Code", value: "GBK-ONT-99412", type: "text" },
-      { key: "firmId", label: "Firm ID", value: "8841029", type: "text" },
-      { key: "passcode", label: "Transmission Password", value: "••••••••••••", type: "password" }
-    ]
-  },
-  {
-    id: "int_equifax",
-    name: "Equifax Credit Bureau Gateway",
-    category: "Credit & Scoring",
-    description: "Pull real-time hard & soft credit checks, Beacon scores, and debt liabilities.",
-    icon: "📊",
-    status: "connected",
-    lastSyncTime: new Date(Date.now() - 45 * 60000).toISOString(),
-    syncFrequency: "Real-time Query",
-    apiVersion: "CreditConnect REST API v3",
-    apiKeyName: "Equifax Production Member Token",
-    environment: "production",
-    docsUrl: "https://developer.equifax.com",
-    settingsFields: [
-      { key: "memberNumber", label: "Member Number", value: "990EQX7721", type: "text" },
-      { key: "securityCode", label: "Security Code", value: "EQX-PROD-SEC", type: "text" }
-    ]
-  },
-  {
-    id: "int_stripe",
-    name: "Stripe Payment Gateway",
-    category: "Payments & Billing",
-    description: "Collect appraisal fee retainers, broker consultation fees, and recurring subscriptions.",
-    icon: "💳",
-    status: "connected",
-    lastSyncTime: new Date(Date.now() - 10 * 60000).toISOString(),
-    syncFrequency: "Real-time Webhooks",
-    apiVersion: "2023-10-16 API",
-    apiKeyName: "Stripe Live Secret Key",
-    environment: "production",
-    docsUrl: "https://stripe.com/docs",
-    settingsFields: [
-      { key: "publishableKey", label: "Publishable Key", value: "pk_live_51M0...9a12", type: "text" },
-      { key: "secretKey", label: "Secret Key", value: "sk_live_51M0...x92A", type: "password" },
-      { key: "webhookSecret", label: "Webhook Signing Secret", value: "whsec_9918a...22bc", type: "password" }
-    ]
-  },
-  {
-    id: "int_twilio",
-    name: "Twilio SMS & Voice Gateway",
-    category: "Communication & Messaging",
-    description: "Automated SMS deal updates, MFA verification codes, and client phone calls.",
-    icon: "💬",
-    status: "connected",
-    lastSyncTime: new Date(Date.now() - 5 * 60000).toISOString(),
-    syncFrequency: "Real-time",
-    apiVersion: "2010-04-01 REST API",
-    apiKeyName: "Twilio Production Account SID",
-    environment: "production",
-    docsUrl: "https://www.twilio.com/docs",
-    settingsFields: [
-      { key: "accountSid", label: "Account SID", value: "AC99182374a0192841bc", type: "text" },
-      { key: "authToken", label: "Auth Token", value: "••••••••••••••••••••", type: "password" },
-      { key: "fromPhone", label: "Sender Phone Number", value: "+1 (888) 555-0192", type: "text" }
-    ]
-  },
-  {
-    id: "int_zapier",
-    name: "Zapier Automation Platform",
-    category: "Automation & Sync",
-    description: "Connect mortgage pipeline triggers with 5,000+ web applications.",
-    icon: "⚡",
-    status: "connected",
-    lastSyncTime: new Date(Date.now() - 15 * 60000).toISOString(),
-    syncFrequency: "Real-time Hooks",
-    apiVersion: "Zapier CLI App v1.4",
-    apiKeyName: "Zapier Partner Key",
-    environment: "production",
-    docsUrl: "https://zapier.com/developer",
-    settingsFields: [
-      { key: "webhookEndpoint", label: "Webhook Catch Endpoint", value: "https://hooks.zapier.com/hooks/catch/99182/a0921", type: "text" }
-    ]
-  },
-  {
-    id: "int_salesforce",
-    name: "Salesforce Financial Services Cloud",
-    category: "CRM & Pipeline",
-    description: "Bi-directional client sync, opportunity pipeline mirror, and enterprise analytics.",
-    icon: "☁️",
-    status: "disconnected",
-    syncFrequency: "Every 15 Minutes",
-    apiVersion: "v58.0 REST API",
-    environment: "sandbox",
-    docsUrl: "https://developer.salesforce.com",
-    settingsFields: [
-      { key: "instanceUrl", label: "Salesforce Instance URL", value: "https://yourinstance.my.salesforce.com", type: "text" },
-      { key: "consumerKey", label: "Connected App Consumer Key", value: "", type: "text" },
-      { key: "consumerSecret", label: "Consumer Secret", value: "", type: "password" }
-    ]
-  },
-  {
-    id: "int_hubspot",
-    name: "HubSpot Marketing Hub",
-    category: "CRM & Pipeline",
-    description: "Automated email drip campaigns, lead scoring, and web form capture sync.",
-    icon: "🟧",
-    status: "disconnected",
-    syncFrequency: "Real-time",
-    apiVersion: "v3 OAuth API",
-    environment: "sandbox",
-    docsUrl: "https://developers.hubspot.com",
-    settingsFields: [
-      { key: "portalId", label: "HubSpot Portal ID", value: "", type: "text" },
-      { key: "privateAppToken", label: "Private App Access Token", value: "", type: "password" }
-    ]
-  },
-  {
-    id: "int_slack",
-    name: "Slack Team Notifications",
-    category: "Communication & Messaging",
-    description: "Real-time deal approvals, underwriting alerts, and team notification channels.",
-    icon: "📢",
-    status: "disconnected",
-    syncFrequency: "Real-time Hooks",
-    apiVersion: "Slack Web API v2",
-    environment: "production",
-    docsUrl: "https://api.slack.com",
-    settingsFields: [
-      { key: "botToken", label: "Bot User OAuth Token", value: "", type: "password" },
-      { key: "channelId", label: "Default Channel ID", value: "#deals-underwriting", type: "text" }
-    ]
-  }
+const AVAILABLE_SCOPES = [
+  { key: "clients:read", label: "View Client Profiles & Applications" },
+  { key: "clients:write", label: "Create & Update Client Records" },
+  { key: "messages:read", label: "Read Internal Messages" },
+  { key: "messages:write", label: "Send Messages & Broadcasts" },
+  { key: "reports:read", label: "Access Analytics & Reports" },
+  { key: "files:read", label: "Download Vault Documents" },
+  { key: "files:write", label: "Upload Documents & Declarations" },
+  { key: "webhooks:manage", label: "Manage Webhook Subscriptions" }
 ];
 
-const INITIAL_API_KEYS: ApiKeyRecord[] = [
-  {
-    id: "key_prod_001",
-    name: "Production Webhook Integrator",
-    prefix: "gbk_live_",
-    maskedKey: "gbk_live_94f8••••••••••••3a91",
-    scopes: ["read:clients", "write:clients", "read:documents"],
-    createdAt: new Date(Date.now() - 60 * 86400000).toISOString(),
-    lastUsedAt: new Date(Date.now() - 4 * 60000).toISOString(),
-    status: "active",
-    createdReason: "Primary API key for automated server-to-server synchronization."
-  },
-  {
-    id: "key_dev_002",
-    name: "Zapier Automated Pipeline Trigger",
-    prefix: "gbk_live_",
-    maskedKey: "gbk_live_12c9••••••••••••88d0",
-    scopes: ["read:clients", "read:webhooks"],
-    createdAt: new Date(Date.now() - 15 * 86400000).toISOString(),
-    lastUsedAt: new Date(Date.now() - 35 * 60000).toISOString(),
-    status: "active",
-    createdReason: "Zapier webhook polling trigger."
-  },
-  {
-    id: "key_legacy_003",
-    name: "Legacy Reporting Export Token",
-    prefix: "gbk_test_",
-    maskedKey: "gbk_test_55e1••••••••••••1100",
-    scopes: ["read:clients"],
-    createdAt: new Date(Date.now() - 120 * 86400000).toISOString(),
-    lastUsedAt: new Date(Date.now() - 90 * 86400000).toISOString(),
-    status: "revoked",
-    createdReason: "Rotated during Q2 security compliance audit."
-  }
-];
-
-const INITIAL_WEBHOOKS: WebhookRecord[] = [
-  {
-    id: "wh_001",
-    name: "Zapier Client Deal Approved Listener",
-    targetUrl: "https://hooks.zapier.com/hooks/catch/99182/a0921",
-    secret: "whsec_zap_88a912c0921a88b12",
-    status: "active",
-    events: ["client.created", "client.updated", "loan.approved"],
-    createdAt: new Date(Date.now() - 40 * 86400000).toISOString(),
-    totalDelivered: 1420,
-    failureCount: 2
-  },
-  {
-    id: "wh_002",
-    name: "DocuSign Signature Status Webhook",
-    targetUrl: "https://api.goldbookmortgage.ca/api/webhooks/docusign",
-    secret: "whsec_doc_11928371928301928",
-    status: "active",
-    events: ["document.uploaded", "document.signed"],
-    createdAt: new Date(Date.now() - 25 * 86400000).toISOString(),
-    totalDelivered: 890,
-    failureCount: 0
-  },
-  {
-    id: "wh_003",
-    name: "Stripe Retainer Fee Payment Gateway",
-    targetUrl: "https://api.goldbookmortgage.ca/api/webhooks/stripe",
-    secret: "whsec_str_99281726351423322",
-    status: "active",
-    events: ["payment.succeeded", "payment.failed"],
-    createdAt: new Date(Date.now() - 10 * 86400000).toISOString(),
-    totalDelivered: 312,
-    failureCount: 1
-  }
-];
-
-const INITIAL_WEBHOOK_LOGS: WebhookDeliveryLog[] = [
-  {
-    id: "whlog_991",
-    webhookId: "wh_001",
-    webhookName: "Zapier Client Deal Approved Listener",
-    event: "loan.approved",
-    targetUrl: "https://hooks.zapier.com/hooks/catch/99182/a0921",
-    statusCode: 200,
-    timestamp: new Date(Date.now() - 12 * 60000).toISOString(),
-    durationMs: 142,
-    status: "success",
-    payload: {
-      event: "loan.approved",
-      clientId: "client_994",
-      borrowerName: "David Miller",
-      approvedAmount: 650000,
-      lender: "TD Canada Trust",
-      timestamp: new Date(Date.now() - 12 * 60000).toISOString()
-    },
-    responseBody: '{"status":"success","id":"zap_exec_99120"}'
-  },
-  {
-    id: "whlog_992",
-    webhookId: "wh_002",
-    webhookName: "DocuSign Signature Status Webhook",
-    event: "document.signed",
-    targetUrl: "https://api.goldbookmortgage.ca/api/webhooks/docusign",
-    statusCode: 200,
-    timestamp: new Date(Date.now() - 45 * 60000).toISOString(),
-    durationMs: 98,
-    status: "success",
-    payload: {
-      event: "document.signed",
-      envelopeId: "env_docusign_8812a",
-      signerEmail: "borrower@example.com",
-      status: "completed"
-    },
-    responseBody: '{"status":"processed","envelope":"env_docusign_8812a"}'
-  },
-  {
-    id: "whlog_993",
-    webhookId: "wh_003",
-    webhookName: "Stripe Retainer Fee Payment Gateway",
-    event: "payment.succeeded",
-    targetUrl: "https://api.goldbookmortgage.ca/api/webhooks/stripe",
-    statusCode: 200,
-    timestamp: new Date(Date.now() - 120 * 60000).toISOString(),
-    durationMs: 210,
-    status: "success",
-    payload: {
-      event: "payment.succeeded",
-      chargeId: "ch_3M021...",
-      amount: 45000,
-      currency: "CAD",
-      customer: "cus_99182a"
-    },
-    responseBody: '{"received":true}'
-  }
-];
-
-const INITIAL_INTEGRATION_LOGS: IntegrationLog[] = [
-  {
-    id: "intlog_01",
-    timestamp: new Date(Date.now() - 5 * 60000).toISOString(),
-    source: "Twilio SMS Gateway",
-    type: "api_call",
-    status: "success",
-    action: "Send SMS Notification",
-    details: "Dispatched deal stage update SMS to borrower (+1 416-555-0198). Response time: 180ms.",
-    ipAddress: "192.168.1.10"
-  },
-  {
-    id: "intlog_02",
-    timestamp: new Date(Date.now() - 10 * 60000).toISOString(),
-    source: "Stripe Payment Gateway",
-    type: "webhook",
-    status: "success",
-    action: "Payment Event Processed",
-    details: "Successfully validated Stripe webhook signature (whsec_991...). Ledger updated with $450.00 CAD retainer fee.",
-    ipAddress: "54.187.205.1"
-  },
-  {
-    id: "intlog_03",
-    timestamp: new Date(Date.now() - 25 * 60000).toISOString(),
-    source: "DocuSign eSignature",
-    type: "sync",
-    status: "success",
-    action: "Envelope Status Poll",
-    details: "Polled 4 active signature envelopes. 1 marked Completed, downloaded signed PDF package.",
-    ipAddress: "10.0.4.12"
-  },
-  {
-    id: "intlog_04",
-    timestamp: new Date(Date.now() - 45 * 60000).toISOString(),
-    source: "Equifax Credit Bureau Gateway",
-    type: "api_call",
-    status: "success",
-    action: "Credit Score Query",
-    details: "Pulled soft credit score inquiry for borrower ID: client_881. Beacon Score: 784.",
-    ipAddress: "192.168.1.10"
-  },
-  {
-    id: "intlog_05",
-    timestamp: new Date(Date.now() - 120 * 60000).toISOString(),
-    source: "Filogix Expert / Lender Exchange",
-    type: "sync",
-    status: "warning",
-    action: "Application Transmission Retry",
-    details: "First attempt timed out after 5000ms. Retried automatically and completed on second attempt.",
-    ipAddress: "10.0.2.1"
-  }
+const WEBHOOK_EVENTS = [
+  "client.created",
+  "client.updated",
+  "client.assigned",
+  "task.created",
+  "document.uploaded",
+  "message.created",
+  "user.created",
+  "user.updated",
+  "user.statusChanged"
 ];
 
 export const IntegrationsView: React.FC<IntegrationsViewProps> = ({
@@ -435,1483 +196,1592 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({
   showToast,
   logActivity
 }) => {
-  // State initialization
-  const [integrations, setIntegrations] = useState<IntegrationApp[]>(() => {
-    const saved = localStorage.getItem("gbk_admin_integrations");
-    return saved ? JSON.parse(saved) : INITIAL_INTEGRATIONS;
-  });
-
-  const [apiKeys, setApiKeys] = useState<ApiKeyRecord[]>(() => {
-    const saved = localStorage.getItem("gbk_admin_api_keys");
-    return saved ? JSON.parse(saved) : INITIAL_API_KEYS;
-  });
-
-  const [webhooks, setWebhooks] = useState<WebhookRecord[]>(() => {
-    const saved = localStorage.getItem("gbk_admin_webhooks");
-    return saved ? JSON.parse(saved) : INITIAL_WEBHOOKS;
-  });
-
-  const [webhookLogs, setWebhookLogs] = useState<WebhookDeliveryLog[]>(() => {
-    const saved = localStorage.getItem("gbk_admin_webhook_logs");
-    return saved ? JSON.parse(saved) : INITIAL_WEBHOOK_LOGS;
-  });
-
-  const [integrationLogs, setIntegrationLogs] = useState<IntegrationLog[]>(() => {
-    const saved = localStorage.getItem("gbk_admin_integration_logs");
-    return saved ? JSON.parse(saved) : INITIAL_INTEGRATION_LOGS;
-  });
-
-  // Active View Tab
+  // Navigation
   const [activeTab, setActiveTab] = useState<"marketplace" | "active" | "api" | "webhooks" | "logs">("marketplace");
+  const [apiSubTab, setApiSubTab] = useState<"keys" | "ai">("keys");
+
+  // Real Backend Data States
+  const [definitions, setDefinitions] = useState<IntegrationDefinition[]>([]);
+  const [connections, setConnections] = useState<IntegrationConnection[]>([]);
+  const [apiKeys, setApiKeys] = useState<ApiKeyRecord[]>([]);
+  const [aiProviders, setAIProviders] = useState<AIProviderConfig[]>([]);
+  const [webhooks, setWebhooks] = useState<WebhookRecord[]>([]);
+  const [integrationLogs, setIntegrationLogs] = useState<IntegrationLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [logTypeFilter, setLogTypeFilter] = useState<string>("all");
 
-  // Rate limit state
-  const [rateLimits, setRateLimits] = useState({
-    maxRequestsPerMin: 120,
-    maxBurstRequests: 300,
-    ipWhitelist: "192.168.1.0/24, 10.0.0.0/16",
-    enableRateLimiting: true
-  });
+  // Modals & Action States
+  const [selectedCatalogApp, setSelectedCatalogApp] = useState<IntegrationDefinition | null>(null);
+  const [connectionFormLabel, setConnectionFormLabel] = useState("");
+  const [connectionFormCred, setConnectionFormCred] = useState("");
+  const [isSubmittingConnect, setIsSubmittingConnect] = useState(false);
 
-  // Modal States
-  const [configuringApp, setConfiguringApp] = useState<IntegrationApp | null>(null);
-  const [appSettingsForm, setAppSettingsForm] = useState<Record<string, string>>({});
-  const [syncingAppId, setSyncingAppId] = useState<string | null>(null);
+  const [disconnectingConnection, setDisconnectingConnection] = useState<IntegrationConnection | null>(null);
 
-  // New API Key Modal
+  // Application API Key Creation Modal
   const [showCreateKeyModal, setShowCreateKeyModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
-  const [newKeyReason, setNewKeyReason] = useState("");
-  const [newKeyScopes, setNewKeyScopes] = useState<string[]>(["read:clients"]);
-  const [generatedSecretKey, setGeneratedSecretKey] = useState<string | null>(null);
+  const [newKeyScopes, setNewKeyScopes] = useState<string[]>(["clients:read"]);
+  const [newKeyRateLimit, setNewKeyRateLimit] = useState(120);
+  const [newKeyExpiration, setNewKeyExpiration] = useState("");
+  const [createdKeySecret, setCreatedKeySecret] = useState<{ rawSecret: string; name: string } | null>(null);
 
-  // New Webhook Modal
+  // AI Provider Modal
+  const [editingAIProvider, setEditingAIProvider] = useState<AIProviderConfig | null>(null);
+  const [aiProviderFormModel, setAIProviderFormModel] = useState("");
+  const [aiProviderFormKey, setAIProviderFormKey] = useState("");
+  const [aiProviderFormEnabled, setAIProviderFormEnabled] = useState(true);
+
+  // Webhook Modals
   const [showCreateWebhookModal, setShowCreateWebhookModal] = useState(false);
   const [newWebhookName, setNewWebhookName] = useState("");
   const [newWebhookUrl, setNewWebhookUrl] = useState("");
-  const [newWebhookEvents, setNewWebhookEvents] = useState<string[]>(["client.created", "loan.approved"]);
-  const [testingWebhook, setTestingWebhook] = useState<WebhookRecord | null>(null);
-  const [testWebhookResult, setTestWebhookResult] = useState<any | null>(null);
-  const [selectedPayloadLog, setSelectedPayloadLog] = useState<WebhookDeliveryLog | null>(null);
+  const [newWebhookEvents, setNewWebhookEvents] = useState<string[]>(["client.created", "client.updated"]);
+  const [createdWebhookSecret, setCreatedWebhookSecret] = useState<{ rawSecret: string; name: string } | null>(null);
+  const [selectedWebhookDeliveries, setSelectedWebhookDeliveries] = useState<{ webhookName: string; deliveries: WebhookDeliveryLog[] } | null>(null);
 
-  // Persist local storage on updates
-  useEffect(() => {
-    localStorage.setItem("gbk_admin_integrations", JSON.stringify(integrations));
-  }, [integrations]);
+  const [copiedText, setCopiedText] = useState<string | null>(null);
 
-  useEffect(() => {
-    localStorage.setItem("gbk_admin_api_keys", JSON.stringify(apiKeys));
-  }, [apiKeys]);
+  // Developer / Demo Toggle (Defaults strictly to FALSE in production)
+  const [isDevDemoMode, setIsDevDemoMode] = useState(false);
 
-  useEffect(() => {
-    localStorage.setItem("gbk_admin_webhooks", JSON.stringify(webhooks));
-  }, [webhooks]);
+  // Load backend state on mount or refresh
+  const loadAllBackendData = async () => {
+    setIsLoading(true);
+    try {
+      const [defs, conns, keys, providers, whs, logs] = await Promise.all([
+        fetchIntegrationDefinitions(),
+        fetchActiveConnections(),
+        fetchApiKeys(),
+        fetchAIProviders(),
+        fetchWebhooks(),
+        fetchIntegrationLogs()
+      ]);
 
-  useEffect(() => {
-    localStorage.setItem("gbk_admin_webhook_logs", JSON.stringify(webhookLogs));
-  }, [webhookLogs]);
-
-  useEffect(() => {
-    localStorage.setItem("gbk_admin_integration_logs", JSON.stringify(integrationLogs));
-  }, [integrationLogs]);
-
-  // Helper to append log
-  const pushIntegrationLog = (source: string, type: IntegrationLog["type"], status: IntegrationLog["status"], action: string, details: string) => {
-    const newLog: IntegrationLog = {
-      id: `intlog_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      source,
-      type,
-      status,
-      action,
-      details,
-      ipAddress: "192.168.1.10"
-    };
-    setIntegrationLogs(prev => [newLog, ...prev.slice(0, 99)]);
-  };
-
-  // --- HANDLERS: INTEGRATIONS MARKETPLACE & ACTIVE ---
-  const handleOpenConfigureModal = (app: IntegrationApp) => {
-    setConfiguringApp(app);
-    const initialForm: Record<string, string> = {};
-    if (app.settingsFields) {
-      app.settingsFields.forEach(f => {
-        initialForm[f.key] = f.value;
-      });
+      setDefinitions(defs);
+      setConnections(conns);
+      setApiKeys(keys);
+      setAIProviders(providers);
+      setWebhooks(whs);
+      setIntegrationLogs(logs);
+    } catch (err) {
+      console.error("Error loading integrations backend data:", err);
+      showToast("Error synchronizing backend integration state.", "error");
+    } finally {
+      setIsLoading(false);
     }
-    setAppSettingsForm(initialForm);
   };
 
-  const handleSaveIntegrationConfig = (e: React.FormEvent) => {
+  useEffect(() => {
+    loadAllBackendData();
+  }, []);
+
+  // Copy helper
+  const handleCopy = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedText(text);
+    showToast(`${label} copied to clipboard!`, "info");
+    setTimeout(() => setCopiedText(null), 2500);
+  };
+
+  // ─── ACTIONS ───
+
+  // Connect catalog integration
+  const handleConnectCatalogApp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!configuringApp) return;
+    if (!selectedCatalogApp) return;
 
-    setIntegrations(prev => prev.map(item => {
-      if (item.id === configuringApp.id) {
-        const updatedFields = item.settingsFields?.map(f => ({
-          ...f,
-          value: appSettingsForm[f.key] !== undefined ? appSettingsForm[f.key] : f.value
-        }));
-        return {
-          ...item,
-          status: "connected",
-          lastSyncTime: new Date().toISOString(),
-          settingsFields: updatedFields
-        };
+    setIsSubmittingConnect(true);
+    try {
+      const res = await connectIntegrationApi(selectedCatalogApp.id, {
+        accountLabel: connectionFormLabel || `${selectedCatalogApp.name} Connection`,
+        credentials: connectionFormCred,
+        connectedBy: currentUser.name || currentUser.displayName || currentUser.email
+      });
+
+      if (res && res.ok) {
+        showToast(`Successfully connected ${selectedCatalogApp.name}!`, "success", "CheckCircle2");
+        if (logActivity) logActivity("Connected Integration", `Connected ${selectedCatalogApp.name}`);
+        setSelectedCatalogApp(null);
+        setConnectionFormLabel("");
+        setConnectionFormCred("");
+        await loadAllBackendData();
+      } else {
+        showToast("Connection failed. Check credentials and retry.", "error");
       }
-      return item;
-    }));
-
-    pushIntegrationLog(configuringApp.name, "settings", "success", "Configuration Saved", `Updated connection parameters for ${configuringApp.name}`);
-    if (logActivity) logActivity("Integration Configured", `Updated connection parameters for ${configuringApp.name}`);
-    showToast(`${configuringApp.name} connected and credentials verified!`, "success", "🔌");
-    setConfiguringApp(null);
-  };
-
-  const handleDisconnectIntegration = (app: IntegrationApp) => {
-    if (window.confirm(`Are you sure you want to disconnect ${app.name}? Active workflows using this connection may pause.`)) {
-      setIntegrations(prev => prev.map(item => item.id === app.id ? { ...item, status: "disconnected" } : item));
-      pushIntegrationLog(app.name, "auth", "warning", "Integration Disconnected", `Disconnected ${app.name} from CRM pipeline.`);
-      if (logActivity) logActivity("Integration Disconnected", `Disconnected ${app.name}`);
-      showToast(`${app.name} has been disconnected.`, "info");
+    } catch (err) {
+      showToast("Error executing connection request.", "error");
+    } finally {
+      setIsSubmittingConnect(false);
     }
   };
 
-  const handleSyncNow = (app: IntegrationApp) => {
-    setSyncingAppId(app.id);
-    showToast(`Initiating data sync with ${app.name}...`, "info", "🔄");
-
-    setTimeout(() => {
-      setIntegrations(prev => prev.map(item => {
-        if (item.id === app.id) {
-          return { ...item, lastSyncTime: new Date().toISOString(), status: "connected" };
-        }
-        return item;
-      }));
-
-      setSyncingAppId(null);
-      pushIntegrationLog(app.name, "sync", "success", "Manual Sync Completed", `Synchronized records with ${app.name}. 0 errors reported.`);
-      showToast(`Data sync with ${app.name} completed successfully!`, "success", "✅");
-    }, 1200);
+  // Disconnect connection
+  const handleConfirmDisconnect = async () => {
+    if (!disconnectingConnection) return;
+    try {
+      const res = await disconnectIntegrationApi(disconnectingConnection.integrationId);
+      if (res && res.ok) {
+        showToast("Integration connection revoked and disconnected.", "info");
+        if (logActivity) logActivity("Disconnected Integration", `Revoked ${disconnectingConnection.integrationId}`);
+        setDisconnectingConnection(null);
+        await loadAllBackendData();
+      } else {
+        showToast("Failed to disconnect connection.", "error");
+      }
+    } catch {
+      showToast("Error revoking integration connection.", "error");
+    }
   };
 
-  // --- HANDLERS: API KEYS ---
-  const handleCreateApiKey = (e: React.FormEvent) => {
+  // Test connection
+  const handleTestConnection = async (integrationId: string) => {
+    showToast("Testing connection ping...", "info");
+    try {
+      const res = await testIntegrationApi(integrationId);
+      if (res && res.ok) {
+        showToast(res.message || "Connection health test passed!", "success", "Zap");
+        await loadAllBackendData();
+      } else {
+        showToast("Connection test failed. Endpoint unresponsive.", "error");
+      }
+    } catch {
+      showToast("Connection health test error.", "error");
+    }
+  };
+
+  // Create Application API Key
+  const handleCreateApiKey = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newKeyName.trim()) {
-      showToast("Please provide an API key name.", "warning");
+      showToast("Please enter an API Key name.", "warning");
       return;
     }
 
-    const randomBytes = Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-    const rawSecret = `gbk_live_${randomBytes}`;
-    const masked = `gbk_live_${randomBytes.substring(0, 4)}••••••••••••${randomBytes.substring(randomBytes.length - 4)}`;
+    try {
+      const res = await createApiKeyApi({
+        name: newKeyName.trim(),
+        scopes: newKeyScopes,
+        rateLimit: newKeyRateLimit,
+        expirationDate: newKeyExpiration || undefined,
+        createdBy: currentUser.name || currentUser.displayName || currentUser.email
+      });
 
-    const newRecord: ApiKeyRecord = {
-      id: `key_${Date.now()}`,
-      name: newKeyName.trim(),
-      prefix: "gbk_live_",
-      maskedKey: masked,
-      scopes: newKeyScopes,
-      createdAt: new Date().toISOString(),
-      lastUsedAt: "Never",
-      status: "active",
-      createdReason: newKeyReason.trim() || "Generated by Administrator"
-    };
-
-    setApiKeys(prev => [newRecord, ...prev]);
-    setGeneratedSecretKey(rawSecret);
-    pushIntegrationLog("API Management", "api_call", "success", "API Key Generated", `Generated new key "${newKeyName}" with scopes: [${newKeyScopes.join(", ")}]`);
-    if (logActivity) logActivity("Generated API Key", `Created key "${newKeyName}"`);
-    showToast("API Key created successfully! Copy your key now.", "success", "🔑");
-  };
-
-  const handleRevokeApiKey = (keyId: string, name: string) => {
-    if (window.confirm(`Revoke API Key "${name}"? Applications using this token will immediately lose access.`)) {
-      setApiKeys(prev => prev.map(k => k.id === keyId ? { ...k, status: "revoked" } : k));
-      pushIntegrationLog("API Management", "auth", "warning", "API Key Revoked", `Revoked access token "${name}".`);
-      if (logActivity) logActivity("Revoked API Key", `Revoked key "${name}"`);
-      showToast(`API Key "${name}" has been revoked.`, "info");
+      if (res && res.rawSecret) {
+        setCreatedKeySecret({
+          rawSecret: res.rawSecret,
+          name: newKeyName.trim()
+        });
+        setShowCreateKeyModal(false);
+        setNewKeyName("");
+        setNewKeyScopes(["clients:read"]);
+        showToast("Application API Key generated securely!", "success", "Key");
+        if (logActivity) logActivity("Created API Key", `Generated API Key '${newKeyName}'`);
+        await loadAllBackendData();
+      } else {
+        showToast("Failed to create API key.", "error");
+      }
+    } catch {
+      showToast("Error generating API key.", "error");
     }
   };
 
-  const handleSaveRateLimits = (e: React.FormEvent) => {
-    e.preventDefault();
-    showToast("API rate limit configuration saved!", "success", "⚙️");
-    pushIntegrationLog("API Gateway", "settings", "success", "Rate Limits Updated", `Set max requests per minute to ${rateLimits.maxRequestsPerMin}`);
+  // Revoke API Key
+  const handleRevokeApiKey = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to revoke API Key '${name}'? Any connected client app will immediately lose access.`)) {
+      return;
+    }
+    try {
+      const res = await revokeApiKeyApi(id);
+      if (res && res.ok) {
+        showToast(`API Key '${name}' revoked.`, "warning");
+        if (logActivity) logActivity("Revoked API Key", `Revoked key '${name}'`);
+        await loadAllBackendData();
+      }
+    } catch {
+      showToast("Error revoking API key.", "error");
+    }
   };
 
-  // --- HANDLERS: WEBHOOKS ---
-  const handleCreateWebhook = (e: React.FormEvent) => {
+  // Rotate API Key
+  const handleRotateApiKey = async (id: string, name: string) => {
+    if (!window.confirm(`Rotate secret credentials for API Key '${name}'? The previous secret will stop working immediately.`)) {
+      return;
+    }
+    try {
+      const res = await rotateApiKeyApi(id);
+      if (res && res.newRawSecret) {
+        setCreatedKeySecret({
+          rawSecret: res.newRawSecret,
+          name: `${name} (Rotated)`
+        });
+        showToast(`API Key '${name}' credentials rotated.`, "success", "RefreshCw");
+        if (logActivity) logActivity("Rotated API Key", `Rotated key secret for '${name}'`);
+        await loadAllBackendData();
+      }
+    } catch {
+      showToast("Error rotating API key credentials.", "error");
+    }
+  };
+
+  // Configure AI Provider
+  const handleSaveAIProvider = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAIProvider) return;
+
+    try {
+      const res = await configureAIProviderApi(editingAIProvider.id, {
+        enabled: aiProviderFormEnabled,
+        selectedModel: aiProviderFormModel,
+        credential: aiProviderFormKey.trim() || undefined
+      });
+
+      if (res && res.ok) {
+        showToast(`AI Provider '${editingAIProvider.name}' updated.`, "success", "Sparkles");
+        if (logActivity) logActivity("Updated AI Provider", `Configured ${editingAIProvider.name}`);
+        setEditingAIProvider(null);
+        setAIProviderFormKey("");
+        await loadAllBackendData();
+      } else {
+        showToast("Failed to update AI provider.", "error");
+      }
+    } catch {
+      showToast("Error configuring AI provider.", "error");
+    }
+  };
+
+  // Test AI Provider
+  const handleTestAIProvider = async (id: string, name: string) => {
+    showToast(`Testing AI Provider authentication for ${name}...`, "info");
+    try {
+      const res = await testAIProviderApi(id);
+      if (res && res.ok) {
+        showToast(res.message, "success", "Sparkles");
+        await loadAllBackendData();
+      } else {
+        showToast(res.error || "AI Provider test failed. Check key.", "error");
+      }
+    } catch {
+      showToast("Error testing AI provider.", "error");
+    }
+  };
+
+  // Disconnect AI Provider
+  const handleDisconnectAIProvider = async (id: string, name: string) => {
+    if (!window.confirm(`Disconnect and clear credentials for ${name}?`)) return;
+    try {
+      const res = await disconnectAIProviderApi(id);
+      if (res && res.ok) {
+        showToast(`Cleared configuration for ${name}.`, "info");
+        await loadAllBackendData();
+      }
+    } catch {
+      showToast("Error disconnecting AI provider.", "error");
+    }
+  };
+
+  // Create Webhook
+  const handleCreateWebhook = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newWebhookName.trim() || !newWebhookUrl.trim()) {
-      showToast("Please fill in both Webhook Name and Target URL.", "warning");
+      showToast("Please enter a name and target URL.", "warning");
       return;
     }
 
-    const randomSecret = `whsec_${Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}`;
-    const newHook: WebhookRecord = {
-      id: `wh_${Date.now()}`,
-      name: newWebhookName.trim(),
-      targetUrl: newWebhookUrl.trim(),
-      secret: randomSecret,
-      status: "active",
-      events: newWebhookEvents,
-      createdAt: new Date().toISOString(),
-      totalDelivered: 0,
-      failureCount: 0
-    };
+    try {
+      const res = await createWebhookApi({
+        name: newWebhookName.trim(),
+        targetUrl: newWebhookUrl.trim(),
+        events: newWebhookEvents,
+        createdBy: currentUser.name || currentUser.displayName || currentUser.email
+      });
 
-    setWebhooks(prev => [newHook, ...prev]);
-    setShowCreateWebhookModal(false);
-    setNewWebhookName("");
-    setNewWebhookUrl("");
-    pushIntegrationLog("Webhook Manager", "webhook", "success", "Webhook Registered", `Registered new endpoint "${newHook.name}" (${newHook.targetUrl})`);
-    showToast(`Webhook "${newHook.name}" created!`, "success", "⚓");
-  };
-
-  const handleTestWebhook = (hook: WebhookRecord) => {
-    setTestingWebhook(hook);
-    setTestWebhookResult(null);
-
-    setTimeout(() => {
-      const mockResult = {
-        statusCode: 200,
-        statusText: "OK",
-        durationMs: 124,
-        timestamp: new Date().toISOString(),
-        requestHeaders: {
-          "Content-Type": "application/json",
-          "X-GBK-Signature": "sha256=9f82c091a2..."
-        },
-        payloadSent: {
-          event: hook.events[0] || "client.created",
-          testMode: true,
-          crmInstance: "GoldBook Mortgage CRM",
-          sampleData: {
-            clientId: "client_test_991",
-            borrower: "Jane Doe",
-            loanAmount: 520000,
-            status: "Pre-Approved"
-          }
-        },
-        responseBody: '{"status":"received","processed_at":"2026-08-06T14:21:00Z"}'
-      };
-
-      setTestWebhookResult(mockResult);
-
-      // Append to logs
-      const newLog: WebhookDeliveryLog = {
-        id: `whlog_${Date.now()}`,
-        webhookId: hook.id,
-        webhookName: hook.name,
-        event: hook.events[0] || "test.ping",
-        targetUrl: hook.targetUrl,
-        statusCode: 200,
-        timestamp: new Date().toISOString(),
-        durationMs: 124,
-        status: "success",
-        payload: mockResult.payloadSent,
-        responseBody: mockResult.responseBody
-      };
-      setWebhookLogs(prev => [newLog, ...prev]);
-      showToast(`Test payload delivered to ${hook.name}! (200 OK)`, "success", "🚀");
-    }, 800);
-  };
-
-  const handleDeleteWebhook = (id: string, name: string) => {
-    if (window.confirm(`Delete webhook "${name}"?`)) {
-      setWebhooks(prev => prev.filter(w => w.id !== id));
-      pushIntegrationLog("Webhook Manager", "webhook", "warning", "Webhook Deleted", `Deleted webhook "${name}"`);
-      showToast(`Webhook "${name}" removed.`, "info");
+      if (res && res.rawSecret) {
+        setCreatedWebhookSecret({
+          rawSecret: res.rawSecret,
+          name: newWebhookName.trim()
+        });
+        setShowCreateWebhookModal(false);
+        setNewWebhookName("");
+        setNewWebhookUrl("");
+        showToast("Webhook endpoint registered successfully!", "success", "Webhook");
+        if (logActivity) logActivity("Created Webhook", `Registered webhook '${newWebhookName}'`);
+        await loadAllBackendData();
+      } else {
+        showToast("Failed to register webhook.", "error");
+      }
+    } catch {
+      showToast("Error registering webhook.", "error");
     }
   };
 
-  // Filtered Integrations for Marketplace
-  const filteredMarketplaceApps = useMemo(() => {
-    return integrations.filter(app => {
-      const q = searchQuery.toLowerCase().trim();
-      const matchQ = !q || app.name.toLowerCase().includes(q) || app.description.toLowerCase().includes(q);
-      const matchCat = categoryFilter === "all" || app.category === categoryFilter;
-      const matchStatus = statusFilter === "all" || app.status === statusFilter;
-      return matchQ && matchCat && matchStatus;
+  // Delete Webhook
+  const handleDeleteWebhook = async (id: string, name: string) => {
+    if (!window.confirm(`Delete webhook '${name}'?`)) return;
+    try {
+      const res = await deleteWebhookApi(id);
+      if (res && res.ok) {
+        showToast(`Webhook '${name}' deleted.`, "info");
+        await loadAllBackendData();
+      }
+    } catch {
+      showToast("Error deleting webhook.", "error");
+    }
+  };
+
+  // Test Webhook
+  const handleTestWebhook = async (id: string, name: string) => {
+    showToast(`Dispatching test payload to webhook '${name}'...`, "info");
+    try {
+      const res = await testWebhookApi(id);
+      if (res && res.ok) {
+        showToast(res.message, "success", "Send");
+        await loadAllBackendData();
+      } else {
+        showToast("Webhook test failed.", "error");
+      }
+    } catch {
+      showToast("Error testing webhook delivery.", "error");
+    }
+  };
+
+  // View Webhook Deliveries
+  const handleViewWebhookDeliveries = async (id: string, name: string) => {
+    try {
+      const deliveries = await fetchWebhookDeliveries(id);
+      setSelectedWebhookDeliveries({
+        webhookName: name,
+        deliveries
+      });
+    } catch {
+      showToast("Error fetching webhook deliveries.", "error");
+    }
+  };
+
+  // Filtered Catalog
+  const filteredDefinitions = useMemo(() => {
+    return definitions.filter(def => {
+      const matchesSearch = 
+        def.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        def.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        def.description.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchesCat = categoryFilter === "all" || def.category === categoryFilter;
+      return matchesSearch && matchesCat;
     });
-  }, [integrations, searchQuery, categoryFilter, statusFilter]);
+  }, [definitions, searchQuery, categoryFilter]);
 
-  const activeIntegrationsList = useMemo(() => {
-    return integrations.filter(a => a.status === "connected");
-  }, [integrations]);
-
-  // Categories list
-  const categoriesList = [
-    "CRM & Pipeline",
-    "Document Signing",
-    "Payments & Billing",
-    "Lender Exchanges",
-    "Credit & Scoring",
-    "Communication & Messaging",
-    "Automation & Sync"
-  ];
+  // Filtered Logs
+  const filteredLogs = useMemo(() => {
+    return integrationLogs.filter(log => {
+      const matchesType = logTypeFilter === "all" || log.type === logTypeFilter;
+      const matchesSearch = 
+        log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        log.details.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        log.source.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesType && matchesSearch;
+    });
+  }, [integrationLogs, logTypeFilter, searchQuery]);
 
   return (
     <div className="space-y-6" id="integrations-management-view">
-      
-      {/* HEADER CARD */}
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl border border-blue-500/20">
+      {/* View Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-xl">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#00C6FF]/20 to-[#0072FF]/20 border border-[#00C6FF]/30 flex items-center justify-center text-[#00C6FF]">
             <Layers className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
-              System Integrations &amp; API Hub
-            </h2>
-            <p className="text-xs text-[var(--color-text-muted)]">
-              Manage external service connections, active OAuth apps, API tokens, webhook listeners, and transmission logs.
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-white">Integrations & API Infrastructure</h2>
+              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-[#00C6FF]/10 text-[#00C6FF] border border-[#00C6FF]/20">
+                Enterprise Hub
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Manage third-party marketplace endpoints, application API keys, AI provider credentials, and webhook delivery streams.
             </p>
           </div>
         </div>
 
-        {/* Quick Stats Pill */}
-        <div className="flex items-center gap-3">
-          <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs font-bold flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="text-[var(--color-text)]">{activeIntegrationsList.length} Connected Apps</span>
-          </div>
-          <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs font-bold flex items-center gap-2">
-            <Key className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-[var(--color-text)]">{apiKeys.filter(k => k.status === "active").length} Active API Keys</span>
-          </div>
+        <div className="flex items-center gap-3 self-end md:self-auto">
+          <button
+            onClick={loadAllBackendData}
+            disabled={isLoading}
+            className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/90 flex items-center gap-2 transition-all cursor-pointer"
+            title="Refresh backend status"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-[#00C6FF]" : ""}`} />
+            <span>Sync Status</span>
+          </button>
+
+          {/* Dev Demo Mode Toggle */}
+          <button
+            onClick={() => {
+              setIsDevDemoMode(prev => !prev);
+              showToast(`Development Mode ${!isDevDemoMode ? "Enabled" : "Disabled"}`, "info");
+            }}
+            className={`px-3 py-2 rounded-xl border text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
+              isDevDemoMode 
+                ? "bg-amber-500/20 border-amber-500/40 text-amber-300" 
+                : "bg-white/5 border-white/10 text-slate-400 hover:text-white"
+            }`}
+          >
+            <Radio className="w-3.5 h-3.5" />
+            <span>{isDevDemoMode ? "Dev Mode ON" : "Production Mode"}</span>
+          </button>
         </div>
       </div>
 
-      {/* SUB-NAVIGATION TABS */}
-      <div className="flex items-center gap-1 border-b border-[var(--color-border)] pb-2 overflow-x-auto">
+      {/* Primary Navigation Tabs */}
+      <div className="flex items-center gap-2 border-b border-white/10 pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab("marketplace")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === "marketplace"
-              ? "bg-[var(--color-accent)] text-white shadow-md"
-              : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
+              ? "bg-[#00C6FF]/15 text-[#00C6FF] border border-[#00C6FF]/30 shadow-lg shadow-[#00C6FF]/10"
+              : "text-slate-400 hover:text-white hover:bg-white/5"
           }`}
         >
-          <Globe className="w-4 h-4" /> Integration Marketplace ({integrations.length})
+          <Globe className="w-4 h-4" />
+          <span>Marketplace</span>
+          <span className="ml-1 px-1.5 py-0.2 rounded-full bg-white/10 text-[10px] text-white/80">
+            {definitions.length}
+          </span>
         </button>
 
         <button
           onClick={() => setActiveTab("active")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === "active"
-              ? "bg-[var(--color-accent)] text-white shadow-md"
-              : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
+              ? "bg-[#00C6FF]/15 text-[#00C6FF] border border-[#00C6FF]/30 shadow-lg shadow-[#00C6FF]/10"
+              : "text-slate-400 hover:text-white hover:bg-white/5"
           }`}
         >
-          <Activity className="w-4 h-4" /> Active Connections ({activeIntegrationsList.length})
+          <Zap className="w-4 h-4" />
+          <span>Active Connections</span>
+          <span className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+            connections.length > 0 ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-white/10 text-slate-400"
+          }`}>
+            {connections.length}
+          </span>
         </button>
 
         <button
           onClick={() => setActiveTab("api")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === "api"
-              ? "bg-[var(--color-accent)] text-white shadow-md"
-              : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
+              ? "bg-[#00C6FF]/15 text-[#00C6FF] border border-[#00C6FF]/30 shadow-lg shadow-[#00C6FF]/10"
+              : "text-slate-400 hover:text-white hover:bg-white/5"
           }`}
         >
-          <Key className="w-4 h-4" /> API Management ({apiKeys.length})
+          <Key className="w-4 h-4" />
+          <span>API & AI Management</span>
+          <span className="ml-1 px-1.5 py-0.2 rounded-full bg-white/10 text-[10px] text-white/80">
+            {apiKeys.length + aiProviders.filter(p => p.status === "configured").length}
+          </span>
         </button>
 
         <button
           onClick={() => setActiveTab("webhooks")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === "webhooks"
-              ? "bg-[var(--color-accent)] text-white shadow-md"
-              : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
+              ? "bg-[#00C6FF]/15 text-[#00C6FF] border border-[#00C6FF]/30 shadow-lg shadow-[#00C6FF]/10"
+              : "text-slate-400 hover:text-white hover:bg-white/5"
           }`}
         >
-          <Webhook className="w-4 h-4" /> Webhook Management ({webhooks.length})
+          <Webhook className="w-4 h-4" />
+          <span>Webhook Subscriptions</span>
+          <span className="ml-1 px-1.5 py-0.2 rounded-full bg-white/10 text-[10px] text-white/80">
+            {webhooks.length}
+          </span>
         </button>
 
         <button
           onClick={() => setActiveTab("logs")}
-          className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === "logs"
-              ? "bg-[var(--color-accent)] text-white shadow-md"
-              : "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
+              ? "bg-[#00C6FF]/15 text-[#00C6FF] border border-[#00C6FF]/30 shadow-lg shadow-[#00C6FF]/10"
+              : "text-slate-400 hover:text-white hover:bg-white/5"
           }`}
         >
-          <Clock className="w-4 h-4" /> Integration Logs ({integrationLogs.length})
+          <Activity className="w-4 h-4" />
+          <span>Integration Logs</span>
+          <span className="ml-1 px-1.5 py-0.2 rounded-full bg-white/10 text-[10px] text-white/80">
+            {integrationLogs.length}
+          </span>
         </button>
       </div>
 
-      {/* ─── TAB 1: INTEGRATION MARKETPLACE ─── */}
+      {/* TAB 1: INTEGRATION MARKETPLACE */}
       {activeTab === "marketplace" && (
         <div className="space-y-6">
-          
-          {/* Controls & Filter Bar */}
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-            
-            {/* Search Input */}
-            <div className="relative w-full md:w-80">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-[var(--color-text-muted)]" />
+          {/* Filters Bar */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white/5 p-4 rounded-xl border border-white/10 backdrop-blur-md">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search integrations, apps..."
+                placeholder="Search catalog, provider, category..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl pl-9 pr-4 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00C6FF]"
               />
             </div>
 
-            {/* Category Filter */}
-            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-              <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider flex items-center gap-1">
-                <Filter className="w-3.5 h-3.5" /> Category:
-              </span>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Filter className="w-3.5 h-3.5 text-slate-400" />
               <select
                 value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-1.5 text-xs font-bold text-[var(--color-text)] focus:outline-none"
+                onChange={e => setCategoryFilter(e.target.value)}
+                className="bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#00C6FF]"
               >
                 <option value="all">All Categories</option>
-                {categoriesList.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-1.5 text-xs font-bold text-[var(--color-text)] focus:outline-none"
-              >
-                <option value="all">All Statuses</option>
-                <option value="connected">Connected</option>
-                <option value="disconnected">Disconnected</option>
+                <option value="Document Signing">Document Signing</option>
+                <option value="Lender Exchanges">Lender Exchanges</option>
+                <option value="Credit & Scoring">Credit & Scoring</option>
+                <option value="Payments & Billing">Payments & Billing</option>
+                <option value="Communication & Messaging">Communication & Messaging</option>
+                <option value="Automation & Sync">Automation & Sync</option>
+                <option value="CRM & Pipeline">CRM & Pipeline</option>
               </select>
             </div>
-
           </div>
 
-          {/* Grid of Integration Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredMarketplaceApps.map(app => {
-              const isConnected = app.status === "connected";
+          {/* Grid of Catalog Definitions */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredDefinitions.map(app => {
+              const activeConn = connections.find(c => c.integrationId === app.id);
+              const isConnected = activeConn?.status === "connected";
+
               return (
                 <div 
-                  key={app.id}
-                  className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-5 space-y-4 shadow-sm flex flex-col justify-between hover:border-[var(--color-accent)]/50 transition-all"
+                  key={app.id} 
+                  className={`bg-white/5 rounded-2xl p-5 border transition-all flex flex-col justify-between group ${
+                    isConnected 
+                      ? "border-emerald-500/40 bg-emerald-500/5 shadow-lg shadow-emerald-500/5" 
+                      : "border-white/10 hover:border-white/20 hover:bg-white/[0.07]"
+                  }`}
                 >
-                  <div className="space-y-3">
-                    
-                    {/* Top Row: Icon + Name + Badge */}
+                  <div className="space-y-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="text-3xl p-2 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl">
-                          {app.icon}
+                        <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-xl border border-white/10">
+                          {app.icon || "🔌"}
                         </div>
                         <div>
-                          <h3 className="text-sm font-bold text-[var(--color-text)]">{app.name}</h3>
-                          <span className="text-[10px] text-[var(--color-text-muted)] font-bold uppercase tracking-wider block">
-                            {app.category}
+                          <h3 className="text-sm font-bold text-white group-hover:text-[#00C6FF] transition-colors">
+                            {app.name}
+                          </h3>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {app.provider}
                           </span>
                         </div>
                       </div>
 
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border flex items-center gap-1 ${
-                        isConnected
-                          ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-                          : "bg-gray-500/15 text-[var(--color-text-muted)] border-gray-500/30"
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? "bg-emerald-400 animate-pulse" : "bg-gray-400"}`}></span>
-                        {isConnected ? "CONNECTED" : "DISCONNECTED"}
-                      </span>
+                      {/* Explicit Connection State Badge */}
+                      {app.status === "coming_soon" ? (
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-slate-500/20 text-slate-400 border border-slate-500/30">
+                          Coming Soon
+                        </span>
+                      ) : isConnected ? (
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Connected
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-white/10 text-slate-300 border border-white/15">
+                          Not Connected
+                        </span>
+                      )}
                     </div>
 
-                    {/* Description */}
-                    <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                    <p className="text-xs text-slate-300/80 line-clamp-2 leading-relaxed">
                       {app.description}
                     </p>
 
-                    {/* Specs / Meta */}
-                    <div className="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)] space-y-1 text-[11px] font-mono text-[var(--color-text-faint)]">
-                      <div className="flex justify-between">
-                        <span>Sync Protocol:</span>
-                        <span className="text-[var(--color-text)] font-semibold">{app.syncFrequency}</span>
+                    <div className="space-y-2 pt-2 border-t border-white/10">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Category:</span>
+                        <span className="text-slate-200 font-medium">{app.category}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span>API Version:</span>
-                        <span className="text-[var(--color-text)] font-semibold">{app.apiVersion}</span>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Connection Method:</span>
+                        <span className="text-[#00C6FF] font-medium uppercase text-[10px] tracking-wider">
+                          {app.connectionMethod}
+                        </span>
                       </div>
-                      {isConnected && app.lastSyncTime && (
-                        <div className="flex justify-between">
-                          <span>Last Active:</span>
-                          <span className="text-emerald-400 font-semibold">{new Date(app.lastSyncTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      {app.supportedModules && app.supportedModules.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {app.supportedModules.map((mod, i) => (
+                            <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-slate-300">
+                              {mod}
+                            </span>
+                          ))}
                         </div>
                       )}
                     </div>
-
                   </div>
 
-                  {/* Actions Footer */}
-                  <div className="pt-3 border-t border-[var(--color-border)] flex items-center justify-between gap-2">
-                    <a
-                      href={app.docsUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[11px] text-[var(--color-accent)] font-bold hover:underline flex items-center gap-1"
-                    >
-                      Docs <ArrowUpRight className="w-3 h-3" />
-                    </a>
+                  <div className="pt-4 mt-4 border-t border-white/10 flex items-center justify-between gap-2">
+                    {app.documentationUrl && (
+                      <a 
+                        href={app.documentationUrl} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
+                      >
+                        Docs <ArrowUpRight className="w-3 h-3" />
+                      </a>
+                    )}
 
-                    <div className="flex items-center gap-2">
-                      {isConnected ? (
-                        <>
-                          <button
-                            onClick={() => handleSyncNow(app)}
-                            disabled={syncingAppId === app.id}
-                            className="p-2 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] hover:bg-[var(--color-surface-3)] cursor-pointer text-xs font-bold flex items-center gap-1"
-                            title="Sync Now"
-                          >
-                            <RefreshCw className={`w-3.5 h-3.5 ${syncingAppId === app.id ? "animate-spin text-[var(--color-accent)]" : ""}`} />
-                          </button>
-                          <button
-                            onClick={() => handleOpenConfigureModal(app)}
-                            className="px-3 py-1.5 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] hover:bg-[var(--color-surface-3)] cursor-pointer text-xs font-bold flex items-center gap-1"
-                          >
-                            <Settings className="w-3.5 h-3.5 text-[var(--color-accent)]" /> Configure
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => handleOpenConfigureModal(app)}
-                          className="px-4 py-1.5 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-xl hover:bg-[var(--color-accent-hover)] cursor-pointer flex items-center gap-1 shadow-sm"
-                        >
-                          <Power className="w-3.5 h-3.5" /> Connect App
-                        </button>
-                      )}
-                    </div>
+                    {app.status === "coming_soon" ? (
+                      <button disabled className="px-3 py-1.5 rounded-xl bg-white/5 text-slate-500 text-xs font-semibold cursor-not-allowed">
+                        Unavailable
+                      </button>
+                    ) : isConnected ? (
+                      <button 
+                        onClick={() => setDisconnectingConnection(activeConn!)}
+                        className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold transition-all cursor-pointer"
+                      >
+                        Disconnect
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => {
+                          setSelectedCatalogApp(app);
+                          setConnectionFormLabel(`${app.name} Primary Account`);
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-[#0072FF] hover:bg-[#0072FF]/80 text-white text-xs font-semibold shadow-lg shadow-[#0072FF]/20 transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Install / Configure</span>
+                      </button>
+                    )}
                   </div>
-
                 </div>
               );
             })}
           </div>
-
         </div>
       )}
 
-      {/* ─── TAB 2: ACTIVE CONNECTIONS ─── */}
+      {/* TAB 2: ACTIVE CONNECTIONS */}
       {activeTab === "active" && (
         <div className="space-y-6">
-          
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-6 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-4">
-              <div>
-                <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-emerald-400" /> Active Service Integrations
-                </h3>
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Live connected endpoints processing data syncs, digital signatures, credit pulls, and webhooks.
+          {connections.length === 0 ? (
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-12 text-center backdrop-blur-xl space-y-4">
+              <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto text-slate-400">
+                <Globe className="w-8 h-8 text-slate-500" />
+              </div>
+              <div className="max-w-md mx-auto space-y-2">
+                <h3 className="text-lg font-bold text-white">No active connections</h3>
+                <p className="text-xs text-slate-400">
+                  No live third-party integrations are currently configured on this CRM instance. Select an application from the Marketplace to establish a real endpoint connection.
                 </p>
               </div>
-
               <button
-                onClick={() => {
-                  activeIntegrationsList.forEach(a => handleSyncNow(a));
-                }}
-                className="px-4 py-2 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-xl hover:bg-[var(--color-accent-hover)] cursor-pointer flex items-center gap-2"
+                onClick={() => setActiveTab("marketplace")}
+                className="px-4 py-2 rounded-xl bg-[#0072FF] text-white text-xs font-semibold shadow-lg shadow-[#0072FF]/20 hover:bg-[#0072FF]/80 transition-all cursor-pointer inline-flex items-center gap-2"
               >
-                <RefreshCw className="w-4 h-4" /> Sync All Active Services
+                <Globe className="w-4 h-4" />
+                <span>Browse Marketplace</span>
               </button>
             </div>
+          ) : (
+            <div className="space-y-4">
+              {connections.map(conn => {
+                const catalogDef = definitions.find(d => d.id === conn.integrationId);
 
-            {/* Active Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[var(--color-border)] text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] bg-[var(--color-surface-2)]">
-                    <th className="py-3 px-4">Integration App</th>
-                    <th className="py-3 px-4">Category</th>
-                    <th className="py-3 px-4">Environment</th>
-                    <th className="py-3 px-4">Last Sync</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--color-border)] text-xs">
-                  {activeIntegrationsList.map(app => (
-                    <tr key={app.id} className="hover:bg-[var(--color-surface-2)]/50 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-[var(--color-text)] flex items-center gap-3">
-                        <span className="text-xl">{app.icon}</span>
-                        <div>
-                          <span>{app.name}</span>
-                          <span className="text-[10px] text-[var(--color-text-faint)] block font-mono font-normal">
-                            {app.apiVersion}
+                return (
+                  <div key={conn.id} className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-xl flex flex-col md:flex-row md:items-center justify-between gap-5">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-2xl text-emerald-400">
+                        {catalogDef?.icon || "🔌"}
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold text-white">{catalogDef?.name || conn.integrationId}</h3>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" /> Connected
                           </span>
                         </div>
-                      </td>
-
-                      <td className="py-3.5 px-4 font-semibold text-[var(--color-text-muted)]">
-                        {app.category}
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-purple-500/10 text-purple-300 border-purple-500/20">
-                          {app.environment}
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4 font-mono text-[var(--color-text-faint)]">
-                        {app.lastSyncTime ? new Date(app.lastSyncTime).toLocaleString() : "Pending"}
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold border bg-emerald-500/15 text-emerald-400 border-emerald-500/30 flex items-center gap-1.5 w-fit">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                          HEALTHY
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => handleSyncNow(app)}
-                            disabled={syncingAppId === app.id}
-                            className="px-3 py-1.5 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl text-xs font-bold text-[var(--color-text)] hover:bg-[var(--color-surface-3)] cursor-pointer flex items-center gap-1"
-                          >
-                            <RefreshCw className={`w-3.5 h-3.5 ${syncingAppId === app.id ? "animate-spin text-[var(--color-accent)]" : ""}`} /> Sync
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenConfigureModal(app)}
-                            className="px-3 py-1.5 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl text-xs font-bold text-[var(--color-text)] hover:bg-[var(--color-surface-3)] cursor-pointer flex items-center gap-1"
-                          >
-                            <Settings className="w-3.5 h-3.5 text-[var(--color-accent)]" /> Config
-                          </button>
-
-                          <button
-                            onClick={() => handleDisconnectIntegration(app)}
-                            className="px-3 py-1.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-xs font-bold hover:bg-red-500/20 cursor-pointer flex items-center gap-1"
-                          >
-                            <Power className="w-3.5 h-3.5" /> Disconnect
-                          </button>
+                        <p className="text-xs text-slate-300">
+                          Label: <span className="font-semibold text-white">{conn.accountLabel || "Primary Endpoint"}</span>
+                        </p>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-400 pt-1">
+                          <span>Connected by: {conn.connectedBy || "Admin"}</span>
+                          <span>Connected date: {conn.connectedAt ? new Date(conn.connectedAt).toLocaleDateString() : "N/A"}</span>
+                          <span>Last Health Check: {conn.lastHealthCheckAt ? new Date(conn.lastHealthCheckAt).toLocaleTimeString() : "Pending"}</span>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
+                      </div>
+                    </div>
 
-                  {activeIntegrationsList.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="py-8 text-center text-[var(--color-text-faint)]">
-                        No active service connections found. Browse the marketplace to connect services.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                    <div className="flex items-center gap-2 self-end md:self-center">
+                      <button
+                        onClick={() => handleTestConnection(conn.integrationId)}
+                        className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/90 flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Test Connection</span>
+                      </button>
+
+                      <button
+                        onClick={() => setDisconnectingConnection(conn)}
+                        className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <Power className="w-3.5 h-3.5" />
+                        <span>Disconnect</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-
-          </div>
-
+          )}
         </div>
       )}
 
-      {/* ─── TAB 3: API MANAGEMENT ─── */}
+      {/* TAB 3: API & AI MANAGEMENT */}
       {activeTab === "api" && (
         <div className="space-y-6">
-          
-          {/* API Keys Table Header Card */}
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-6 shadow-sm space-y-4">
-            
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[var(--color-border)] pb-4">
-              <div>
-                <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
-                  <Key className="w-4 h-4 text-amber-400" /> API Access Keys
-                </h3>
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Generate secure tokens for custom integrations, Zapier workflows, and external server requests.
-                </p>
+          {/* Sub Tab Switcher */}
+          <div className="flex items-center gap-2 bg-white/5 p-1 rounded-xl border border-white/10 w-fit">
+            <button
+              onClick={() => setApiSubTab("keys")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                apiSubTab === "keys" ? "bg-[#00C6FF] text-black shadow-md font-bold" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Application API Keys
+            </button>
+            <button
+              onClick={() => setApiSubTab("ai")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                apiSubTab === "ai" ? "bg-[#00C6FF] text-black shadow-md font-bold" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              AI Provider Credentials
+            </button>
+          </div>
+
+          {/* Subtab 1: Application API Keys */}
+          {apiSubTab === "keys" && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/5 p-5 rounded-2xl border border-white/10 backdrop-blur-xl">
+                <div>
+                  <h3 className="text-sm font-bold text-white">GBK CRM Application API Keys</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Keys used by external software or custom webhooks to query and submit data to GBK Financial CRM.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowCreateKeyModal(true)}
+                  className="px-4 py-2 rounded-xl bg-[#0072FF] hover:bg-[#0072FF]/80 text-white text-xs font-semibold shadow-lg shadow-[#0072FF]/20 transition-all cursor-pointer flex items-center gap-2 self-start sm:self-auto"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create Application API Key</span>
+                </button>
               </div>
 
-              <button
-                onClick={() => {
-                  setShowCreateKeyModal(true);
-                  setGeneratedSecretKey(null);
-                }}
-                className="px-4 py-2 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-xl hover:bg-[var(--color-accent-hover)] cursor-pointer flex items-center gap-2 shadow-sm"
-              >
-                <Plus className="w-4 h-4" /> Generate New API Key
-              </button>
-            </div>
-
-            {/* Keys Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[var(--color-border)] text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] bg-[var(--color-surface-2)]">
-                    <th className="py-3 px-4">Key Name</th>
-                    <th className="py-3 px-4">Token Key Token</th>
-                    <th className="py-3 px-4">Scopes</th>
-                    <th className="py-3 px-4">Created</th>
-                    <th className="py-3 px-4">Last Used</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--color-border)] text-xs">
-                  {apiKeys.map(k => (
-                    <tr key={k.id} className="hover:bg-[var(--color-surface-2)]/50 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-[var(--color-text)]">
-                        <span>{k.name}</span>
-                        {k.createdReason && (
-                          <span className="text-[10px] text-[var(--color-text-faint)] block font-normal">
-                            {k.createdReason}
+              {apiKeys.length === 0 ? (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-10 text-center backdrop-blur-xl space-y-3">
+                  <Key className="w-8 h-8 text-slate-500 mx-auto" />
+                  <h4 className="text-sm font-bold text-white">No application API keys</h4>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    No external system tokens exist on this server. Click "Create Application API Key" to provision a restricted token with explicit scopes.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {apiKeys.map(key => (
+                    <div key={key.id} className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-white">{key.name}</h4>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            key.status === "active" 
+                              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" 
+                              : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                          }`}>
+                            {key.status.toUpperCase()}
                           </span>
-                        )}
-                      </td>
+                        </div>
 
-                      <td className="py-3.5 px-4 font-mono text-[var(--color-text-muted)]">
-                        {k.maskedKey}
-                      </td>
+                        <div className="flex items-center gap-2 font-mono text-xs text-slate-300">
+                          <span className="text-slate-500">Key Mask:</span>
+                          <span className="bg-black/40 px-2.5 py-1 rounded border border-white/10 text-[#00C6FF]">
+                            {key.maskedKey}
+                          </span>
+                        </div>
 
-                      <td className="py-3.5 px-4">
-                        <div className="flex flex-wrap gap-1">
-                          {k.scopes.map(s => (
-                            <span key={s} className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[var(--color-surface-2)] text-[var(--color-text-muted)] border border-[var(--color-border)]">
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {key.scopes.map((s, idx) => (
+                            <span key={idx} className="text-[10px] px-2 py-0.5 rounded bg-white/10 border border-white/10 text-slate-300 font-mono">
                               {s}
                             </span>
                           ))}
                         </div>
-                      </td>
 
-                      <td className="py-3.5 px-4 font-mono text-[var(--color-text-faint)]">
-                        {new Date(k.createdAt).toLocaleDateString()}
-                      </td>
+                        <div className="flex items-center gap-4 text-[11px] text-slate-400 pt-1">
+                          <span>Rate Limit: {key.rateLimit} req/min</span>
+                          <span>Created: {new Date(key.createdAt).toLocaleDateString()}</span>
+                          {key.lastUsedAt && <span>Last Used: {new Date(key.lastUsedAt).toLocaleString()}</span>}
+                        </div>
+                      </div>
 
-                      <td className="py-3.5 px-4 font-mono text-[var(--color-text-faint)]">
-                        {k.lastUsedAt.includes("Z") ? new Date(k.lastUsedAt).toLocaleString() : k.lastUsedAt}
-                      </td>
+                      <div className="flex items-center gap-2 self-end md:self-center">
+                        <button
+                          onClick={() => handleRotateApiKey(key.id, key.name)}
+                          className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/90 flex items-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Rotate Secret</span>
+                        </button>
 
-                      <td className="py-3.5 px-4">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                          k.status === "active"
-                            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-                            : "bg-red-500/15 text-red-400 border-red-500/30"
-                        }`}>
-                          {k.status.toUpperCase()}
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4 text-right">
-                        {k.status === "active" && (
+                        {key.status === "active" && (
                           <button
-                            onClick={() => handleRevokeApiKey(k.id, k.name)}
-                            className="px-3 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl text-xs font-bold hover:bg-red-500/20 cursor-pointer"
+                            onClick={() => handleRevokeApiKey(key.id, key.name)}
+                            className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
                           >
-                            Revoke
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Revoke</span>
                           </button>
                         )}
-                      </td>
-                    </tr>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              )}
             </div>
+          )}
 
-          </div>
-
-          {/* API Usage Statistics & Rate Limits Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* Stats Card */}
-            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-6 space-y-4 shadow-sm">
-              <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2 border-b border-[var(--color-border)] pb-3">
-                <BarChart3 className="w-4 h-4 text-blue-400" /> API Usage Statistics (24 Hours)
-              </h3>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div className="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)] text-center">
-                  <span className="text-[10px] font-bold text-[var(--color-text-faint)] uppercase block">Total Requests</span>
-                  <span className="text-xl font-extrabold text-[var(--color-text)]">28,410</span>
-                </div>
-                <div className="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)] text-center">
-                  <span className="text-[10px] font-bold text-[var(--color-text-faint)] uppercase block">Avg Latency</span>
-                  <span className="text-xl font-extrabold text-emerald-400">112 ms</span>
-                </div>
-                <div className="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)] text-center">
-                  <span className="text-[10px] font-bold text-[var(--color-text-faint)] uppercase block">Success Rate</span>
-                  <span className="text-xl font-extrabold text-blue-400">99.92%</span>
-                </div>
-              </div>
-
-              <div className="space-y-2 pt-2">
-                <span className="text-xs font-bold text-[var(--color-text)] uppercase tracking-wider block">Top Endpoint Consumption</span>
-                <div className="space-y-2 text-xs font-mono">
-                  <div>
-                    <div className="flex justify-between text-[11px] text-[var(--color-text-muted)] mb-1">
-                      <span>GET /api/v1/clients</span>
-                      <span>14,200 req (50%)</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-[var(--color-surface-2)] rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500 w-[50%]"></div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-[11px] text-[var(--color-text-muted)] mb-1">
-                      <span>POST /api/v1/webhooks</span>
-                      <span>8,910 req (31%)</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-[var(--color-surface-2)] rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-500 w-[31%]"></div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-[11px] text-[var(--color-text-muted)] mb-1">
-                      <span>POST /api/v1/documents</span>
-                      <span>5,300 req (19%)</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-[var(--color-surface-2)] rounded-full overflow-hidden">
-                      <div className="h-full bg-purple-500 w-[19%]"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Rate Limits Config Card */}
-            <form onSubmit={handleSaveRateLimits} className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-6 space-y-4 shadow-sm">
-              <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2 border-b border-[var(--color-border)] pb-3">
-                <Sliders className="w-4 h-4 text-purple-400" /> API Gateway Rate Limits &amp; IP Protection
-              </h3>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-bold text-[var(--color-text)] uppercase tracking-wider block mb-1">
-                    Requests per Minute (Per Key)
-                  </label>
-                  <input
-                    type="number"
-                    value={rateLimits.maxRequestsPerMin}
-                    onChange={(e) => setRateLimits({ ...rateLimits, maxRequestsPerMin: parseInt(e.target.value) || 60 })}
-                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-[var(--color-text)] uppercase tracking-wider block mb-1">
-                    Burst Request Limit
-                  </label>
-                  <input
-                    type="number"
-                    value={rateLimits.maxBurstRequests}
-                    onChange={(e) => setRateLimits({ ...rateLimits, maxBurstRequests: parseInt(e.target.value) || 100 })}
-                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-[var(--color-text)] uppercase tracking-wider block mb-1">
-                    Allowed IP Whitelist (CIDR / Ranges)
-                  </label>
-                  <input
-                    type="text"
-                    value={rateLimits.ipWhitelist}
-                    onChange={(e) => setRateLimits({ ...rateLimits, ipWhitelist: e.target.value })}
-                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2 flex justify-end">
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-xl hover:bg-[var(--color-accent-hover)] cursor-pointer"
-                >
-                  Save Gateway Rules
-                </button>
-              </div>
-            </form>
-
-          </div>
-
-        </div>
-      )}
-
-      {/* ─── TAB 4: WEBHOOK MANAGEMENT ─── */}
-      {activeTab === "webhooks" && (
-        <div className="space-y-6">
-          
-          {/* Registered Webhooks Card */}
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-6 shadow-sm space-y-4">
-            
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[var(--color-border)] pb-4">
-              <div>
-                <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
-                  <Webhook className="w-4 h-4 text-cyan-400" /> Outbound Webhook Subscribers
+          {/* Subtab 2: AI Provider Credentials */}
+          {apiSubTab === "ai" && (
+            <div className="space-y-6">
+              <div className="bg-white/5 p-5 rounded-2xl border border-white/10 backdrop-blur-xl space-y-1">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-[#00C6FF]" />
+                  <span>Central AI Provider Credentials & Model Abstraction</span>
                 </h3>
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Dispatch real-time HTTP POST events when client pipeline stages, documents, or deals update.
+                <p className="text-xs text-slate-400">
+                  Configure server-side API keys for Gemini, OpenAI, Anthropic, and other foundation models. Keys remain strictly server-side and never reach browser client state.
                 </p>
               </div>
 
-              <button
-                onClick={() => setShowCreateWebhookModal(true)}
-                className="px-4 py-2 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-xl hover:bg-[var(--color-accent-hover)] cursor-pointer flex items-center gap-2 shadow-sm"
-              >
-                <Plus className="w-4 h-4" /> Create Webhook Endpoint
-              </button>
-            </div>
-
-            {/* Webhooks Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[var(--color-border)] text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] bg-[var(--color-surface-2)]">
-                    <th className="py-3 px-4">Webhook Name</th>
-                    <th className="py-3 px-4">Target URL</th>
-                    <th className="py-3 px-4">Subscribed Events</th>
-                    <th className="py-3 px-4">Delivered</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--color-border)] text-xs">
-                  {webhooks.map(w => (
-                    <tr key={w.id} className="hover:bg-[var(--color-surface-2)]/50 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-[var(--color-text)]">
-                        <span>{w.name}</span>
-                        <span className="text-[10px] text-[var(--color-text-faint)] font-mono block">
-                          Secret: {w.secret.substring(0, 10)}...
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {aiProviders.map(provider => (
+                  <div key={provider.id} className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-xl flex flex-col justify-between space-y-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-white">{provider.name}</h4>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          provider.status === "configured"
+                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                            : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                        }`}>
+                          {provider.status === "configured" ? "Configured" : "Not Configured"}
                         </span>
-                      </td>
+                      </div>
 
-                      <td className="py-3.5 px-4 font-mono text-[var(--color-text-muted)] max-w-xs truncate">
-                        {w.targetUrl}
-                      </td>
+                      <div className="space-y-1 text-xs">
+                        <div className="flex items-center justify-between text-slate-400">
+                          <span>Active Model:</span>
+                          <span className="text-white font-mono">{provider.selectedModel}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-400">
+                          <span>State:</span>
+                          <span className={provider.enabled ? "text-emerald-400 font-semibold" : "text-slate-500"}>
+                            {provider.enabled ? "Enabled" : "Disabled"}
+                          </span>
+                        </div>
+                        {provider.maskedCredential && (
+                          <div className="flex items-center justify-between text-slate-400">
+                            <span>Credential:</span>
+                            <span className="font-mono text-slate-300 text-[11px]">{provider.maskedCredential}</span>
+                          </div>
+                        )}
+                      </div>
 
-                      <td className="py-3.5 px-4">
-                        <div className="flex flex-wrap gap-1">
-                          {w.events.map(ev => (
-                            <span key={ev} className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                              {ev}
+                      {provider.capabilities && (
+                        <div className="flex flex-wrap gap-1 pt-2 border-t border-white/10">
+                          {provider.capabilities.map((cap, i) => (
+                            <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-slate-300">
+                              {cap}
                             </span>
                           ))}
                         </div>
-                      </td>
+                      )}
+                    </div>
 
-                      <td className="py-3.5 px-4 font-mono text-[var(--color-text-faint)]">
-                        {w.totalDelivered} ({w.failureCount} errors)
-                      </td>
+                    <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => handleTestAIProvider(provider.id, provider.name)}
+                        className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-slate-300 transition-all cursor-pointer"
+                      >
+                        Test Health
+                      </button>
 
-                      <td className="py-3.5 px-4">
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold border bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
-                          {w.status.toUpperCase()}
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => handleTestWebhook(w)}
-                            className="px-3 py-1 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl text-xs font-bold text-[var(--color-text)] hover:bg-[var(--color-surface-3)] cursor-pointer flex items-center gap-1"
-                          >
-                            <Send className="w-3 h-3 text-cyan-400" /> Test Ping
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteWebhook(w.id, w.name)}
-                            className="p-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl hover:bg-red-500/20 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      <button
+                        onClick={() => {
+                          setEditingAIProvider(provider);
+                          setAIProviderFormModel(provider.selectedModel);
+                          setAIProviderFormEnabled(provider.enabled);
+                          setAIProviderFormKey("");
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-[#0072FF] hover:bg-[#0072FF]/80 text-white text-xs font-semibold shadow-lg shadow-[#0072FF]/20 transition-all cursor-pointer"
+                      >
+                        Configure Key
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-
-          </div>
-
-          {/* Webhook Delivery Logs Table */}
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-6 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2 border-b border-[var(--color-border)] pb-3">
-              <Clock className="w-4 h-4 text-cyan-400" /> Webhook Delivery Transmission Logs
-            </h3>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[var(--color-border)] text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] bg-[var(--color-surface-2)]">
-                    <th className="py-3 px-4">Timestamp</th>
-                    <th className="py-3 px-4">Webhook Name</th>
-                    <th className="py-3 px-4">Trigger Event</th>
-                    <th className="py-3 px-4">HTTP Status</th>
-                    <th className="py-3 px-4">Latency</th>
-                    <th className="py-3 px-4 text-right">Payload</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--color-border)] text-xs font-mono">
-                  {webhookLogs.map(log => (
-                    <tr key={log.id} className="hover:bg-[var(--color-surface-2)]/50">
-                      <td className="py-3 px-4 text-[var(--color-text-faint)]">
-                        {new Date(log.timestamp).toLocaleTimeString()}
-                      </td>
-
-                      <td className="py-3 px-4 font-sans font-bold text-[var(--color-text)]">
-                        {log.webhookName}
-                      </td>
-
-                      <td className="py-3 px-4 text-cyan-300">
-                        {log.event}
-                      </td>
-
-                      <td className="py-3 px-4">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          log.statusCode === 200 ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"
-                        }`}>
-                          {log.statusCode} OK
-                        </span>
-                      </td>
-
-                      <td className="py-3 px-4 text-[var(--color-text-faint)]">
-                        {log.durationMs} ms
-                      </td>
-
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => setSelectedPayloadLog(log)}
-                          className="px-2.5 py-1 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg text-[10px] font-sans font-bold text-[var(--color-accent)] hover:underline cursor-pointer"
-                        >
-                          Inspect JSON
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
+          )}
         </div>
       )}
 
-      {/* ─── TAB 5: INTEGRATION AUDIT LOGS ─── */}
-      {activeTab === "logs" && (
-        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-4">
+      {/* TAB 4: WEBHOOK SUBSCRIPTIONS */}
+      {activeTab === "webhooks" && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/5 p-5 rounded-2xl border border-white/10 backdrop-blur-xl">
             <div>
-              <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
-                <Clock className="w-4 h-4 text-purple-400" /> Integration Activity &amp; Audit Trail
-              </h3>
-              <p className="text-xs text-[var(--color-text-muted)]">
-                Real-time ledger of external API queries, token authentications, webhooks, and sync cycles.
+              <h3 className="text-sm font-bold text-white">Outgoing Webhook Endpoints</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Dispatch signed HTTPS POST notifications to external services when client profiles, deals, or tasks change.
               </p>
             </div>
-
             <button
-              onClick={() => {
-                const blob = new Blob([JSON.stringify(integrationLogs, null, 2)], { type: "application/json" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `integration_logs_${new Date().toISOString().split("T")[0]}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-                showToast("Exported integration audit log package.", "info");
-              }}
-              className="px-3 py-1.5 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl text-xs font-bold text-[var(--color-text)] hover:bg-[var(--color-surface-3)] cursor-pointer flex items-center gap-1.5"
+              onClick={() => setShowCreateWebhookModal(true)}
+              className="px-4 py-2 rounded-xl bg-[#0072FF] hover:bg-[#0072FF]/80 text-white text-xs font-semibold shadow-lg shadow-[#0072FF]/20 transition-all cursor-pointer flex items-center gap-2 self-start sm:self-auto"
             >
-              <Download className="w-3.5 h-3.5" /> Export Log JSON
+              <Plus className="w-4 h-4" />
+              <span>Create Webhook</span>
             </button>
           </div>
 
-          {/* Logs Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-[var(--color-border)] text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] bg-[var(--color-surface-2)]">
-                  <th className="py-3 px-4">Timestamp</th>
-                  <th className="py-3 px-4">Source System</th>
-                  <th className="py-3 px-4">Type</th>
-                  <th className="py-3 px-4">Action</th>
-                  <th className="py-3 px-4">Details</th>
-                  <th className="py-3 px-4">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--color-border)] text-xs">
-                {integrationLogs.map(l => (
-                  <tr key={l.id} className="hover:bg-[var(--color-surface-2)]/50">
-                    <td className="py-3.5 px-4 font-mono text-[var(--color-text-faint)] whitespace-nowrap">
-                      {new Date(l.timestamp).toLocaleString()}
-                    </td>
-
-                    <td className="py-3.5 px-4 font-bold text-[var(--color-text)]">
-                      {l.source}
-                    </td>
-
-                    <td className="py-3.5 px-4">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase border bg-[var(--color-surface-2)] text-[var(--color-text-muted)]">
-                        {l.type}
-                      </span>
-                    </td>
-
-                    <td className="py-3.5 px-4 font-semibold text-[var(--color-text)]">
-                      {l.action}
-                    </td>
-
-                    <td className="py-3.5 px-4 text-[var(--color-text-muted)] max-w-md truncate">
-                      {l.details}
-                    </td>
-
-                    <td className="py-3.5 px-4">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                        l.status === "success" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" :
-                        l.status === "warning" ? "bg-amber-500/15 text-amber-400 border-amber-500/30" :
-                        "bg-red-500/15 text-red-400 border-red-500/30"
+          {webhooks.length === 0 ? (
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-10 text-center backdrop-blur-xl space-y-3">
+              <Webhook className="w-8 h-8 text-slate-500 mx-auto" />
+              <h4 className="text-sm font-bold text-white">No configured webhooks</h4>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                No webhook listeners are registered. Click "Create Webhook" to dispatch real-time event notifications with HMAC signing secrets.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {webhooks.map(wh => (
+                <div key={wh.id} className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-white">{wh.name}</h4>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        wh.status === "active" 
+                          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" 
+                          : "bg-slate-500/20 text-slate-400 border border-slate-500/30"
                       }`}>
-                        {l.status.toUpperCase()}
+                        {wh.status.toUpperCase()}
                       </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+
+                    <p className="text-xs font-mono text-[#00C6FF] bg-black/40 px-3 py-1.5 rounded-xl border border-white/10 w-fit max-w-xl truncate">
+                      {wh.targetUrl}
+                    </p>
+
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {wh.events.map((ev, i) => (
+                        <span key={i} className="text-[10px] px-2 py-0.5 rounded bg-white/10 border border-white/10 text-slate-300 font-mono">
+                          {ev}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-4 text-[11px] text-slate-400 pt-1">
+                      <span>Total Delivered: {wh.totalDelivered}</span>
+                      <span>Failures: {wh.failureCount}</span>
+                      {wh.lastDeliveryAt && <span>Last Delivery: {new Date(wh.lastDeliveryAt).toLocaleString()}</span>}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end md:self-center">
+                    <button
+                      onClick={() => handleTestWebhook(wh.id, wh.name)}
+                      className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/90 flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Send className="w-3.5 h-3.5 text-[#00C6FF]" />
+                      <span>Test Payload</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleViewWebhookDeliveries(wh.id, wh.name)}
+                      className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-slate-300 transition-all cursor-pointer"
+                    >
+                      Logs
+                    </button>
+
+                    <button
+                      onClick={() => handleDeleteWebhook(wh.id, wh.name)}
+                      className="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* ─── MODAL 1: CONFIGURE INTEGRATION SETTINGS ─── */}
-      {configuringApp && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <form onSubmit={handleSaveIntegrationConfig} className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in-95">
-            
-            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
+      {/* TAB 5: INTEGRATION LOGS */}
+      {activeTab === "logs" && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white/5 p-4 rounded-xl border border-white/10 backdrop-blur-md">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search audit actions, sources..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00C6FF]"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Filter className="w-3.5 h-3.5 text-slate-400" />
+              <select
+                value={logTypeFilter}
+                onChange={e => setLogTypeFilter(e.target.value)}
+                className="bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#00C6FF]"
+              >
+                <option value="all">All Types</option>
+                <option value="oauth">OAuth</option>
+                <option value="sync">Sync</option>
+                <option value="api_call">API Calls</option>
+                <option value="webhook">Webhooks</option>
+                <option value="credential_rotate">Credential Rotation</option>
+              </select>
+            </div>
+          </div>
+
+          {filteredLogs.length === 0 ? (
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-10 text-center backdrop-blur-xl space-y-3">
+              <Activity className="w-8 h-8 text-slate-500 mx-auto" />
+              <h4 className="text-sm font-bold text-white">No integration activity yet</h4>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                No integration events or API calls have been executed yet. Logs will populate dynamically upon performing API queries or webhook deliveries.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden backdrop-blur-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 bg-black/40 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                      <th className="py-3 px-4">Timestamp</th>
+                      <th className="py-3 px-4">Source</th>
+                      <th className="py-3 px-4">Type</th>
+                      <th className="py-3 px-4">Action</th>
+                      <th className="py-3 px-4">Details</th>
+                      <th className="py-3 px-4">User</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 text-xs">
+                    {filteredLogs.map(log => (
+                      <tr key={log.id} className="hover:bg-white/5 transition-colors">
+                        <td className="py-3 px-4 font-mono text-slate-400 whitespace-nowrap">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4 font-semibold text-white">
+                          {log.source}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-0.5 rounded text-[10px] uppercase font-mono font-bold bg-white/10 text-[#00C6FF] border border-white/10">
+                            {log.type}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-200 font-medium">
+                          {log.action}
+                        </td>
+                        <td className="py-3 px-4 text-slate-300 font-mono text-[11px] max-w-md truncate">
+                          {log.details}
+                        </td>
+                        <td className="py-3 px-4 text-slate-400">
+                          {log.actingUser || "System"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── MODALS ─── */}
+
+      {/* MODAL 1: INSTALL / CONFIGURE MARKETPLACE INTEGRATION */}
+      {selectedCatalogApp && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/15 rounded-2xl p-6 max-w-md w-full space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
-                <span className="text-2xl">{configuringApp.icon}</span>
+                <span className="text-2xl">{selectedCatalogApp.icon || "🔌"}</span>
                 <div>
-                  <h3 className="text-sm font-bold text-[var(--color-text)]">Configure {configuringApp.name}</h3>
-                  <span className="text-[10px] text-[var(--color-text-muted)] font-mono">{configuringApp.apiVersion}</span>
+                  <h3 className="text-base font-bold text-white">Configure {selectedCatalogApp.name}</h3>
+                  <p className="text-xs text-slate-400">Connection Method: {selectedCatalogApp.connectionMethod.toUpperCase()}</p>
                 </div>
               </div>
-
-              <button
-                type="button"
-                onClick={() => setConfiguringApp(null)}
-                className="p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
-              >
+              <button onClick={() => setSelectedCatalogApp(null)} className="text-slate-400 hover:text-white p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3">
-              {configuringApp.settingsFields?.map(field => (
-                <div key={field.key} className="space-y-1">
-                  <label className="text-xs font-bold text-[var(--color-text)] uppercase tracking-wider block">
-                    {field.label}
-                  </label>
-                  <input
-                    type={field.type}
-                    value={appSettingsForm[field.key] || ""}
-                    onChange={(e) => setAppSettingsForm({ ...appSettingsForm, [field.key]: e.target.value })}
-                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] font-mono"
-                    placeholder={`Enter ${field.label}...`}
-                  />
+            <form onSubmit={handleConnectCatalogApp} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-300">Connection Label</label>
+                <input
+                  type="text"
+                  required
+                  value={connectionFormLabel}
+                  onChange={e => setConnectionFormLabel(e.target.value)}
+                  placeholder="e.g. DocuSign Production Account"
+                  className="w-full bg-black/50 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#00C6FF]"
+                />
+              </div>
+
+              {selectedCatalogApp.connectionMethod === "oauth" && (
+                <div className="p-3.5 rounded-xl bg-[#00C6FF]/10 border border-[#00C6FF]/20 text-xs text-slate-300 space-y-1">
+                  <p className="font-semibold text-white flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-[#00C6FF]" /> OAuth 2.0 Flow Required
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Clicking Connect will establish an OAuth session handshake with {selectedCatalogApp.provider} via server proxy.
+                  </p>
                 </div>
-              ))}
-            </div>
+              )}
 
-            <div className="pt-3 border-t border-[var(--color-border)] flex items-center justify-between">
-              <span className="text-[10px] text-[var(--color-text-faint)] font-mono">
-                Environment: {configuringApp.environment.toUpperCase()}
-              </span>
+              {(selectedCatalogApp.connectionMethod === "api_key" || selectedCatalogApp.connectionMethod === "webhook" || selectedCatalogApp.connectionMethod === "manual") && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-300">API Secret / Endpoint Credential</label>
+                  <input
+                    type="password"
+                    required
+                    value={connectionFormCred}
+                    onChange={e => setConnectionFormCred(e.target.value)}
+                    placeholder="Enter secret token or private key..."
+                    className="w-full bg-black/50 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#00C6FF] font-mono"
+                  />
+                  <p className="text-[10px] text-slate-400 pt-0.5">Stored securely on server vault and never exposed in browser logs.</p>
+                </div>
+              )}
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
                 <button
                   type="button"
-                  onClick={() => setConfiguringApp(null)}
-                  className="px-4 py-2 bg-[var(--color-surface-2)] text-[var(--color-text)] font-bold text-xs rounded-xl hover:bg-[var(--color-surface-3)] cursor-pointer"
+                  onClick={() => setSelectedCatalogApp(null)}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-xl hover:bg-[var(--color-accent-hover)] cursor-pointer"
+                  disabled={isSubmittingConnect}
+                  className="px-4 py-2 rounded-xl bg-[#0072FF] hover:bg-[#0072FF]/80 text-white text-xs font-semibold shadow-lg shadow-[#0072FF]/20 transition-all cursor-pointer flex items-center gap-2"
                 >
-                  Save &amp; Connect App
+                  {isSubmittingConnect && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Establish Connection</span>
                 </button>
               </div>
-            </div>
-
-          </form>
-        </div>
-      )}
-
-      {/* ─── MODAL 2: GENERATE API KEY ─── */}
-      {showCreateKeyModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in-95">
-            
-            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
-              <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
-                <Key className="w-4 h-4 text-amber-400" /> Generate API Access Token
-              </h3>
-              <button
-                onClick={() => setShowCreateKeyModal(false)}
-                className="p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {!generatedSecretKey ? (
-              <form onSubmit={handleCreateApiKey} className="space-y-4">
-                
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[var(--color-text)] uppercase tracking-wider block">
-                    Key Identifier / Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Zapier Production Hook Token"
-                    value={newKeyName}
-                    onChange={(e) => setNewKeyName(e.target.value)}
-                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[var(--color-text)] uppercase tracking-wider block">
-                    Purpose / Reason
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Automated loan pipeline sync"
-                    value={newKeyReason}
-                    onChange={(e) => setNewKeyReason(e.target.value)}
-                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[var(--color-text)] uppercase tracking-wider block">
-                    Select Scopes
-                  </label>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    {["read:clients", "write:clients", "read:documents", "read:webhooks", "admin:all"].map(scope => (
-                      <label key={scope} className="flex items-center gap-2 p-2 bg-[var(--color-surface-2)] rounded-lg border border-[var(--color-border)] cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={newKeyScopes.includes(scope)}
-                          onChange={(e) => {
-                            if (e.target.checked) setNewKeyScopes([...newKeyScopes, scope]);
-                            else setNewKeyScopes(newKeyScopes.filter(s => s !== scope));
-                          }}
-                          className="rounded text-[var(--color-accent)]"
-                        />
-                        <span className="font-mono text-[11px]">{scope}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-[var(--color-border)] flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateKeyModal(false)}
-                    className="px-4 py-2 bg-[var(--color-surface-2)] text-[var(--color-text)] font-bold text-xs rounded-xl hover:bg-[var(--color-surface-3)] cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-xl hover:bg-[var(--color-accent-hover)] cursor-pointer"
-                  >
-                    Generate Key
-                  </button>
-                </div>
-
-              </form>
-            ) : (
-              <div className="space-y-4">
-                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-2">
-                  <span className="text-xs font-bold text-emerald-400 block">Copy your API Secret Key Now!</span>
-                  <p className="text-[11px] text-[var(--color-text-muted)]">
-                    This key will never be shown again. Store it securely in your client application.
-                  </p>
-                  <div className="p-3 bg-[var(--color-surface-2)] rounded-lg border border-[var(--color-border)] font-mono text-xs text-[var(--color-text)] break-all flex items-center justify-between gap-2">
-                    <span>{generatedSecretKey}</span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(generatedSecretKey);
-                        showToast("API Secret copied to clipboard!", "success");
-                      }}
-                      className="p-1.5 bg-[var(--color-surface-3)] rounded text-[var(--color-accent)] hover:underline shrink-0"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => {
-                    setShowCreateKeyModal(false);
-                    setGeneratedSecretKey(null);
-                  }}
-                  className="w-full py-2 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-xl hover:bg-[var(--color-accent-hover)] cursor-pointer"
-                >
-                  Done
-                </button>
-              </div>
-            )}
-
+            </form>
           </div>
         </div>
       )}
 
-      {/* ─── MODAL 3: CREATE WEBHOOK ─── */}
-      {showCreateWebhookModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <form onSubmit={handleCreateWebhook} className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
-            
-            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
-              <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
-                <Webhook className="w-4 h-4 text-cyan-400" /> Create Webhook Listener
-              </h3>
+      {/* MODAL 2: CONFIRM DISCONNECT */}
+      {disconnectingConnection && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-500/30 rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 text-rose-400">
+              <AlertTriangle className="w-6 h-6" />
+              <h3 className="text-base font-bold text-white">Revoke Connection?</h3>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Are you sure you want to disconnect <span className="font-semibold text-white">{disconnectingConnection.accountLabel || disconnectingConnection.integrationId}</span>? Live syncs will stop immediately and server secret tokens will be invalidated.
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-2">
               <button
-                type="button"
-                onClick={() => setShowCreateWebhookModal(false)}
-                className="p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-[var(--color-text)] uppercase tracking-wider block">
-                Webhook Name
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Zapier Deal Approved Webhook"
-                value={newWebhookName}
-                onChange={(e) => setNewWebhookName(e.target.value)}
-                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)]"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-[var(--color-text)] uppercase tracking-wider block">
-                Target Endpoint URL
-              </label>
-              <input
-                type="url"
-                required
-                placeholder="https://hooks.zapier.com/hooks/catch/..."
-                value={newWebhookUrl}
-                onChange={(e) => setNewWebhookUrl(e.target.value)}
-                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl px-3 py-2 text-xs text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] font-mono"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-[var(--color-text)] uppercase tracking-wider block">
-                Events to Trigger On
-              </label>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                {["client.created", "client.updated", "document.uploaded", "document.signed", "loan.approved", "payment.succeeded"].map(ev => (
-                  <label key={ev} className="flex items-center gap-2 p-2 bg-[var(--color-surface-2)] rounded-lg border border-[var(--color-border)] cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={newWebhookEvents.includes(ev)}
-                      onChange={(e) => {
-                        if (e.target.checked) setNewWebhookEvents([...newWebhookEvents, ev]);
-                        else setNewWebhookEvents(newWebhookEvents.filter(x => x !== ev));
-                      }}
-                      className="rounded text-[var(--color-accent)]"
-                    />
-                    <span className="font-mono text-[11px]">{ev}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-[var(--color-border)] flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowCreateWebhookModal(false)}
-                className="px-4 py-2 bg-[var(--color-surface-2)] text-[var(--color-text)] font-bold text-xs rounded-xl hover:bg-[var(--color-surface-3)] cursor-pointer"
+                onClick={() => setDisconnectingConnection(null)}
+                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 cursor-pointer"
               >
                 Cancel
               </button>
               <button
-                type="submit"
-                className="px-5 py-2 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-xl hover:bg-[var(--color-accent-hover)] cursor-pointer"
+                onClick={handleConfirmDisconnect}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-lg shadow-rose-600/20 cursor-pointer"
               >
-                Register Webhook
+                Confirm Disconnect
               </button>
             </div>
-
-          </form>
+          </div>
         </div>
       )}
 
-      {/* ─── MODAL 4: TEST WEBHOOK RESULT ─── */}
-      {testingWebhook && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
-              <h3 className="text-sm font-bold text-[var(--color-text)] uppercase tracking-wider flex items-center gap-2">
-                <Send className="w-4 h-4 text-cyan-400" /> Webhook Ping Test
+      {/* MODAL 3: CREATE APPLICATION API KEY */}
+      {showCreateKeyModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/15 rounded-2xl p-6 max-w-md w-full space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Key className="w-4 h-4 text-[#00C6FF]" />
+                <span>Create Application API Key</span>
               </h3>
-              <button
-                onClick={() => setTestingWebhook(null)}
-                className="p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
-              >
+              <button onClick={() => setShowCreateKeyModal(false)} className="text-slate-400 hover:text-white p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {testWebhookResult ? (
-              <div className="space-y-3 font-mono text-xs">
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-between">
-                  <span className="font-bold text-emerald-400">HTTP {testWebhookResult.statusCode} OK</span>
-                  <span className="text-[var(--color-text-faint)]">{testWebhookResult.durationMs} ms</span>
-                </div>
+            <form onSubmit={handleCreateApiKey} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-300">Key Identifier Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newKeyName}
+                  onChange={e => setNewKeyName(e.target.value)}
+                  placeholder="e.g. Zapier Deal Intake Webhook"
+                  className="w-full bg-black/50 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#00C6FF]"
+                />
+              </div>
 
-                <div className="space-y-1">
-                  <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase font-sans">Payload Sent</span>
-                  <pre className="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)] overflow-x-auto text-[11px] text-[var(--color-text)]">
-                    {JSON.stringify(testWebhookResult.payloadSent, null, 2)}
-                  </pre>
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase font-sans">Target Response Body</span>
-                  <pre className="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)] overflow-x-auto text-[11px] text-emerald-400">
-                    {testWebhookResult.responseBody}
-                  </pre>
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-300">Assign Scopes</label>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                  {AVAILABLE_SCOPES.map(sc => (
+                    <label key={sc.key} className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer hover:text-white">
+                      <input
+                        type="checkbox"
+                        checked={newKeyScopes.includes(sc.key)}
+                        onChange={e => {
+                          if (e.target.checked) setNewKeyScopes([...newKeyScopes, sc.key]);
+                          else setNewKeyScopes(newKeyScopes.filter(k => k !== sc.key));
+                        }}
+                        className="rounded border-white/20 bg-black text-[#00C6FF] focus:ring-0"
+                      />
+                      <span className="font-mono text-[11px] text-[#00C6FF]">{sc.key}</span>
+                      <span className="text-slate-400 text-[10px]">({sc.label})</span>
+                    </label>
+                  ))}
                 </div>
               </div>
-            ) : (
-              <div className="py-12 text-center space-y-3">
-                <RefreshCw className="w-8 h-8 text-[var(--color-accent)] animate-spin mx-auto" />
-                <p className="text-xs text-[var(--color-text-muted)] font-bold">Transmitting test payload signature to {testingWebhook.targetUrl}...</p>
-              </div>
-            )}
 
-            <div className="pt-2 border-t border-[var(--color-border)] flex justify-end">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-300">Rate Limit (req/min)</label>
+                  <input
+                    type="number"
+                    value={newKeyRateLimit}
+                    onChange={e => setNewKeyRateLimit(Number(e.target.value))}
+                    className="w-full bg-black/50 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#00C6FF]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-300">Expiration Date (Optional)</label>
+                  <input
+                    type="date"
+                    value={newKeyExpiration}
+                    onChange={e => setNewKeyExpiration(e.target.value)}
+                    className="w-full bg-black/50 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#00C6FF]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateKeyModal(false)}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-[#0072FF] hover:bg-[#0072FF]/80 text-white text-xs font-semibold shadow-lg shadow-[#0072FF]/20 cursor-pointer"
+                >
+                  Generate Key Secret
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: CREATED SECRET DISPLAY (SHOWN ONCE) */}
+      {createdKeySecret && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 text-emerald-400">
+              <CheckCircle2 className="w-6 h-6" />
+              <h3 className="text-base font-bold text-white">Secret Credential Provisioned</h3>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Below is the raw secret for <span className="font-bold text-white">{createdKeySecret.name}</span>. Copy it now. For security, this secret will <span className="text-amber-400 font-semibold">never be displayed again</span>.
+            </p>
+
+            <div className="bg-black/60 p-3.5 rounded-xl border border-white/10 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 uppercase font-mono">Secret Key</span>
+                <button
+                  onClick={() => handleCopy(createdKeySecret.rawSecret, "API Secret")}
+                  className="text-xs text-[#00C6FF] hover:underline flex items-center gap-1 font-semibold cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{copiedText === createdKeySecret.rawSecret ? "Copied!" : "Copy Secret"}</span>
+                </button>
+              </div>
+              <p className="font-mono text-xs text-emerald-300 break-all bg-black/40 p-2.5 rounded border border-emerald-500/20">
+                {createdKeySecret.rawSecret}
+              </p>
+            </div>
+
+            <button
+              onClick={() => setCreatedKeySecret(null)}
+              className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-all cursor-pointer"
+            >
+              I Have Saved This Secret
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: CONFIGURE AI PROVIDER */}
+      {editingAIProvider && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/15 rounded-2xl p-6 max-w-md w-full space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <h3 className="text-base font-bold text-white">Configure {editingAIProvider.name}</h3>
+              <button onClick={() => setEditingAIProvider(null)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAIProvider} className="space-y-4">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+                <span className="text-xs font-semibold text-white">Enable Provider</span>
+                <input
+                  type="checkbox"
+                  checked={aiProviderFormEnabled}
+                  onChange={e => setAIProviderFormEnabled(e.target.checked)}
+                  className="w-4 h-4 rounded text-[#00C6FF] bg-black border-white/20"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-300">Selected Model Alias</label>
+                <select
+                  value={aiProviderFormModel}
+                  onChange={e => setAIProviderFormModel(e.target.value)}
+                  className="w-full bg-black/50 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#00C6FF]"
+                >
+                  {editingAIProvider.availableModels.map((m, idx) => (
+                    <option key={idx} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-300">Update API Secret Key</label>
+                <input
+                  type="password"
+                  value={aiProviderFormKey}
+                  onChange={e => setAIProviderFormKey(e.target.value)}
+                  placeholder={editingAIProvider.maskedCredential || "Enter new API key string..."}
+                  className="w-full bg-black/50 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#00C6FF] font-mono"
+                />
+                <p className="text-[10px] text-slate-400">Stored strictly server-side in memory/vault.</p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setEditingAIProvider(null)}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-[#0072FF] hover:bg-[#0072FF]/80 text-white text-xs font-semibold shadow-lg shadow-[#0072FF]/20 cursor-pointer"
+                >
+                  Save Provider Config
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: CREATE WEBHOOK */}
+      {showCreateWebhookModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/15 rounded-2xl p-6 max-w-md w-full space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Webhook className="w-4 h-4 text-[#00C6FF]" />
+                <span>Register Webhook Endpoint</span>
+              </h3>
+              <button onClick={() => setShowCreateWebhookModal(false)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateWebhook} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-300">Endpoint Identifier Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newWebhookName}
+                  onChange={e => setNewWebhookName(e.target.value)}
+                  placeholder="e.g. DocuSign Disclosures Collector"
+                  className="w-full bg-black/50 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#00C6FF]"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-300">HTTPS Destination URL</label>
+                <input
+                  type="url"
+                  required
+                  value={newWebhookUrl}
+                  onChange={e => setNewWebhookUrl(e.target.value)}
+                  placeholder="https://your-server.com/api/webhook"
+                  className="w-full bg-black/50 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#00C6FF] font-mono text-[11px]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-300">Subscribed Events</label>
+                <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
+                  {WEBHOOK_EVENTS.map((ev, i) => (
+                    <label key={i} className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newWebhookEvents.includes(ev)}
+                        onChange={e => {
+                          if (e.target.checked) setNewWebhookEvents([...newWebhookEvents, ev]);
+                          else setNewWebhookEvents(newWebhookEvents.filter(k => k !== ev));
+                        }}
+                        className="rounded border-white/20 bg-black text-[#00C6FF] focus:ring-0"
+                      />
+                      <span className="font-mono text-[10px]">{ev}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateWebhookModal(false)}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-[#0072FF] hover:bg-[#0072FF]/80 text-white text-xs font-semibold shadow-lg shadow-[#0072FF]/20 cursor-pointer"
+                >
+                  Register Endpoint
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 7: CREATED WEBHOOK SECRET DISPLAY */}
+      {createdWebhookSecret && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 text-emerald-400">
+              <Webhook className="w-6 h-6" />
+              <h3 className="text-base font-bold text-white">Webhook Signing Secret</h3>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Secret generated for <span className="font-bold text-white">{createdWebhookSecret.name}</span>. Use this secret to verify HMAC signatures on incoming POST requests. This secret will <span className="text-amber-400 font-semibold">never be displayed again</span>.
+            </p>
+
+            <div className="bg-black/60 p-3.5 rounded-xl border border-white/10 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 uppercase font-mono">Signing Secret</span>
+                <button
+                  onClick={() => handleCopy(createdWebhookSecret.rawSecret, "Webhook Secret")}
+                  className="text-xs text-[#00C6FF] hover:underline flex items-center gap-1 font-semibold cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{copiedText === createdWebhookSecret.rawSecret ? "Copied!" : "Copy Secret"}</span>
+                </button>
+              </div>
+              <p className="font-mono text-xs text-emerald-300 break-all bg-black/40 p-2.5 rounded border border-emerald-500/20">
+                {createdWebhookSecret.rawSecret}
+              </p>
+            </div>
+
+            <button
+              onClick={() => setCreatedWebhookSecret(null)}
+              className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-all cursor-pointer"
+            >
+              I Have Saved This Signing Secret
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 8: WEBHOOK DELIVERIES LOG */}
+      {selectedWebhookDeliveries && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/15 rounded-2xl p-6 max-w-xl w-full space-y-4 shadow-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <h3 className="text-base font-bold text-white">
+                Delivery History: {selectedWebhookDeliveries.webhookName}
+              </h3>
+              <button onClick={() => setSelectedWebhookDeliveries(null)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {selectedWebhookDeliveries.deliveries.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-6">No delivery attempts recorded for this webhook.</p>
+              ) : (
+                selectedWebhookDeliveries.deliveries.map(d => (
+                  <div key={d.id} className="bg-white/5 border border-white/10 p-3.5 rounded-xl text-xs space-y-2">
+                    <div className="flex items-center justify-between font-mono text-[11px]">
+                      <span className="text-[#00C6FF] font-bold">{d.event}</span>
+                      <span className={d.statusCode === 200 ? "text-emerald-400 font-bold" : "text-rose-400"}>
+                        HTTP {d.statusCode}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-mono">{d.timestamp} ({d.durationMs}ms)</p>
+                    <div className="bg-black/50 p-2 rounded border border-white/5 font-mono text-[10px] text-slate-300">
+                      Response: {d.responseBody}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-white/10 flex justify-end">
               <button
-                onClick={() => setTestingWebhook(null)}
-                className="px-4 py-2 bg-[var(--color-accent)] text-[var(--color-text-inverse)] font-bold text-xs rounded-xl hover:bg-[var(--color-accent-hover)] cursor-pointer"
+                onClick={() => setSelectedWebhookDeliveries(null)}
+                className="px-4 py-2 rounded-xl bg-white/10 text-white text-xs font-semibold cursor-pointer"
               >
                 Close
               </button>
@@ -1919,47 +1789,6 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({
           </div>
         </div>
       )}
-
-      {/* ─── MODAL 5: INSPECT PAYLOAD LOG ─── */}
-      {selectedPayloadLog && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
-              <h3 className="text-sm font-bold text-[var(--color-text)] font-mono">
-                {selectedPayloadLog.event} ({selectedPayloadLog.statusCode})
-              </h3>
-              <button
-                onClick={() => setSelectedPayloadLog(null)}
-                className="p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-2 font-mono text-xs">
-              <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase font-sans block">Payload Content</span>
-              <pre className="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)] overflow-x-auto text-[11px] text-[var(--color-text)] max-h-60">
-                {JSON.stringify(selectedPayloadLog.payload, null, 2)}
-              </pre>
-
-              <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase font-sans block">Response Body</span>
-              <pre className="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)] overflow-x-auto text-[11px] text-emerald-400">
-                {selectedPayloadLog.responseBody}
-              </pre>
-            </div>
-
-            <div className="pt-2 border-t border-[var(--color-border)] flex justify-end">
-              <button
-                onClick={() => setSelectedPayloadLog(null)}
-                className="px-4 py-2 bg-[var(--color-surface-2)] text-[var(--color-text)] font-bold text-xs rounded-xl hover:bg-[var(--color-surface-3)] cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 };
