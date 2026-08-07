@@ -18,6 +18,8 @@ crmRouter.get("/users/:id/deletion-impact", asyncHandler(crmController.getUserDe
 crmRouter.post("/users/:id/archive", asyncHandler(crmController.archiveUser));
 crmRouter.delete("/users/:id/permanent", asyncHandler(crmController.deleteUserPermanently));
 crmRouter.post("/users/:id/restore", asyncHandler(crmController.restoreUser));
+crmRouter.post("/users/:id/password-reset", asyncHandler(crmController.resetUserPassword));
+crmRouter.post("/users/:id/revoke-sessions", asyncHandler(crmController.revokeUserSessions));
 crmRouter.get("/users/:id", asyncHandler(crmController.getUserById));
 crmRouter.post("/users", asyncHandler(crmController.createUser));
 crmRouter.put("/users/:id", asyncHandler(crmController.updateUser));

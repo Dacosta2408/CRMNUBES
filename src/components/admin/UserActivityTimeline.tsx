@@ -23,20 +23,23 @@ export interface UserActivityEvent {
 interface UserActivityTimelineProps {
   users: UserType[];
   selectedUser?: UserType | null;
+  targetUserId?: string;
   customEvents?: UserActivityEvent[];
   onClose?: () => void;
   showToast?: (msg: string, type?: "success" | "error" | "info" | "warning") => void;
 }
 
 export const UserActivityTimeline: React.FC<UserActivityTimelineProps> = ({
-  users,
+  users = [],
   selectedUser,
+  targetUserId,
   customEvents = [],
   onClose,
   showToast
 }) => {
+  const effectiveSelectedUser = selectedUser || (targetUserId ? users.find(u => u.id === targetUserId) : null);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [userFilter, setUserFilter] = useState<string>(selectedUser ? selectedUser.id : "all");
+  const [userFilter, setUserFilter] = useState<string>(effectiveSelectedUser ? effectiveSelectedUser.id : "all");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<UserActivityEvent | null>(null);
 

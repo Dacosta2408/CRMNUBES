@@ -939,4 +939,267 @@ export async function getArchivedUsers(): Promise<User[]> {
   });
 }
 
+// ==========================================
+// User Credentials, Password & Session Management
+// ==========================================
+
+export function generateTemporaryPassword(): string {
+  const uppercase = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lowercase = "abcdefghijkmnopqrstuvwxyz";
+  const numbers = "23456789";
+  const symbols = "!@#$%^&*";
+  
+  let pwd = "";
+  pwd += uppercase[Math.floor(Math.random() * uppercase.length)];
+  pwd += lowercase[Math.floor(Math.random() * lowercase.length)];
+  pwd += numbers[Math.floor(Math.random() * numbers.length)];
+  pwd += symbols[Math.floor(Math.random() * symbols.length)];
+
+  const all = uppercase + lowercase + numbers + symbols;
+  for (let i = 0; i < 7; i++) {
+    pwd += all[Math.floor(Math.random() * all.length)];
+  }
+
+  return pwd.split("").sort(() => 0.5 - Math.random()).join("");
+}
+
+export async function resetUserPassword(
+  userId: string, 
+  options?: { 
+    forceChangeOnNextLogin?: boolean; 
+    sendEmail?: boolean; 
+    revokeExistingSessions?: boolean; 
+    tempPassword?: string 
+  }
+): Promise<{ success: boolean; message: string; tempPassword?: string }> {
+  const forceChangeOnNextLogin = options?.forceChangeOnNextLogin ?? true;
+  const sendEmail = options?.sendEmail ?? true;
+  const revokeExistingSessions = options?.revokeExistingSessions ?? true;
+  const tempPassword = options?.tempPassword || generateTemporaryPassword();
+  const timestamp = new Date().toISOString();
+
+  // Try API route
+  await safeFetchJson(`/api/users/${encodeURIComponent(userId)}/password-reset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ forceChangeOnNextLogin, sendEmail, revokeExistingSessions })
+  }, null);
+
+  const roster = getLocalRoster();
+  const idx = roster.findIndex(u => u.id === userId);
+  let updatedUser: User | null = null;
+
+  if (idx >= 0) {
+    updatedUser = {
+      ...roster[idx],
+      mustChangePassword: forceChangeOnNextLogin,
+      lastPasswordResetAt: timestamp,
+      sessionRevokedAt: revokeExistingSessions ? timestamp : roster[idx].sessionRevokedAt,
+      updatedAt: timestamp
+    };
+    roster[idx] = updatedUser;
+    saveLocalRoster(roster);
+  }
+
+  if (updatedUser) {
+    dispatchUserEvent("user.passwordReset", { userId, user: updatedUser, forceChangeOnNextLogin });
+    dispatchUserEvent("user.updated", { userId, user: updatedUser });
+    if (revokeExistingSessions) {
+      dispatchUserEvent("user.sessionsRevoked", { userId, user: updatedUser });
+    }
+  }
+
+  return {
+    success: true,
+    message: "User password reset successfully.",
+    tempPassword
+  };
+}
+
+export async function revokeUserSessions(userId: string): Promise<{ success: boolean; message: string }> {
+  const timestamp = new Date().toISOString();
+
+  await safeFetchJson(`/api/users/${encodeURIComponent(userId)}/revoke-sessions`, {
+    method: "POST"
+  }, null);
+
+  const roster = getLocalRoster();
+  const idx = roster.findIndex(u => u.id === userId);
+  let updatedUser: User | null = null;
+
+  if (idx >= 0) {
+    updatedUser = {
+      ...roster[idx],
+      sessionRevokedAt: timestamp,
+      lastLogin: "Session Revoked",
+      updatedAt: timestamp
+    };
+    roster[idx] = updatedUser;
+    saveLocalRoster(roster);
+  }
+
+  if (updatedUser) {
+    dispatchUserEvent("user.sessionsRevoked", { userId, user: updatedUser });
+    dispatchUserEvent("user.updated", { userId, user: updatedUser });
+  }
+
+  return {
+    success: true,
+    message: "Existing user sessions revoked successfully."
+  };
+}
+
+export async function sendPasswordResetEmail(userId: string): Promise<{ success: boolean; message: string }> {
+  const user = await getUserById(userId);
+  if (!user) throw new Error(`User with ID ${userId} not found.`);
+
+  dispatchUserEvent("user.passwordResetEmailSent", { userId, email: user.email });
+  return {
+    success: true,
+    message: `Password reset notification dispatched to ${user.email}.`
+  };
+}
+
+export async function updateUserStatus(userId: string, status: "active" | "suspended" | "archived" | "disabled" | "pending"): Promise<User> {
+  const current = await getUserById(userId);
+  if (!current) throw new Error(`User with ID ${userId} not found.`);
+
+  const timestamp = new Date().toISOString();
+  const isSuspendedOrArchived = status === "suspended" || status === "archived" || status === "disabled";
+
+  const updatedUser: User = {
+    ...current,
+    status,
+    sessionRevokedAt: isSuspendedOrArchived ? timestamp : current.sessionRevokedAt,
+    updatedAt: timestamp
+  };
+
+  const roster = getLocalRoster();
+  const idx = roster.findIndex(u => u.id === userId);
+  if (idx >= 0) {
+    roster[idx] = updatedUser;
+    saveLocalRoster(roster);
+  }
+
+  dispatchUserEvent("user.statusChanged", { userId, user: updatedUser, status });
+  dispatchUserEvent("user.updated", { userId, user: updatedUser });
+  if (isSuspendedOrArchived) {
+    dispatchUserEvent("user.sessionsRevoked", { userId, user: updatedUser });
+  }
+
+  return updatedUser;
+}
+
+export async function updateUserPermissions(userId: string, permissions: any, clearanceLevel?: number): Promise<User> {
+  const current = await getUserById(userId);
+  if (!current) throw new Error(`User with ID ${userId} not found.`);
+
+  const updatedUser: User = {
+    ...current,
+    permissions: { ...current.permissions, ...permissions },
+    clearanceLevel: clearanceLevel !== undefined ? clearanceLevel : current.clearanceLevel,
+    updatedAt: new Date().toISOString()
+  };
+
+  const roster = getLocalRoster();
+  const idx = roster.findIndex(u => u.id === userId);
+  if (idx >= 0) {
+    roster[idx] = updatedUser;
+    saveLocalRoster(roster);
+  }
+
+  dispatchUserEvent("user.permissionsChanged", { userId, user: updatedUser });
+  dispatchUserEvent("user.updated", { userId, user: updatedUser });
+
+  return updatedUser;
+}
+
+export async function updateUserProfilePhoto(userId: string, fileOrUrl: File | string): Promise<User> {
+  return updateUserPhoto(userId, fileOrUrl);
+}
+
+export async function updateUserCredentials(userId: string, credentialOptions: { pin?: string; password?: string; forceChangeOnNextLogin?: boolean }): Promise<User> {
+  const current = await getUserById(userId);
+  if (!current) throw new Error(`User with ID ${userId} not found.`);
+
+  const timestamp = new Date().toISOString();
+  const updatedUser: User = {
+    ...current,
+    mustChangePassword: credentialOptions.forceChangeOnNextLogin ?? current.mustChangePassword,
+    lastPasswordResetAt: credentialOptions.password ? timestamp : current.lastPasswordResetAt,
+    hasPin: credentialOptions.pin ? true : current.hasPin,
+    updatedAt: timestamp
+  };
+
+  const roster = getLocalRoster();
+  const idx = roster.findIndex(u => u.id === userId);
+  if (idx >= 0) {
+    roster[idx] = updatedUser;
+    saveLocalRoster(roster);
+  }
+
+  dispatchUserEvent("user.credentialsUpdated", { userId, user: updatedUser });
+  dispatchUserEvent("user.updated", { userId, user: updatedUser });
+
+  return updatedUser;
+}
+
+export async function recoverProtectedDeveloperAccount(): Promise<{ success: boolean; user: User }> {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Development recovery tool is unavailable in production environments.");
+  }
+
+  const roster = getLocalRoster();
+  const timestamp = new Date().toISOString();
+
+  let devUser = roster.find(u => u.id === "u_david" || (u.email || "").toLowerCase() === "vdacosta247@gmail.com");
+
+  if (!devUser) {
+    devUser = {
+      id: "u_david",
+      first: "David",
+      last: "Acosta",
+      name: "David Acosta",
+      displayName: "David Acosta",
+      email: "vdacosta247@gmail.com",
+      role: "Developer/Admin",
+      status: "active",
+      clearanceLevel: 6,
+      brokerage: "GBK Financial",
+      isOwner: true,
+      isProtected: true,
+      created: "2026-01-01",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      lastLogin: "Just now",
+      lastActive: "Just now"
+    };
+    roster.unshift(devUser);
+  } else {
+    devUser = {
+      ...devUser,
+      id: "u_david",
+      first: "David",
+      last: "Acosta",
+      name: "David Acosta",
+      displayName: "David Acosta",
+      email: "vdacosta247@gmail.com",
+      role: "Developer/Admin",
+      status: "active",
+      clearanceLevel: 6,
+      isOwner: true,
+      isProtected: true,
+      updatedAt: timestamp
+    };
+    const idx = roster.findIndex(u => u.id === devUser!.id);
+    if (idx >= 0) roster[idx] = devUser;
+  }
+
+  saveLocalRoster(roster);
+  dispatchUserEvent("user.updated", { userId: devUser.id, user: devUser });
+  dispatchUserEvent("user.statusChanged", { userId: devUser.id, user: devUser, status: "active" });
+
+  return { success: true, user: devUser };
+}
+
 

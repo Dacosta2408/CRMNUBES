@@ -14,8 +14,24 @@ import {
   deleteUserPermanently, 
   restoreArchivedUser, 
   getArchivedUsers, 
-  checkUserEmailUnique 
+  checkUserEmailUnique,
+  generateTemporaryPassword,
+  resetUserPassword,
+  revokeUserSessions,
+  sendPasswordResetEmail,
+  updateUserStatus,
+  updateUserPermissions,
+  updateUserProfilePhoto,
+  updateUserCredentials,
+  recoverProtectedDeveloperAccount
 } from "../../lib/api";
+import { 
+  canManageUsers, 
+  canEditUserProfile, 
+  canResetUserCredentials, 
+  canChangeUserRole, 
+  canSuspendUser 
+} from "../../lib/permissions";
 import { Avatar } from "../Avatar";
 import { generateRosterPDF, exportRosterCSV } from "../../lib/rosterPdfGenerator";
 import { DEFAULT_CLEARANCE_LEVELS, DEFAULT_MODULE_KEYS, ROLE_PRESETS } from "../../lib/clearanceMatrixDefaults";
@@ -133,6 +149,56 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [brokerTerritory, setBrokerTerritory] = useState<string>("Greater Toronto Area");
   const [brokerTier, setBrokerTier] = useState<string>("Tier 1 - Managing Broker");
   const [brokerNotes, setBrokerNotes] = useState<string>("");
+
+  // Full Profile & Multi-Tab Edit Modal State
+  const [editActiveTab, setEditActiveTab] = useState<'profile' | 'roles' | 'credentials' | 'status' | 'activity'>('profile');
+  const [editFirst, setEditFirst] = useState<string>("");
+  const [editLast, setEditLast] = useState<string>("");
+  const [editDisplayName, setEditDisplayName] = useState<string>("");
+  const [editEmail, setEditEmail] = useState<string>("");
+  const [editPhone, setEditPhone] = useState<string>("");
+  const [editJobTitle, setEditJobTitle] = useState<string>("");
+  const [editLicenseNumber, setEditLicenseNumber] = useState<string>("");
+  const [editPhotoUrl, setEditPhotoUrl] = useState<string>("");
+  const [editImageError, setEditImageError] = useState<boolean>(false);
+  
+  // Credentials Tab Reset Options
+  const [editTempPassword, setEditTempPassword] = useState<string>("");
+  const [editTempPasswordConfirm, setEditTempPasswordConfirm] = useState<string>("");
+  const [editForceChangePassword, setEditForceChangePassword] = useState<boolean>(true);
+  const [editSendEmailReset, setEditSendEmailReset] = useState<boolean>(true);
+  const [editRevokeSessionsOnReset, setEditRevokeSessionsOnReset] = useState<boolean>(true);
+  const [editGeneratedPasswordDisplay, setEditGeneratedPasswordDisplay] = useState<string | null>(null);
+  const [editPinInput, setEditPinInput] = useState<string>("");
+
+  const handleOpenEditUser = (u: UserType, initialTab: 'profile' | 'roles' | 'credentials' | 'status' | 'activity' = 'profile') => {
+    setEditingUser(u);
+    setEditActiveTab(initialTab);
+    setEditFirst(u.first || "");
+    setEditLast(u.last || "");
+    setEditDisplayName(getUserFullName(u));
+    setEditEmail(u.email || "");
+    setEditPhone(u.phone || "");
+    setEditJobTitle(u.jobTitle || u.title || u.role || "");
+    setEditRole(u.role || "Agent");
+    setEditBrokerage(u.brokerage || "GBK Financial");
+    setEditLicenseNumber(u.licenseNumber || u.fsraNum || "");
+    setEditStatus((u.status || "active").toLowerCase());
+    setEditClearance(u.clearanceLevel || 2);
+    setEditSpecialPerms(u.specialPermissions ? { ...u.specialPermissions } : {
+      canExport: true,
+      canManageUsers: false,
+      canAccessAdmin: false,
+      canViewReports: true,
+      canManageCompliance: false
+    });
+    setEditPhotoUrl(u.photo || u.profilePhoto || u.profilePhotoUrl || "");
+    setEditImageError(false);
+    setEditTempPassword("");
+    setEditTempPasswordConfirm("");
+    setEditGeneratedPasswordDisplay(null);
+    setEditPinInput("");
+  };
 
   // Assign Agents Modal
   const [assigningBroker, setAssigningBroker] = useState<UserType | null>(null);
@@ -486,27 +552,167 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   };
 
   // Save Edit User
-  const handleSaveEditUser = (e: React.FormEvent) => {
+  const handleSaveEditUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
 
+    // Check permissions
+    if (!canEditUserProfile(currentUser, editingUser)) {
+      showToast("You are not authorized to edit this user's profile.", "error");
+      return;
+    }
+
+    // Validation
+    const cleanFirst = editFirst.trim();
+    const cleanLast = editLast.trim();
+    const cleanEmail = editEmail.trim().toLowerCase();
+
+    if (!cleanFirst || !cleanLast) {
+      showToast("First name and last name are required.", "error");
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      showToast("Please enter a valid email address.", "error");
+      return;
+    }
+
+    // Check email uniqueness
+    const isUnique = checkUserEmailUnique(cleanEmail, editingUser.id);
+    if (!isUnique) {
+      showToast(`The email ${cleanEmail} is already assigned to another account.`, "error");
+      return;
+    }
+
     const isDavid = editingUser.id === "u_david" || (editingUser.email || "").toLowerCase() === "vdacosta247@gmail.com";
+    const emailChanged = (editingUser.email || "").toLowerCase() !== cleanEmail;
+    
+    // Authorization check for role change
+    let finalRole = editingUser.role;
+    if (editRole !== editingUser.role) {
+      if (canChangeUserRole(currentUser, editingUser, editRole)) {
+        finalRole = isDavid ? "Developer/Admin" : editRole;
+      } else {
+        showToast("You do not have permission to grant this authorization level.", "error");
+        return;
+      }
+    }
+
+    const timestamp = new Date().toISOString();
+    const computedFullName = editDisplayName.trim() || `${cleanFirst} ${cleanLast}`;
+
     const updatedUser: UserType = {
       ...editingUser,
-      role: isDavid ? "Developer/Admin" : editRole,
-      brokerage: editBrokerage,
+      first: cleanFirst,
+      last: cleanLast,
+      name: computedFullName,
+      displayName: computedFullName,
+      email: cleanEmail,
+      phone: editPhone.trim(),
+      jobTitle: editJobTitle.trim(),
+      title: editJobTitle.trim(),
+      role: isDavid ? "Developer/Admin" : finalRole,
+      brokerage: editBrokerage.trim() || "GBK Financial",
+      licenseNumber: editLicenseNumber.trim(),
       status: isDavid ? "active" : editStatus as any,
       clearanceLevel: isDavid ? 6 : editClearance,
       specialPermissions: editSpecialPerms,
+      photo: editPhotoUrl,
+      profilePhoto: editPhotoUrl,
+      profilePhotoUrl: editPhotoUrl,
       isProtected: isDavid ? true : editingUser.isProtected,
-      updatedAt: new Date().toISOString()
+      updatedAt: timestamp
     };
 
     saveAndNotifyRoster(prev => prev.map(u => u.id === editingUser.id ? updatedUser : u));
-    logActivity("Updated User Profile", `Updated permissions and role for ${editingUser.first} ${editingUser.last}`);
-    showToast(`Updated profile settings for ${editingUser.first} ${editingUser.last}.`, "success");
+
+    if (emailChanged) {
+      logActivity("Email Address Changed", `Updated email for ${computedFullName} from ${editingUser.email} to ${cleanEmail}. Note: User login identifier has changed.`);
+      dispatchUserEvent("user.emailChanged", { userId: editingUser.id, user: updatedUser, previousEmail: editingUser.email, newEmail: cleanEmail });
+    }
+
+    logActivity("Updated User Profile", `Updated full profile information for ${computedFullName} (${cleanEmail})`);
+    dispatchUserEvent("user.profileUpdated", { userId: editingUser.id, user: updatedUser });
+    showToast(`Updated profile settings for ${computedFullName}.`, "success");
     setEditingUser(null);
   };
+
+  // Execute Password Reset inside Credentials tab
+  const handleExecutePasswordReset = async () => {
+    if (!editingUser) return;
+
+    if (!canResetUserCredentials(currentUser, editingUser)) {
+      showToast("You are not authorized to reset credentials for this user.", "error");
+      return;
+    }
+
+    let pwdToUse = editTempPassword.trim();
+    if (pwdToUse) {
+      if (pwdToUse.length < 8) {
+        showToast("Temporary password must be at least 8 characters long.", "error");
+        return;
+      }
+      if (editTempPasswordConfirm && pwdToUse !== editTempPasswordConfirm.trim()) {
+        showToast("Passwords do not match.", "error");
+        return;
+      }
+    } else {
+      pwdToUse = generateTemporaryPassword();
+    }
+
+    try {
+      await resetUserPassword(editingUser.id, {
+        forceChangeOnNextLogin: editForceChangePassword,
+        sendEmail: editSendEmailReset,
+        revokeExistingSessions: editRevokeSessionsOnReset,
+        tempPassword: pwdToUse
+      });
+
+      setEditGeneratedPasswordDisplay(pwdToUse);
+      logActivity("Reset User Password", `Reset password for user ${getUserFullName(editingUser)} (${editingUser.email}). Require change on login: ${editForceChangePassword}`);
+      showToast(`Password reset completed for ${getUserFullName(editingUser)}.`, "success");
+      
+      setUserRoster(prev => prev.map(u => u.id === editingUser.id ? { ...u, mustChangePassword: editForceChangePassword, lastPasswordResetAt: new Date().toISOString() } : u));
+    } catch (err: any) {
+      showToast(err?.message || "Failed to reset password.", "error");
+    }
+  };
+
+  // Revoke User Sessions
+  const handleExecuteRevokeSessions = async () => {
+    if (!editingUser) return;
+
+    try {
+      await revokeUserSessions(editingUser.id);
+      logActivity("Revoked User Sessions", `Invalidated all active login sessions for ${getUserFullName(editingUser)} (${editingUser.email}).`);
+      showToast(`Revoked active sessions for ${getUserFullName(editingUser)}.`, "success");
+      setUserRoster(prev => prev.map(u => u.id === editingUser.id ? { ...u, sessionRevokedAt: new Date().toISOString(), lastLogin: "Session Revoked" } : u));
+    } catch (err: any) {
+      showToast(err?.message || "Failed to revoke sessions.", "error");
+    }
+  };
+
+  // Developer Recovery Trigger
+  const handleRecoverDeveloperAccount = async () => {
+    try {
+      const res = await recoverProtectedDeveloperAccount();
+      setUserRoster(prev => {
+        const idx = prev.findIndex(u => u.id === res.user.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = res.user;
+          return next;
+        }
+        return [res.user, ...prev];
+      });
+      logActivity("Developer Account Recovery", "Executed development recovery for protected Developer account (u_david).");
+      showToast("Protected Developer account (David Acosta) successfully recovered & activated.", "success");
+    } catch (err: any) {
+      showToast(err?.message || "Recovery failed.", "error");
+    }
+  };
+
 
   // Save Edit Broker Details
   const handleSaveBrokerDetails = (e: React.FormEvent) => {
@@ -1041,6 +1247,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                 className="px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" /> Diagnostics
+              </button>
+
+              <button
+                onClick={handleRecoverDeveloperAccount}
+                title="Recover protected Developer account (David Acosta - u_david)"
+                className="px-3 py-1.5 bg-purple-600/15 hover:bg-purple-600/25 border border-purple-500/30 text-purple-300 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-purple-400" /> Dev Recovery
               </button>
 
               <button
@@ -1759,133 +1973,640 @@ export const UserManagement: React.FC<UserManagementProps> = ({
         </div>
       )}
 
-      {/* ─── MODAL 2: EDIT USER MODAL ─── */}
+      {/* ─── MODAL 2: EXTENDED MULTI-TAB EDIT USER MODAL ─── */}
       {editingUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto backdrop-blur-sm animate-in fade-in duration-100">
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl w-full max-w-xl shadow-2xl overflow-hidden text-left">
-            <div className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)] px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Edit3 className="w-4 h-4 text-[var(--color-accent)]" />
-                <h3 className="font-bold text-[var(--color-text)] uppercase tracking-wider text-xs">Edit User Permissions: {editingUser.first} {editingUser.last}</h3>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 overflow-y-auto backdrop-blur-sm animate-in fade-in duration-100">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden text-left flex flex-col max-h-[90vh]">
+            
+            {/* Header */}
+            <div className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)] px-6 py-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[var(--color-accent)]/15 border border-[var(--color-accent)]/30 flex items-center justify-center text-[var(--color-accent)] font-bold">
+                  {getUserFullName(editingUser).charAt(0)}
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-[var(--color-text)] text-sm flex items-center gap-2">
+                    Manage User Account: {getUserFullName(editingUser)}
+                    {editingUser.id === "u_david" && (
+                      <span className="bg-purple-500/20 text-purple-300 text-[10px] px-2 py-0.5 rounded border border-purple-500/30 uppercase font-black">Protected Developer</span>
+                    )}
+                  </h3>
+                  <p className="text-[11px] text-[var(--color-text-faint)]">
+                    ID: <code className="font-mono text-[var(--color-accent)]">{editingUser.id}</code> • Email: {editingUser.email}
+                  </p>
+                </div>
               </div>
-              <button onClick={() => setEditingUser(null)} className="text-[var(--color-text-faint)] hover:text-[var(--color-text)] cursor-pointer">✕</button>
+              <button 
+                onClick={() => setEditingUser(null)} 
+                className="w-8 h-8 rounded-lg hover:bg-[var(--color-surface-3)] flex items-center justify-center text-[var(--color-text-faint)] hover:text-[var(--color-text)] transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
 
-            <form onSubmit={handleSaveEditUser} className="p-6 space-y-4">
-              <div className="bg-[var(--color-surface-2)]/60 border border-[var(--color-border)]/50 p-3 rounded-lg text-[11px] text-[var(--color-text-muted)] leading-relaxed">
-                ℹ️ <strong>Settings Synchronization:</strong> Name ({editingUser.first} {editingUser.last}), Email ({editingUser.email}), and License # are managed by the user in Settings &gt; My Profile.
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Role Group</label>
-                  <select
-                    value={editRole}
-                    onChange={(e) => setEditRole(e.target.value)}
-                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none cursor-pointer"
+            {/* Navigation Tabs */}
+            <div className="flex items-center gap-1 sm:gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)]/50 px-4 sm:px-6 pt-2 shrink-0 overflow-x-auto min-w-full">
+              {[
+                { id: 'profile', label: '1. Profile Info', icon: User },
+                { id: 'roles', label: '2. Role & Permissions', icon: Shield },
+                { id: 'credentials', label: '3. Security & Password', icon: Key },
+                { id: 'status', label: '4. Account Status', icon: ToggleRight },
+                { id: 'activity', label: '5. Audit Timeline', icon: Clock }
+              ].map(tab => {
+                const IconComp = tab.icon;
+                const isActive = editActiveTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setEditActiveTab(tab.id as any)}
+                    className={`flex items-center gap-2 px-3.5 sm:px-4 py-2.5 text-[11px] sm:text-xs font-extrabold uppercase tracking-wide border-b-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                      isActive
+                        ? "border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-surface)]"
+                        : "border-transparent text-[var(--color-text-faint)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-3)]/30"
+                    }`}
                   >
-                    <option value="Broker">Broker</option>
-                    <option value="Agent">Agent</option>
-                    <option value="Admin">Admin</option>
-                    <option value="Assistant">Assistant</option>
-                    <option value="Developer/Admin">Developer / Admin</option>
-                  </select>
-                </div>
+                    <IconComp className="w-3.5 h-3.5 shrink-0" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Brokerage / Company</label>
-                  <input
-                    type="text"
-                    value={editBrokerage}
-                    onChange={(e) => setEditBrokerage(e.target.value)}
-                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none"
-                  />
-                </div>
-              </div>
+            {/* Modal Body with Scrollable Area */}
+            <div className="p-6 overflow-y-auto space-y-5 flex-1">
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Account Status</label>
-                  <select
-                    value={editStatus}
-                    onChange={(e) => setEditStatus(e.target.value)}
-                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none cursor-pointer"
-                  >
-                    <option value="active">Active</option>
-                    <option value="pending">Pending Onboarding</option>
-                    <option value="inactive">Inactive / Suspended</option>
-                  </select>
-                </div>
+              {/* TAB 1: PROFILE INFO */}
+              {editActiveTab === 'profile' && (
+                <form onSubmit={handleSaveEditUser} className="space-y-4">
+                  <div className="bg-[var(--color-surface-2)]/60 border border-[var(--color-border)]/50 p-3 rounded-xl text-xs text-[var(--color-text-muted)] flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-[var(--color-accent)] shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Full Profile Editing:</strong> Updates to email address, name, title, and contact numbers propagate instantly across system Settings, Sidebar presence, and Team Channels.
+                    </div>
+                  </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Clearance Level (1 to 6)</label>
-                  <select
-                    value={editClearance}
-                    onChange={(e) => setEditClearance(parseInt(e.target.value))}
-                    className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none cursor-pointer font-bold text-[var(--color-accent)]"
-                  >
-                    <option value={1}>Level 1 - View Only</option>
-                    <option value={2}>Level 2 - Basic User</option>
-                    <option value={3}>Level 3 - Power User</option>
-                    <option value={4}>Level 4 - Manager</option>
-                    <option value={5}>Level 5 - Admin</option>
-                    <option value={6}>Level 6 - Super Admin</option>
-                  </select>
-                </div>
-              </div>
+                  {/* Profile Photo Uploader & Preview */}
+                  <div className="bg-[var(--color-surface-2)] p-4 rounded-xl border border-[var(--color-border)] flex items-center gap-4">
+                    <div className="relative group shrink-0">
+                      {editPhotoUrl && !editImageError ? (
+                        <img 
+                          src={editPhotoUrl} 
+                          alt="Profile Preview" 
+                          onError={() => setEditImageError(true)}
+                          className="w-16 h-16 rounded-2xl object-cover border-2 border-[var(--color-accent)] shadow-md"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-2xl bg-[var(--color-accent)]/20 border-2 border-[var(--color-accent)]/40 flex items-center justify-center text-[var(--color-accent)] font-extrabold text-xl">
+                          {(editFirst.charAt(0) || "U")}{(editLast.charAt(0) || "")}
+                        </div>
+                      )}
+                    </div>
 
-              {/* Special Permissions */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-2">Special Permissions Overrides</label>
-                <div className="space-y-2 bg-[var(--color-surface-2)] p-3 rounded-lg border border-[var(--color-border)]/50">
-                  {Object.entries({
-                    canExport: "Can Export Roster & Client Data (PDF/CSV)",
-                    canManageUsers: "Can Onboard and Manage Staff Users",
-                    canAccessAdmin: "Can Access Admin Control Center",
-                    canViewReports: "Can Access Pipeline KPI & Financial Reports"
-                  }).map(([key, label]) => (
-                    <label key={key} className="flex items-center gap-2 text-xs text-[var(--color-text)] cursor-pointer">
-                      <input 
-                        type="checkbox"
-                        checked={!!editSpecialPerms[key]}
-                        onChange={(e) => setEditSpecialPerms(prev => ({ ...prev, [key]: e.target.checked }))}
-                        className="cursor-pointer"
+                    <div className="flex-1 space-y-2">
+                      <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)]">Profile Photo URL or Avatar Base64</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="https://example.com/photo.jpg or base64..."
+                          value={editPhotoUrl}
+                          onChange={(e) => {
+                            setEditPhotoUrl(e.target.value);
+                            setEditImageError(false);
+                          }}
+                          className="flex-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-xs text-[var(--color-text)] outline-none"
+                        />
+                        <label className="px-3 py-2 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] border border-[var(--color-border)] rounded-lg text-xs font-bold text-[var(--color-text)] cursor-pointer flex items-center gap-1.5 transition-colors">
+                          <FileUp className="w-3.5 h-3.5 text-[var(--color-accent)]" /> Upload File
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onload = (event) => {
+                                  if (event.target?.result) {
+                                    setEditPhotoUrl(event.target.result as string);
+                                    setEditImageError(false);
+                                  }
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                        </label>
+                        {editPhotoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setEditPhotoUrl("")}
+                            className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Name Fields */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">First Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={editFirst}
+                        onChange={(e) => setEditFirst(e.target.value)}
+                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
                       />
-                      <span>{label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Last Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={editLast}
+                        onChange={(e) => setEditLast(e.target.value)}
+                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+                      />
+                    </div>
+                  </div>
 
-              <div className="flex justify-between items-center pt-4 border-t border-[var(--color-border)]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProfileUserModal(editingUser);
-                    setEditingUser(null);
-                  }}
-                  className="text-xs text-[var(--color-accent)] font-bold uppercase hover:underline cursor-pointer"
-                >
-                  View Full Profile
-                </button>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Display Name / Full Name Override</label>
+                    <input
+                      type="text"
+                      placeholder={`${editFirst} ${editLast}`}
+                      value={editDisplayName}
+                      onChange={(e) => setEditDisplayName(e.target.value)}
+                      className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+                    />
+                  </div>
 
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditingUser(null)}
-                    className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-xs font-bold text-[var(--color-text-muted)] cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-bold uppercase rounded-lg cursor-pointer"
-                  >
-                    Save Changes
-                  </button>
+                  {/* Contact Fields */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Email Address *</label>
+                      <input
+                        type="email"
+                        required
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
+                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+                      />
+                      {editingUser && editEmail.toLowerCase() !== editingUser.email?.toLowerCase() && (
+                        <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-semibold">
+                          <AlertTriangle className="w-3 h-3" /> Warning: Changing email updates the primary login username for this account.
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Phone Number</label>
+                      <input
+                        type="text"
+                        placeholder="(416) 555-0199"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Title & Brokerage */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Job Title</label>
+                      <input
+                        type="text"
+                        placeholder="Senior Mortgage Agent"
+                        value={editJobTitle}
+                        onChange={(e) => setEditJobTitle(e.target.value)}
+                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Brokerage / Company</label>
+                      <input
+                        type="text"
+                        value={editBrokerage}
+                        onChange={(e) => setEditBrokerage(e.target.value)}
+                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">FSRA / License #</label>
+                      <input
+                        type="text"
+                        placeholder="M19001234"
+                        value={editLicenseNumber}
+                        onChange={(e) => setEditLicenseNumber(e.target.value)}
+                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-4 border-t border-[var(--color-border)]">
+                    <button
+                      type="button"
+                      onClick={() => setEditingUser(null)}
+                      className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-xs font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-all cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-md"
+                    >
+                      Save Profile Changes
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* TAB 2: ROLE & PERMISSIONS */}
+              {editActiveTab === 'roles' && (
+                <form onSubmit={handleSaveEditUser} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">System Role</label>
+                      <select
+                        value={editRole}
+                        disabled={editingUser.id === "u_david" || editingUser.isProtected}
+                        onChange={(e) => setEditRole(e.target.value)}
+                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none cursor-pointer font-bold"
+                      >
+                        <option value="Broker">Broker</option>
+                        <option value="Agent">Agent</option>
+                        <option value="Admin">Admin</option>
+                        <option value="Assistant">Assistant</option>
+                        <option value="Developer/Admin">Developer / Admin</option>
+                      </select>
+                      {editingUser.id === "u_david" && (
+                        <p className="text-[10px] text-purple-400 mt-1 font-semibold">Protected account: Primary Developer role cannot be demoted.</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Clearance Level (1 to 6)</label>
+                      <select
+                        value={editClearance}
+                        disabled={editingUser.id === "u_david" || editingUser.isProtected}
+                        onChange={(e) => setEditClearance(parseInt(e.target.value))}
+                        className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs text-[var(--color-text)] outline-none cursor-pointer font-bold text-[var(--color-accent)]"
+                      >
+                        <option value={1}>Level 1 - View Only</option>
+                        <option value={2}>Level 2 - Basic User</option>
+                        <option value={3}>Level 3 - Power User</option>
+                        <option value={4}>Level 4 - Manager</option>
+                        <option value={5}>Level 5 - Admin</option>
+                        <option value={6}>Level 6 - Super Admin</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-2">Special Permissions Overrides</label>
+                    <div className="space-y-2 bg-[var(--color-surface-2)] p-4 rounded-xl border border-[var(--color-border)]/50">
+                      {Object.entries({
+                        canExport: "Can Export Roster & Client Data (PDF/CSV)",
+                        canManageUsers: "Can Onboard, Edit, and Reset Staff Users",
+                        canAccessAdmin: "Can Access Admin Control Center & Analytics",
+                        canViewReports: "Can Access Pipeline KPI & Financial Reports",
+                        canManageCompliance: "Can Review and Approve Compliance Docs"
+                      }).map(([key, label]) => (
+                        <label key={key} className="flex items-center gap-2.5 text-xs text-[var(--color-text)] cursor-pointer hover:bg-[var(--color-surface-3)]/50 p-1.5 rounded transition-colors">
+                          <input 
+                            type="checkbox"
+                            checked={!!editSpecialPerms[key]}
+                            onChange={(e) => setEditSpecialPerms(prev => ({ ...prev, [key]: e.target.checked }))}
+                            className="cursor-pointer accent-[var(--color-accent)] w-4 h-4 rounded"
+                          />
+                          <span className="font-semibold">{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-4 border-t border-[var(--color-border)]">
+                    <button
+                      type="button"
+                      onClick={() => setEditingUser(null)}
+                      className="px-4 py-2 border border-[var(--color-border)] rounded-lg text-xs font-bold text-[var(--color-text-muted)] cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-md"
+                    >
+                      Save Role & Permissions
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* TAB 3: CREDENTIALS & PASSWORD RESET */}
+              {editActiveTab === 'credentials' && (
+                <div className="space-y-6">
+                  
+                  {/* Reset Password Card */}
+                  <div className="bg-[var(--color-surface-2)] p-5 rounded-2xl border border-[var(--color-border)] space-y-4">
+                    <div className="flex items-center justify-between border-b border-[var(--color-border)]/60 pb-3">
+                      <div className="flex items-center gap-2">
+                        <Key className="w-4 h-4 text-[var(--color-accent)]" />
+                        <h4 className="font-extrabold text-xs uppercase tracking-wider text-[var(--color-text)]">Password Reset Workflow</h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const pwd = generateTemporaryPassword();
+                          setEditTempPassword(pwd);
+                          setEditTempPasswordConfirm(pwd);
+                        }}
+                        className="px-3 py-1 bg-[var(--color-surface-3)] hover:bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Auto-Generate Temp Password
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Temporary Password</label>
+                        <input
+                          type="text"
+                          placeholder="Type or auto-generate..."
+                          value={editTempPassword}
+                          onChange={(e) => setEditTempPassword(e.target.value)}
+                          className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs font-mono text-[var(--color-text)] outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[var(--color-text-faint)] mb-1">Confirm Temp Password</label>
+                        <input
+                          type="text"
+                          placeholder="Confirm temporary password..."
+                          value={editTempPasswordConfirm}
+                          onChange={(e) => setEditTempPasswordConfirm(e.target.value)}
+                          className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs font-mono text-[var(--color-text)] outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 bg-[var(--color-surface)]/60 p-3 rounded-xl border border-[var(--color-border)]/40 text-xs">
+                      <label className="flex items-center gap-2 cursor-pointer font-semibold text-[var(--color-text)]">
+                        <input
+                          type="checkbox"
+                          checked={editForceChangePassword}
+                          onChange={(e) => setEditForceChangePassword(e.target.checked)}
+                          className="cursor-pointer accent-[var(--color-accent)]"
+                        />
+                        <span>Force user to change password on next login</span>
+                      </label>
+
+                      <label className="flex items-center gap-2 cursor-pointer font-semibold text-[var(--color-text)]">
+                        <input
+                          type="checkbox"
+                          checked={editSendEmailReset}
+                          onChange={(e) => setEditSendEmailReset(e.target.checked)}
+                          className="cursor-pointer accent-[var(--color-accent)]"
+                        />
+                        <span>Send email notification with temporary credentials to user</span>
+                      </label>
+
+                      <label className="flex items-center gap-2 cursor-pointer font-semibold text-[var(--color-text)]">
+                        <input
+                          type="checkbox"
+                          checked={editRevokeSessionsOnReset}
+                          onChange={(e) => setEditRevokeSessionsOnReset(e.target.checked)}
+                          className="cursor-pointer accent-[var(--color-accent)]"
+                        />
+                        <span>Revoke all existing active login sessions</span>
+                      </label>
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <button
+                        type="button"
+                        onClick={handleExecutePasswordReset}
+                        className="px-5 py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                      >
+                        <Key className="w-4 h-4" /> Reset User Password
+                      </button>
+                    </div>
+
+                    {editGeneratedPasswordDisplay && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-xl text-xs space-y-1.5 animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-emerald-400 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4" /> Temporary Password Ready
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(editGeneratedPasswordDisplay);
+                              showToast("Copied temporary password to clipboard.", "success");
+                            }}
+                            className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded font-bold text-[10px] uppercase cursor-pointer"
+                          >
+                            Copy Password
+                          </button>
+                        </div>
+                        <p className="text-[var(--color-text-muted)]">
+                          One-time temporary password: <code className="font-mono bg-[var(--color-surface)] px-2 py-0.5 rounded text-emerald-300 font-bold border border-emerald-500/20">{editGeneratedPasswordDisplay}</code>
+                        </p>
+                        <p className="text-[10px] text-[var(--color-text-faint)]">
+                          Note: Plaintext passwords are never stored in system databases or logs.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Security PIN & Sessions Card */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="bg-[var(--color-surface-2)] p-4 rounded-xl border border-[var(--color-border)] space-y-3">
+                      <h4 className="font-extrabold text-xs uppercase tracking-wider text-[var(--color-text)] flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-[var(--color-info)]" /> Security PIN Reset
+                      </h4>
+                      <input
+                        type="password"
+                        maxLength={6}
+                        placeholder="Enter 4-6 digit PIN..."
+                        value={editPinInput}
+                        onChange={(e) => setEditPinInput(e.target.value)}
+                        className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-2.5 text-xs font-mono text-[var(--color-text)] outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!editPinInput.trim() || editPinInput.length < 4) {
+                            showToast("PIN must be 4 to 6 digits.", "error");
+                            return;
+                          }
+                          const hashed = await hashPin(editPinInput.trim());
+                          saveAndNotifyRoster(prev => prev.map(u => u.id === editingUser.id ? { ...u, pinHash: hashed, pin: undefined } : u));
+                          logActivity("Updated Security PIN", `Updated security PIN for ${getUserFullName(editingUser)}.`);
+                          showToast(`Updated Security PIN for ${getUserFullName(editingUser)}.`, "success");
+                          setEditPinInput("");
+                        }}
+                        className="w-full py-2 bg-[var(--color-surface-3)] hover:bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-xs font-bold text-[var(--color-text)] cursor-pointer transition-colors"
+                      >
+                        Set Security PIN
+                      </button>
+                    </div>
+
+                    <div className="bg-[var(--color-surface-2)] p-4 rounded-xl border border-[var(--color-border)] space-y-3 flex flex-col justify-between">
+                      <div>
+                        <h4 className="font-extrabold text-xs uppercase tracking-wider text-[var(--color-text)] flex items-center gap-2 mb-1">
+                          <UserX className="w-4 h-4 text-red-400" /> Active Sessions
+                        </h4>
+                        <p className="text-[11px] text-[var(--color-text-faint)]">
+                          Revoking active sessions forces the user to re-authenticate immediately on all web and desktop devices.
+                        </p>
+                        {editingUser.sessionRevokedAt && (
+                          <p className="text-[10px] text-amber-400 font-semibold mt-1">
+                            Last revoked: {new Date(editingUser.sessionRevokedAt).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleExecuteRevokeSessions}
+                        className="w-full py-2 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                      >
+                        Revoke All Sessions
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
-              </div>
-            </form>
+              )}
+
+              {/* TAB 4: ACCOUNT STATUS */}
+              {editActiveTab === 'status' && (
+                <div className="space-y-4">
+                  <div className="bg-[var(--color-surface-2)] p-5 rounded-2xl border border-[var(--color-border)] space-y-4">
+                    <div className="flex items-center justify-between border-b border-[var(--color-border)]/60 pb-3">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-[var(--color-text-faint)] block">Current Account Status</span>
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-extrabold uppercase mt-1 border ${
+                          editingUser.status === 'active' ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" :
+                          editingUser.status === 'pending' ? "bg-amber-500/15 text-amber-400 border-amber-500/30" :
+                          "bg-red-500/15 text-red-400 border-red-500/30"
+                        }`}>
+                          <span className={`w-2 h-2 rounded-full ${editingUser.status === 'active' ? "bg-emerald-400" : editingUser.status === 'pending' ? "bg-amber-400" : "bg-red-400"}`} />
+                          {editingUser.status || "active"}
+                        </span>
+                      </div>
+                      {editingUser.isProtected && (
+                        <div className="bg-purple-500/10 border border-purple-500/30 px-3 py-1.5 rounded-xl text-right">
+                          <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider block">Protected Account</span>
+                          <span className="text-[9px] text-[var(--color-text-faint)] block">Primary Developer Cannot Be Suspended</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        disabled={editingUser.isProtected || editingUser.status === 'active'}
+                        onClick={() => {
+                          saveAndNotifyRoster(prev => prev.map(u => u.id === editingUser.id ? { ...u, status: 'active' } : u));
+                          logActivity("Activated User Account", `Activated account status for ${getUserFullName(editingUser)}.`);
+                          showToast(`Activated account for ${getUserFullName(editingUser)}.`, "success");
+                          setEditStatus('active');
+                        }}
+                        className="p-3 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-40 border border-emerald-500/30 text-emerald-300 rounded-xl font-bold text-xs uppercase flex items-center gap-2 cursor-pointer transition-all"
+                      >
+                        <ToggleRight className="w-4 h-4" /> Activate Account
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={editingUser.isProtected || editingUser.id === "u_david"}
+                        onClick={async () => {
+                          if (editingUser.isProtected || editingUser.id === "u_david") {
+                            showToast("Protected Developer/Admin cannot be suspended.", "error");
+                            return;
+                          }
+                          await revokeUserSessions(editingUser.id);
+                          saveAndNotifyRoster(prev => prev.map(u => u.id === editingUser.id ? { ...u, status: 'inactive', sessionRevokedAt: new Date().toISOString() } : u));
+                          logActivity("Suspended User Account", `Suspended account for ${getUserFullName(editingUser)} and revoked active sessions.`);
+                          showToast(`Suspended account for ${getUserFullName(editingUser)}.`, "warning");
+                          setEditStatus('inactive');
+                        }}
+                        className="p-3 bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-40 border border-amber-500/30 text-amber-300 rounded-xl font-bold text-xs uppercase flex items-center gap-2 cursor-pointer transition-all"
+                      >
+                        <ToggleLeft className="w-4 h-4" /> Suspend & Revoke Sessions
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={editingUser.isProtected || editingUser.id === "u_david"}
+                        onClick={() => {
+                          if (editingUser.isProtected || editingUser.id === "u_david") {
+                            showToast("Protected Developer account cannot be archived.", "error");
+                            return;
+                          }
+                          handleStartDeleteUser(editingUser, 'archive');
+                        }}
+                        className="p-3 bg-slate-500/15 hover:bg-slate-500/25 disabled:opacity-40 border border-slate-500/30 text-slate-300 rounded-xl font-bold text-xs uppercase flex items-center gap-2 cursor-pointer transition-all"
+                      >
+                        <Archive className="w-4 h-4 text-slate-400" /> Archive User File
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleExecuteRevokeSessions}
+                        className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl font-bold text-xs uppercase flex items-center gap-2 cursor-pointer transition-all"
+                      >
+                        <UserX className="w-4 h-4" /> Revoke Sessions Now
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 5: AUDIT TIMELINE */}
+              {editActiveTab === 'activity' && (
+                <div className="space-y-4">
+                  <div className="bg-[var(--color-surface-2)]/50 p-4 rounded-xl border border-[var(--color-border)]/60 flex items-center justify-between">
+                    <div>
+                      <h4 className="font-extrabold text-xs uppercase text-[var(--color-text)]">Administrative Audit History</h4>
+                      <p className="text-[11px] text-[var(--color-text-faint)]">System logs recording profile modifications, credential resets, and authorization changes.</p>
+                    </div>
+                  </div>
+                  <UserActivityTimeline targetUserId={editingUser.id} users={userRoster} />
+                </div>
+              )}
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-[var(--color-surface-2)] border-t border-[var(--color-border)] px-6 py-3.5 flex items-center justify-between shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileUserModal(editingUser);
+                  setEditingUser(null);
+                }}
+                className="text-xs text-[var(--color-accent)] font-bold uppercase hover:underline cursor-pointer flex items-center gap-1"
+              >
+                <Eye className="w-3.5 h-3.5" /> View Full Dossier
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setEditingUser(null)}
+                className="px-5 py-2 bg-[var(--color-surface-3)] hover:bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] text-xs font-bold uppercase tracking-wider rounded-lg cursor-pointer transition-colors"
+              >
+                Done
+              </button>
+            </div>
+
           </div>
         </div>
       )}

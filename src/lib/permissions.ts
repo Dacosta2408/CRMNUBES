@@ -225,3 +225,68 @@ export function getChannelMembers(
   return members;
 }
 
+/**
+ * User Management Authorization Helpers
+ */
+export function canManageUsers(user: User | null | undefined): boolean {
+  if (!user) return false;
+  const status = (user.status || "").toLowerCase();
+  if (status === "inactive" || status === "disabled" || status === "suspended" || status === "deleted" || status === "archived") {
+    return false;
+  }
+  const perms = getUserPermissions(user);
+  if (perms.userManagement === "manage" || perms.adminPanel === "manage") return true;
+  const level = user.clearanceLevel || 0;
+  return level >= 5 || user.role === "Developer/Admin" || user.role === "Admin" || user.isOwner === true;
+}
+
+export function canEditUserProfile(currentUser: User | null | undefined, targetUser: User | null | undefined): boolean {
+  if (!canManageUsers(currentUser) || !targetUser) return false;
+
+  const isTargetProtectedDev = targetUser.id === "u_david" || (targetUser.email || "").toLowerCase() === "vdacosta247@gmail.com" || Boolean(targetUser.isProtected);
+  const isCurrentDev = currentUser?.id === "u_david" || (currentUser?.email || "").toLowerCase() === "vdacosta247@gmail.com" || currentUser?.role === "Developer/Admin" || currentUser?.isOwner;
+
+  if (isTargetProtectedDev && !isCurrentDev) {
+    return false;
+  }
+
+  const currentLevel = currentUser?.clearanceLevel || 5;
+  const targetLevel = targetUser.clearanceLevel || 2;
+  if (currentLevel < targetLevel && currentUser?.role !== "Developer/Admin" && !currentUser?.isOwner) {
+    return false;
+  }
+
+  return true;
+}
+
+export function canResetUserCredentials(currentUser: User | null | undefined, targetUser: User | null | undefined): boolean {
+  return canEditUserProfile(currentUser, targetUser);
+}
+
+export function canChangeUserRole(currentUser: User | null | undefined, targetUser: User | null | undefined, newRole?: string): boolean {
+  if (!canEditUserProfile(currentUser, targetUser)) return false;
+  if (currentUser?.id === targetUser?.id) {
+    if (currentUser?.role === "Developer/Admin" || currentUser?.id === "u_david") {
+      return false; // Prevent self-demotion of primary Developer/Admin
+    }
+  }
+  if (newRole === "Developer/Admin" && currentUser?.role !== "Developer/Admin" && !currentUser?.isOwner) {
+    return false;
+  }
+  return true;
+}
+
+export function canSuspendUser(currentUser: User | null | undefined, targetUser: User | null | undefined): boolean {
+  if (!canManageUsers(currentUser) || !targetUser) return false;
+  if (currentUser?.id === targetUser.id) return false; // Cannot suspend self
+  if (targetUser.id === "u_david" || (targetUser.email || "").toLowerCase() === "vdacosta247@gmail.com" || Boolean(targetUser.isProtected)) {
+    return false; // Cannot suspend main protected Developer
+  }
+  const currentLevel = currentUser?.clearanceLevel || 5;
+  const targetLevel = targetUser.clearanceLevel || 2;
+  if (currentLevel < targetLevel && currentUser?.role !== "Developer/Admin" && !currentUser?.isOwner) {
+    return false;
+  }
+  return true;
+}
+

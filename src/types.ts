@@ -352,6 +352,11 @@ export interface User {
   emailUsername?: string;
   displayName?: string;
   jobTitle?: string;
+  title?: string;
+  mustChangePassword?: boolean;
+  lastPasswordResetAt?: string;
+  sessionRevokedAt?: string;
+  hasPin?: boolean;
   tags?: string[];
 }
 

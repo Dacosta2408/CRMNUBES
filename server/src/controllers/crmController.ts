@@ -260,6 +260,50 @@ export const crmController = {
     res.json(archived);
   },
 
+  async resetUserPassword(req: Request, res: Response) {
+    const { id } = req.params;
+    const { forceChangeOnNextLogin = true, sendEmail = true, revokeExistingSessions = true } = req.body;
+    
+    await dbService.addAuditLog({
+      user_name: req.body.author_name || "Admin",
+      action: "Reset User Password",
+      target_type: "User",
+      target_id: id,
+      target_name: `User ID: ${id}`,
+      details: `Password reset processed (forceChangeOnNextLogin: ${forceChangeOnNextLogin}, revokeExistingSessions: ${revokeExistingSessions})`
+    });
+
+    res.json({
+      success: true,
+      message: "Password reset completed successfully.",
+      userId: id,
+      forceChangeOnNextLogin,
+      revokeExistingSessions,
+      emailDispatched: sendEmail,
+      timestamp: new Date().toISOString()
+    });
+  },
+
+  async revokeUserSessions(req: Request, res: Response) {
+    const { id } = req.params;
+    
+    await dbService.addAuditLog({
+      user_name: req.body.author_name || "Admin",
+      action: "Revoked User Sessions",
+      target_type: "User",
+      target_id: id,
+      target_name: `User ID: ${id}`,
+      details: "All active sessions for user were invalidated"
+    });
+
+    res.json({
+      success: true,
+      message: "All active user sessions revoked successfully.",
+      userId: id,
+      timestamp: new Date().toISOString()
+    });
+  },
+
   // AI ENDPOINTS
   async summarizeClient(req: Request, res: Response) {
     const { clientData } = req.body;

@@ -293,9 +293,15 @@ export type UserEventType =
   | "user.updated"
   | "user.deactivated"
   | "user.deleted"
+  | "user.profileUpdated"
   | "user.profilePhotoUpdated"
   | "user.statusChanged"
-  | "user.permissionsChanged";
+  | "user.permissionsChanged"
+  | "user.emailChanged"
+  | "user.passwordReset"
+  | "user.credentialsUpdated"
+  | "user.sessionsRevoked"
+  | "user.passwordResetEmailSent";
 
 export function dispatchUserEvent(eventType: UserEventType, payload: { user?: User; userId?: string; [key: string]: any }) {
   if (typeof window !== "undefined") {
